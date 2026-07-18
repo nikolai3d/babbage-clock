@@ -408,6 +408,12 @@ SwiftShader backend, covering boot, WebGL2 acquisition, the advancing readout,
 layer — in particular the Docker recipe for regenerating baselines, which you
 will need after any deliberate visual change.
 
+A second project, `mobile-portrait`, runs one spec at a 412x915 touch viewport
+for the things a phone changes: the framing, the bottom sheet, touch orbit and
+pinch, and the tier heuristic. It is deliberately not a second pass of the whole
+suite — see [testing.md](testing.md) for why, and for the real-device checklist
+that CI structurally cannot cover.
+
 The unit suite still runs in a Node environment with no DOM, covering time
 maths, the registry, the store, and scene-graph construction; `ClockSceneView`
 is testable headlessly because building a three.js scene graph does not require

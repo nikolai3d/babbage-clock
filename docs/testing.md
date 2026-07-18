@@ -30,10 +30,17 @@ CI job, because it needs a browser and takes longer.
    ```bash
    timeout 600 npm run test:e2e > /tmp/e2e.log 2>&1; tail -60 /tmp/e2e.log
    ```
-4. **Free the port first** if a previous run died:
+4. **Take your own port rather than clearing someone else's.** The default is
+   4173; `E2E_PORT` moves it. If several agents or checkouts are working in the
+   same repo at once, a blanket `pkill -f playwright` kills their in-flight runs
+   and the failures look exactly like flaky tests:
+
    ```bash
-   lsof -ti:4173 | xargs kill -9 2>/dev/null; pkill -9 -f playwright; true
+   E2E_PORT=4291 npm run test:e2e            # your own port, nobody else's
+   lsof -ti:4291 -sTCP:LISTEN | xargs kill   # only if *your* run died
    ```
+
+   `npm run test:e2e:docker` sidesteps the question entirely, and is how CI runs.
 
 ---
 
@@ -224,7 +231,15 @@ is off unless its parameter is present**, so production behaviour is unchanged;
 
 `?quality=low` and `?quality=high` are **not** test hooks — they are a real
 viewer-facing setting that pins the render tier, documented here because the
-mobile spec uses them. Anything else, including its absence, means `auto`.
+suite depends on them. Anything else, including its absence, means `auto`.
+
+`deterministicOptions()` pins `quality=high`, and that is load-bearing for the
+screenshot layer. Left automatic, the tier is chosen partly from
+`navigator.hardwareConcurrency`: 2 on a CI runner, 8 or more on a developer's
+machine. The tiers do not draw the same background — the low one substitutes a
+mood's authored gradient for its HDR panorama — so an unpinned baseline would
+be a picture of whatever machine last regenerated it. Only the spec that tests
+the heuristic itself passes `quality: 'auto'`.
 
 The hooks are orthogonal: setting one never implies another, and a unit test
 asserts it.

@@ -68,7 +68,8 @@ test.describe('portrait phone', () => {
   test('picks the low quality tier automatically and lets the viewer override it', async ({
     page,
   }) => {
-    await gotoApp(page, deterministicOptions());
+    // The one spec that must *not* pin the tier — the heuristic is the subject.
+    await gotoApp(page, deterministicOptions({ quality: 'auto' }));
 
     // A touch device with a phone-sized viewport: the heuristic's primary rule.
     expect((await readRendererState(page)).quality).toBe('low');
