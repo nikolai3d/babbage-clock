@@ -232,8 +232,10 @@ reads:
   is sized to enclose whatever the scene contains.
 - **Escapement** — `createEscapementParts` returns the balance wheel, its escape
   wheel and the cock that holds them; `createDetentLeverGeometry` returns the
-  pawl that rides on each ring. These are placed from the case rather than from
-  scene data, so every scene gets a movement without editing a scene file.
+  pawl that rides on each ring. These are sized from the case and, by default,
+  placed from it too, so every scene gets a movement without editing a scene
+  file; a scene whose layout wants them elsewhere declares the optional
+  `escapement` placement in its definition.
 
 Conventions (units, origin, axes, polygon budgets, the material-slot contract
 for authored glTF) live in **[assets.md](assets.md)**.

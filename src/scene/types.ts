@@ -118,6 +118,22 @@ export interface GearSpec {
   readonly spokeStyle?: GearSpokeStyle;
 }
 
+/**
+ * Where the escapement sits, in scene coordinates.
+ *
+ * Every scene gets an escapement, and its parts are always *sized* from the
+ * case. Omitted, placement derives from the case geometry too — tucked into
+ * the quadrant the gear train leaves free — which is why no scene so far sets
+ * it. Declare it when a scene's case or layout puts that derivation somewhere
+ * wrong.
+ */
+export interface EscapementPlacement {
+  /** Centre of the balance wheel; the cock that holds it follows. */
+  readonly position?: Vec3;
+  /** Escape wheel centre relative to `position`. */
+  readonly escapeWheelOffset?: Vec3;
+}
+
 /** IBL presets contributed by the lighting bead. */
 export type EnvironmentPresetId =
   'none' | 'day' | 'sunny-day' | 'night' | 'steampunk-workshop' | 'busy-street';
@@ -175,6 +191,8 @@ export interface SceneDefinition {
   readonly mode: ClockMode;
   readonly rings: RingConfig;
   readonly gears: readonly GearSpec[];
+  /** Escapement placement override; omitted, it derives from the case. */
+  readonly escapement?: EscapementPlacement;
   readonly materials: MaterialSlotMap;
   readonly lighting: LightingConfig;
   readonly camera: CameraConfig;
