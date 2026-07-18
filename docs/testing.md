@@ -236,6 +236,7 @@ is off unless its parameter is present**, so production behaviour is unchanged;
 | `?mockNowMode=advance`  | Starts pinned, then advances with real monotonic time (genuine ticking). |
 | `?nomotion=1`           | Disables camera damping, gear rotation and ring easing.                  |
 | `?nosync=1`             | Skips the network clock correction, for hermetic runs.                   |
+| `?mocksync=1`           | Presents the hermetic clock as healthily synced (see below).             |
 | `?testApi=1`            | Installs `window.__clock`.                                               |
 
 `?quality=low` and `?quality=high` are **not** test hooks — they are a real
@@ -262,6 +263,15 @@ as a page that never finishes booting. `gotoApp()` therefore sets `?nosync` by
 default. One spec (`degrades quietly when the time-sync services are
 unreachable`) deliberately opts back in with `noSync: false` to cover the real
 path.
+
+`?mocksync` exists because `?nosync` is honest to a fault: an unsynced clock
+really is running on the device clock, so the status strip warns about it — and
+every screenshot baseline and demo capture then carries a warning badge that a
+production viewer never sees. `?mocksync` presents the status of a healthy
+synced clock (ordinary numbers, not implausibly perfect ones) while leaving the
+clock exactly as hermetic as before. It fakes presentation only.
+`deterministicOptions()` sets it, so baselines double as production-faithful
+captures.
 
 `mockNow` is an adapter satisfying the existing `TimeSource` interface from
 `src/time/target.ts`, so it composes with whatever that module becomes.

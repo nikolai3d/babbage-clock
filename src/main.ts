@@ -8,7 +8,12 @@ import {
   resolveQualityTier,
 } from './app/quality.js';
 import { Store } from './app/store.js';
-import { installTestApi, readTestHooks, resolveTimeSource } from './app/testHooks.js';
+import {
+  installTestApi,
+  presentationTimeStatus,
+  readTestHooks,
+  resolveTimeSource,
+} from './app/testHooks.js';
 import { buildShareUrl, readLaunchParams, writeAppParams } from './app/urlParams.js';
 import type { ClockRenderer } from './render/renderer.js';
 import {
@@ -138,7 +143,14 @@ async function bootstrap(): Promise<void> {
         clockTask.done();
       });
   } else {
-    store.set({ syncPending: false });
+    // A hermetic run never syncs, so the strip would honestly warn about the
+    // device clock in every capture. `?mocksync` presents a healthy synced
+    // status instead — presentation only; the clock stays hermetic.
+    if (hooks.mockSync) {
+      store.set({ timeStatus: presentationTimeStatus(timeSource.now()), syncPending: false });
+    } else {
+      store.set({ syncPending: false });
+    }
     clockTask.done();
   }
 
