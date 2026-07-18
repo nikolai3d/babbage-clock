@@ -61,10 +61,7 @@ describe('Mechanism — adoption', () => {
   it('rejects a digit array that does not match the ring count', () => {
     const mechanism = new Mechanism({ ringCount: 5 });
     expect(() => {
-      mechanism.update(
-        { digits: [1, 2, 3], sequence: 0, expired: false, direction: 'down' },
-        0,
-      );
+      mechanism.update({ digits: [1, 2, 3], sequence: 0, expired: false, direction: 'down' }, 0);
     }).toThrow(/expected 5 digits/);
   });
 });
@@ -193,9 +190,7 @@ describe('Mechanism — carry cascades', () => {
     expect(driver.events).toHaveLength(1); // one event, not six staggered ones
 
     // The property the requirement is about: identical timing for every ring.
-    const timings = new Set(
-      event.motions.map(() => `${event.atMs}:${event.durationMs}`),
-    );
+    const timings = new Set(event.motions.map(() => `${event.atMs}:${event.durationMs}`));
     expect(timings.size).toBe(1);
   });
 
@@ -325,9 +320,7 @@ describe('Mechanism — expiry', () => {
     expect(mechanism.expired).toBe(false);
     expect(mechanism.driveFactor(2000)).toBe(1);
     // Phase keeps moving forward again rather than jumping.
-    expect(mechanism.drivePhaseSeconds(3000)).toBeGreaterThan(
-      mechanism.drivePhaseSeconds(2000),
-    );
+    expect(mechanism.drivePhaseSeconds(3000)).toBeGreaterThan(mechanism.drivePhaseSeconds(2000));
   });
 });
 
@@ -492,8 +485,9 @@ describe('Mechanism — the running train', () => {
   it('swings the balance across its full travel', () => {
     const driver = new Driver({ balancePeriodSeconds: 0.4 });
     driver.at(3661);
-    const swing = Array.from({ length: 41 }, (_, i) =>
-      driver.sample(driver.nowMs + i * 10).escapement,
+    const swing = Array.from(
+      { length: 41 },
+      (_, i) => driver.sample(driver.nowMs + i * 10).escapement,
     );
 
     expect(Math.max(...swing)).toBeGreaterThan(0.9);

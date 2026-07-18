@@ -3,6 +3,7 @@ import {
   PINNED_NOW,
   PINNED_TARGET,
   SELECTOR,
+  TICKING_TARGET,
   gotoApp,
   readDigits,
   waitForFrames,
@@ -37,7 +38,9 @@ test.describe('countdown readout', () => {
   });
 
   test('advances the digits handed to the rings', async ({ page }) => {
-    await gotoApp(page, { mockNow: PINNED_NOW, mockNowMode: 'advance', target: PINNED_TARGET });
+    // A target under the 999-hour cap: beyond it the rings correctly pin at
+    // 999:59:59 and hold still, which would make "did it move" unanswerable.
+    await gotoApp(page, { mockNow: PINNED_NOW, mockNowMode: 'advance', target: TICKING_TARGET });
 
     const initial = await readDigits(page);
     expect(initial.length).toBeGreaterThan(0);

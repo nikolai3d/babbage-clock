@@ -1,14 +1,15 @@
 import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { ClockSceneView } from './clockScene.js';
-import { clockDigits, computeCountdown, countdownDigits } from '../time/countdown.js';
+import { computeCountdown, computeRemaining } from '../time/countdown.js';
+import { clockFrame, countdownFrame } from '../mechanism/index.js';
 import type { AppStore } from '../app/store.js';
 import type { SceneDefinition } from '../scene/types.js';
 import type { TimeSource } from '../time/target.js';
 
 /** Retina displays gain little above 2x and cost a lot of fill rate. */
 const MAX_PIXEL_RATIO = 2;
-/** Clamp for the frame delta so a paused tab does not spin gears wildly on resume. */
+/** Clamp for the frame delta so a stalled frame does not spike the fps readout. */
 const MAX_FRAME_DELTA_SECONDS = 0.1;
 const FPS_SMOOTHING = 0.1;
 const STORE_UPDATE_INTERVAL_MS = 250;
@@ -19,9 +20,10 @@ export interface ClockRendererOptions {
   readonly timeSource: TimeSource;
   /**
    * When false, every time-varying flourish is switched off: OrbitControls
-   * damping, gear rotation and ring easing. Frames then depend only on the
-   * clock reading, which is what makes screenshots reproducible. Defaults to
-   * true, so normal application behaviour is unchanged.
+   * damping, the tick easing and its overshoot, the gear train, the balance
+   * wheel and the detent levers. Frames then depend only on the clock reading,
+   * which is what makes screenshots reproducible. Defaults to true, so normal
+   * application behaviour is unchanged.
    */
   readonly motion?: boolean;
 }
@@ -53,7 +55,6 @@ export class ClockRenderer {
   private disposed = false;
 
   /** Last digits handed to the scene; read by the `?testApi` observation surface. */
-  private lastDigits: readonly number[] = [];
   private frameCount = 0;
 
   private readonly resizeObserver: ResizeObserver;
@@ -112,14 +113,26 @@ export class ClockRenderer {
   setScene(definition: SceneDefinition): void {
     this.view?.dispose();
     this.view = new ClockSceneView(this.scene, definition, { motion: this.motionEnabled });
-    this.lastDigits = [];
     this.applyCameraConfig(definition);
     this.renderer.toneMappingExposure = definition.lighting.exposure ?? 1;
+    // Put the new mechanism on the clock immediately, so a scene switched to
+    // while the tab is hidden is already reading the right time when it shows.
+    this.syncMechanism(this.timeSource.now());
   }
 
-  /** The digits currently shown on the rings. See `app/testHooks.ts`. */
+  /** The active scene view, or null before the first `setScene`. */
+  get sceneView(): ClockSceneView | null {
+    return this.view;
+  }
+
+  /**
+   * The digits currently shown on the rings. See `app/testHooks.ts`.
+   *
+   * Read straight off the mechanism rather than from a copy kept here, so what
+   * this reports and what is drawn cannot drift apart.
+   */
   getDigits(): readonly number[] {
-    return this.lastDigits;
+    return this.view?.displayedDigits ?? [];
   }
 
   /** Renderer diagnostics for the `?testApi` observation surface. */
@@ -221,30 +234,48 @@ export class ClockRenderer {
     this.lastFrameMs = frameMs;
     if (dt > 0) this.fps += (1 / dt - this.fps) * FPS_SMOOTHING;
 
-    const view = this.view;
-    if (view) {
+    if (this.view) {
       const nowMs = this.timeSource.now();
-      const { target } = this.store.get();
-      const countdown = computeCountdown(target.atMs, nowMs);
-      const definition = view.definition;
-
-      const digits =
-        definition.mode === 'clock'
-          ? clockDigits(new Date(nowMs), view.ringCount)
-          : countdownDigits(countdown, view.ringCount);
-      this.lastDigits = digits;
-      view.setDigits(digits);
-      view.update(dt);
+      const remaining = this.syncMechanism(nowMs);
 
       // The store drives DOM updates, so push at a human-readable rate rather
       // than once per frame.
       if (frameMs - this.lastStorePushMs >= STORE_UPDATE_INTERVAL_MS) {
         this.lastStorePushMs = frameMs;
-        this.store.set({ countdown, fps: Math.round(this.fps) });
+        this.store.set({
+          countdown: computeCountdown(this.store.get().target.atMs, nowMs),
+          remaining,
+          fps: Math.round(this.fps),
+        });
       }
     }
 
     this.controls.update();
     this.renderer.render(this.scene, this.camera);
   };
+
+  /**
+   * Reads the clock and drives the mechanism from it.
+   *
+   * The countdown the rings show comes from `computeRemaining`, so the
+   * `HHH:MM:SS` cap reaches the display: a target more than 999 hours out reads
+   * `999:59:59` and holds there until it falls under the cap. Nothing here
+   * integrates a frame delta — the mechanism is handed the instant and works
+   * out the rest, which is what keeps it right across tab sleeps and clock
+   * re-syncs.
+   */
+  private syncMechanism(nowMs: number): ReturnType<typeof computeRemaining> {
+    const view = this.view;
+    const remaining = computeRemaining(this.store.get().target.atMs, nowMs);
+    if (!view) return remaining;
+
+    view.setFrame(
+      view.definition.mode === 'clock'
+        ? clockFrame(nowMs, view.ringCount)
+        : countdownFrame(remaining, view.ringCount),
+      nowMs,
+    );
+    view.update(nowMs);
+    return remaining;
+  }
 }

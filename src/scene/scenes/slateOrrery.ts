@@ -26,26 +26,41 @@ export const slateOrreryScene: SceneDefinition = {
     markSlot: 'numerals',
   },
 
+  // A three-wheel chain on a coarser module (m = 0.06), riding high behind the
+  // wider drums so the teeth show above and past the ring stack. Same two rules
+  // as the copper preset: neighbours counter-rotate and small wheels run fast.
   gears: [
     {
       id: 'gear-a',
       slot: 'gearA',
-      radius: 0.8,
+      radius: 0.78,
       thickness: 0.14,
-      teeth: 24,
-      position: [-1.1, -1.85, -0.4],
+      teeth: 26,
+      position: [-0.95, 1.45, -1.28],
       axis: [0, 0, 1],
-      angularVelocity: -0.3,
+      angularVelocity: -0.36,
     },
+    // 1.38 m from gear-a, which is 0.78 + 0.6.
     {
       id: 'gear-b',
-      slot: 'gearD',
-      radius: 0.5,
+      slot: 'gearB',
+      radius: 0.6,
       thickness: 0.14,
-      teeth: 15,
-      position: [1.2, -1.7, -0.4],
+      teeth: 20,
+      position: [0.429, 1.519, -1.28],
       axis: [0, 0, 1],
-      angularVelocity: 0.48,
+      angularVelocity: 0.468,
+    },
+    // 1.26 m from gear-b, which is 0.6 + 0.66.
+    {
+      id: 'gear-c',
+      slot: 'gearD',
+      radius: 0.66,
+      thickness: 0.14,
+      teeth: 22,
+      position: [1.424, 0.746, -1.28],
+      axis: [0, 0, 1],
+      angularVelocity: -0.4255,
     },
   ],
 
@@ -73,13 +88,15 @@ export const slateOrreryScene: SceneDefinition = {
     exposure: 1.0,
   },
 
+  // Mirrored from the copper preset — this one is shot from the left — and
+  // framed on the case body the same way.
   camera: {
-    fov: 50,
-    position: [0.5, 2.4, 11.5],
-    target: [0, 0.1, 0],
+    fov: 46,
+    position: [-1.05, 0.95, 10.5],
+    target: [0, 0.42, 0],
     near: 0.1,
     far: 100,
-    minDistance: 5.5,
+    minDistance: 6,
     maxDistance: 22,
     minPolarAngle: Math.PI * 0.1,
     maxPolarAngle: Math.PI * 0.8,

@@ -21,7 +21,13 @@
  *   bead, in particular — subscribes to the same events the animation uses.
  */
 
-import { escapementEase, easeInOutCubic, pulseEnvelope, clamp01, DEFAULT_OVERSHOOT } from './easing.js';
+import {
+  escapementEase,
+  easeInOutCubic,
+  pulseEnvelope,
+  clamp01,
+  DEFAULT_OVERSHOOT,
+} from './easing.js';
 import { DIGITS_PER_RING, digitStepAngle, ringAngleForDigit } from '../geometry/ringLayout.js';
 
 const TWO_PI = Math.PI * 2;
@@ -469,12 +475,7 @@ export class Mechanism {
     );
   }
 
-  private startMotion(
-    motion: RingMotion,
-    nowMs: number,
-    durationMs: number,
-    snap: boolean,
-  ): void {
+  private startMotion(motion: RingMotion, nowMs: number, durationMs: number, snap: boolean): void {
     const ring = this.rings[motion.ring]!;
     const from = this.angleAt(ring, nowMs);
     ring.fromAngle = from;

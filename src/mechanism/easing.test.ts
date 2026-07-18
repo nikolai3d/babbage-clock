@@ -65,8 +65,9 @@ describe('escapementEase', () => {
   it('scales its overshoot, and a zero overshoot is a plain ease', () => {
     const flat = Array.from({ length: 101 }, (_, i) => escapementEase(i / 100, 0));
     expect(Math.max(...flat)).toBeCloseTo(1, 6);
-    expect(Math.max(...Array.from({ length: 101 }, (_, i) => escapementEase(i / 100, 0.3)))).
-      toBeGreaterThan(1.25);
+    expect(
+      Math.max(...Array.from({ length: 101 }, (_, i) => escapementEase(i / 100, 0.3))),
+    ).toBeGreaterThan(1.25);
   });
 
   it('clamps outside the unit interval', () => {
