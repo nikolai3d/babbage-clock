@@ -461,7 +461,7 @@ export class ClockSceneView {
         teeth: spec.teeth,
         radius: spec.radius,
         thickness: spec.thickness,
-        spokeStyle: defaultSpokeStyleFor(index, spec.teeth),
+        spokeStyle: spec.spokeStyle ?? defaultSpokeStyleFor(index, spec.teeth),
       }),
     );
     spinner.add(new THREE.Mesh(wheel, this.materials.get(spec.slot)));
