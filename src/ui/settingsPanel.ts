@@ -25,11 +25,21 @@
 
 import { summarizeTarget, toDateTimeLocalValue } from './targetSummary.js';
 import { TimeZonePicker } from './timeZonePicker.js';
+import { loadTargetHistory, pushTargetHistory } from './targetHistory.js';
+import type { TargetHistoryEntry } from './targetHistory.js';
 import type { AppState, AppStore } from '../app/store.js';
 import type { ResolvedTarget } from '../time/target.js';
 import type { SettingControl } from './settings.js';
 
 /** What the viewer typed into the target form. */
+export interface QuickTarget {
+  readonly id: string;
+  readonly label: string;
+  /** `datetime-local`-shaped wall clock in the zone it was computed for. */
+  readonly value: string;
+  readonly zone: string;
+}
+
 export interface TargetRequest {
   /** Wall-clock value from the date-time control, `YYYY-MM-DDTHH:mm[:ss]`. */
   readonly value: string;
@@ -47,6 +57,14 @@ export interface SettingsPanelOptions {
   /** Viewer's own zone, used to seed the picker when there is no target zone. */
   readonly viewerZone: string;
   readonly onSubmitTarget: (request: TargetRequest) => TargetResult;
+  /**
+   * One-tap targets, computed at click time so "in 1 hour" is measured from
+   * the click, not from when the drawer was built. `zone` is the picker's
+   * current zone, so the wall clock lands coherently in the visible fields.
+   */
+  readonly quickTargets: (zone: string) => readonly QuickTarget[];
+  /** Injected for tests; defaults to `window.localStorage`. */
+  readonly historyStorage?: Pick<Storage, 'getItem' | 'setItem'>;
   /** Resets to the default target (the next New Year in the viewer's zone). */
   readonly onResetTarget: () => void;
   /** The shareable URL for the current state, rebuilt whenever state changes. */
@@ -63,6 +81,9 @@ export class SettingsPanel {
   private readonly targetInput: HTMLInputElement;
   private readonly picker: TimeZonePicker;
   private readonly errorEl: HTMLParagraphElement;
+  private readonly quickRow: HTMLDivElement;
+  private readonly historyRow: HTMLDivElement;
+  private readonly storage: Pick<Storage, 'getItem' | 'setItem'>;
   private readonly echoEl: HTMLDivElement;
   private readonly shareInput: HTMLInputElement;
   private readonly closeButton: HTMLButtonElement;
@@ -172,7 +193,26 @@ export class SettingsPanel {
     this.resetButton.textContent = 'Use default';
 
     actions.append(submit, this.resetButton);
-    this.form.append(targetField, zoneField, this.errorEl, actions);
+
+    // --- one-tap targets ---------------------------------------------------
+    this.storage = options.historyStorage ?? window.localStorage;
+
+    this.quickRow = document.createElement('div');
+    this.quickRow.className = 'chiprow';
+    this.quickRow.id = 'quick-targets';
+    this.quickRow.setAttribute('role', 'group');
+    this.quickRow.setAttribute('aria-label', 'Quick targets');
+
+    this.historyRow = document.createElement('div');
+    this.historyRow.className = 'chiprow';
+    this.historyRow.id = 'target-history';
+    this.historyRow.setAttribute('role', 'group');
+    this.historyRow.setAttribute('aria-label', 'Recent targets');
+
+    this.renderQuickTargets();
+    this.renderHistory(loadTargetHistory(this.storage));
+
+    this.form.append(targetField, zoneField, this.quickRow, this.historyRow, this.errorEl, actions);
 
     // --- resolved-target echo ---------------------------------------------
     this.echoEl = document.createElement('div');
@@ -427,10 +467,63 @@ export class SettingsPanel {
     if (result.ok) {
       this.dirty = false;
       this.setError(null);
+      this.renderHistory(pushTargetHistory(this.storage, { value, zone: this.picker.value }));
     } else {
       this.setError(result.message);
     }
   };
+
+  /** Fills the visible fields and goes through the one submit path there is. */
+  private applyEntry(entry: TargetHistoryEntry): void {
+    this.targetInput.value = entry.value;
+    this.picker.value = entry.zone;
+    const result = this.options.onSubmitTarget({ value: entry.value, zone: entry.zone });
+    if (result.ok) {
+      this.dirty = false;
+      this.setError(null);
+      this.renderHistory(pushTargetHistory(this.storage, entry));
+    } else {
+      this.setError(result.message);
+    }
+  }
+
+  private chip(label: string, title: string, onClick: () => void): HTMLButtonElement {
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = 'chip';
+    button.textContent = label;
+    button.title = title;
+    button.addEventListener('click', onClick);
+    return button;
+  }
+
+  private renderQuickTargets(): void {
+    this.quickRow.replaceChildren();
+    // Recomputed per render so the labels stay honest; the click recomputes
+    // again so the applied instant is measured from the click.
+    for (const preset of this.options.quickTargets(this.picker.value)) {
+      this.quickRow.append(
+        this.chip(preset.label, `${preset.value.replace('T', ' ')} (${preset.zone})`, () => {
+          const fresh = this.options
+            .quickTargets(this.picker.value)
+            .find((candidate) => candidate.id === preset.id);
+          if (fresh) this.applyEntry(fresh);
+        }),
+      );
+    }
+  }
+
+  private renderHistory(entries: readonly TargetHistoryEntry[]): void {
+    this.historyRow.replaceChildren();
+    this.historyRow.hidden = entries.length === 0;
+    for (const entry of entries) {
+      this.historyRow.append(
+        this.chip(`${entry.value.replace('T', ' ')}`, `${entry.value} (${entry.zone})`, () => {
+          this.applyEntry(entry);
+        }),
+      );
+    }
+  }
 
   private readonly onReset = (): void => {
     this.dirty = false;

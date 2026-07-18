@@ -3,12 +3,14 @@ import {
   TargetError,
   defaultTarget,
   isValidTimeZone,
+  nextMidnightWallClock,
   nextNewYear,
   parseTargetParam,
   resolveCountdownTarget,
   resolveTarget,
   resolveTargetFromParams,
   systemTimeSource,
+  wallClockInHours,
 } from './target.js';
 
 /** 2026-07-01T12:00:00Z — a fixed "now" so nothing here depends on the wall clock. */
@@ -336,5 +338,26 @@ describe('isValidTimeZone', () => {
   it('rejects nonsense', () => {
     expect(isValidTimeZone('Mars/Olympus')).toBe(false);
     expect(isValidTimeZone('+99:99')).toBe(false);
+  });
+});
+
+describe('quick-target wall clocks', () => {
+  const noon = Date.UTC(2026, 5, 15, 12, 0, 41);
+
+  it('measures "in n hours" from now, to the minute', () => {
+    expect(wallClockInHours(noon, 1, 'UTC')).toBe('2026-06-15T13:00');
+    expect(wallClockInHours(noon, 24 * 7, 'UTC')).toBe('2026-06-22T12:00');
+  });
+
+  it('lands tonight-at-midnight on the next midnight in the zone', () => {
+    expect(nextMidnightWallClock(noon, 'UTC')).toBe('2026-06-16T00:00');
+    // Tokyo is already past its midnight for this instant; the next one is a
+    // calendar day later there.
+    expect(nextMidnightWallClock(noon, 'Asia/Tokyo')).toBe('2026-06-16T00:00');
+  });
+
+  it('is strictly in the future even at midnight exactly', () => {
+    const midnight = Date.UTC(2026, 5, 15, 0, 0, 0);
+    expect(nextMidnightWallClock(midnight, 'UTC')).toBe('2026-06-16T00:00');
   });
 });

@@ -529,6 +529,35 @@ body {
     transform 120ms ease;
 }
 
+.chiprow {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+}
+
+/* One-tap targets: visually lighter than .button so the primary action —
+   "Set target" — stays the loudest thing in the form. */
+.chip {
+  padding: 0.28rem 0.7rem;
+  border: 1px solid rgb(216 178 106 / 28%);
+  border-radius: 999px;
+  background: rgb(240 226 198 / 5%);
+  color: var(--parchment-100);
+  font-family: var(--font-display);
+  font-size: 0.74rem;
+  letter-spacing: 0.06em;
+  white-space: nowrap;
+  cursor: pointer;
+  transition:
+    background 140ms ease,
+    border-color 140ms ease;
+}
+
+.chip:hover {
+  border-color: var(--brass-300);
+  background: rgb(240 226 198 / 12%);
+}
+
 .button:hover {
   border-color: var(--brass-300);
   background: rgb(240 226 198 / 14%);
