@@ -46,7 +46,7 @@ import {
 } from './time/trueTime.js';
 import { FallbackClock } from './ui/fallbackClock.js';
 import { Hud } from './ui/hud.js';
-import { defineSelect } from './ui/settings.js';
+import { defineSelect, defineToggle } from './ui/settings.js';
 import type { AppState } from './app/store.js';
 import type { RendererProbe } from './app/testHooks.js';
 import type { ShareableState } from './app/urlParams.js';
@@ -109,11 +109,20 @@ async function bootstrap(): Promise<void> {
   const deviceProfile = readDeviceProfile();
   const qualityTier = resolveQualityTier(params.quality, deviceProfile);
 
+  const LARGE_TEXT_KEY = 'babbage-clock:large-text';
+  let storedLargeText = false;
+  try {
+    storedLargeText = window.localStorage.getItem(LARGE_TEXT_KEY) === '1';
+  } catch {
+    // Storage may be walled off (privacy mode); the toggle just starts off.
+  }
+
   const store = new Store<AppState>({
     sceneId,
     mood: params.mood,
     materialLook: null,
     background: params.background,
+    largeText: storedLargeText,
     quality: params.quality,
     qualityTier,
     target,
@@ -174,26 +183,40 @@ async function bootstrap(): Promise<void> {
   const fallback = new FallbackClock({ container: uiRoot, store });
   let restoreTimer: ReturnType<typeof setTimeout> | null = null;
 
-  /** Text countdown in, mechanism out. Safe to call repeatedly. */
-  function enterFallback(reason: FallbackReason): void {
-    hud.setReadoutVisible(false);
-    fallback.show(reason);
-    ticker.start();
+  // Two independent ways into the text view: a WebGL failure (the browser's
+  // doing) and the large-text toggle (the viewer's). They must not clear each
+  // other — turning large text off while the context is gone keeps the failure
+  // note, and a restored context while large text is on keeps the large text.
+  let fallbackFailure: FallbackReason | null = null;
+
+  function syncFallbackView(): void {
+    const reason = fallbackFailure ?? (store.get().largeText ? 'viewer-choice' : null);
+    if (reason !== null) {
+      hud.setReadoutVisible(false);
+      fallback.show(reason);
+      ticker.start();
+    } else {
+      ticker.stop();
+      fallback.hide();
+      hud.setReadoutVisible(true);
+      renderer?.refresh();
+    }
   }
 
-  /** Mechanism back, text countdown out. */
+  /** Text countdown in, mechanism out. Safe to call repeatedly. */
+  function enterFallback(reason: FallbackReason): void {
+    fallbackFailure = reason;
+    syncFallbackView();
+  }
+
+  /** Mechanism back — unless the viewer's large-text choice still wants text. */
   function leaveFallback(): void {
     if (restoreTimer !== null) {
       clearTimeout(restoreTimer);
       restoreTimer = null;
     }
-    ticker.stop();
-    fallback.hide();
-    hud.setReadoutVisible(true);
-    // A restored context comes back at the browser's defaults: it has forgotten
-    // the pixel ratio the quality tier chose and the framing derived for this
-    // viewport. Re-assert both before the first frame is drawn on it.
-    renderer?.refresh();
+    fallbackFailure = null;
+    syncFallbackView();
   }
 
   // A browser with no WebGL must not take the countdown down with it:
@@ -338,6 +361,24 @@ async function bootstrap(): Promise<void> {
         writeAppParams(shareState());
       },
     }),
+    defineToggle({
+      id: 'large-text-toggle',
+      label: 'Large text countdown',
+      hint: 'Replaces the mechanism with a big readable timer. The clock keeps running.',
+      read: (state) => state.largeText,
+      apply: (value) => {
+        const largeText = value === true;
+        if (largeText === store.get().largeText) return;
+        store.set({ largeText });
+        try {
+          window.localStorage.setItem(LARGE_TEXT_KEY, largeText ? '1' : '0');
+        } catch {
+          // Session-only is fine.
+        }
+        renderer?.setSuspended(largeText);
+        syncFallbackView();
+      },
+    }),
     defineSelect({
       id: 'background-select',
       label: 'Background',
@@ -441,6 +482,9 @@ async function bootstrap(): Promise<void> {
   });
 
   if (renderer) {
+    // The persisted large-text choice parks the loop before the first frame,
+    // not after one visible flash of the mechanism.
+    if (storedLargeText) renderer.setSuspended(true);
     renderer.start();
   } else {
     // The canvas is inert without a context; leaving it in the document would
@@ -448,6 +492,7 @@ async function bootstrap(): Promise<void> {
     canvas.hidden = true;
     enterFallback('no-webgl');
   }
+  if (storedLargeText) syncFallbackView();
   sceneTask.done();
 
   if (import.meta.env.DEV) {

@@ -192,3 +192,42 @@ test.describe('context loss', () => {
       .not.toBe(first);
   });
 });
+
+test.describe('large text mode', () => {
+  test('is a choice, not a failure: toggles the text view and parks the loop', async ({ page }) => {
+    await gotoApp(page, { mockNow: PINNED_NOW, mockNowMode: 'advance', target: TICKING_TARGET });
+
+    await page.locator('#settings-toggle').click();
+    await page.locator('#large-text-toggle').check();
+    await page.keyboard.press('Escape');
+
+    const fallback = page.locator(SELECTOR.fallbackView);
+    await expect(fallback).toBeVisible();
+    // The note reads as a choice, not a warning.
+    await expect(fallback).toContainText('Large text mode');
+    // The loop is parked — this is the battery half of the feature.
+    await expect.poll(async () => (await readRendererState(page)).running).toBe(false);
+    // The countdown still advances in text.
+    const before = await fallback.locator('.fallback__countdown').textContent();
+    await expect
+      .poll(async () => fallback.locator('.fallback__countdown').textContent())
+      .not.toBe(before);
+
+    // And back: mechanism returns, loop resumes.
+    await page.locator('#settings-toggle').click();
+    await page.locator('#large-text-toggle').uncheck();
+    await expect(fallback).toBeHidden();
+    await expect.poll(async () => (await readRendererState(page)).running).toBe(true);
+  });
+
+  test('survives a reload', async ({ page }) => {
+    await gotoApp(page, { mockNow: PINNED_NOW, mockNowMode: 'advance', target: TICKING_TARGET });
+    await page.locator('#settings-toggle').click();
+    await page.locator('#large-text-toggle').check();
+
+    await page.reload();
+    await page.waitForFunction(() => window.__clock !== undefined);
+    await expect(page.locator(SELECTOR.fallbackView)).toBeVisible();
+    await expect.poll(async () => (await readRendererState(page)).running).toBe(false);
+  });
+});

@@ -97,6 +97,7 @@ export class ClockRenderer {
   private materialLook: string | null = null;
 
   private quality: QualitySettings;
+  private suspended = false;
   private backgroundPreference: BackgroundPreference | null = null;
   /**
    * What the active scene needs to keep in frame. Measured from the built scene
@@ -138,7 +139,7 @@ export class ClockRenderer {
     const hidden = document.hidden;
     this.store.set({ hidden });
     if (hidden) this.pause();
-    else this.resume();
+    else if (!this.suspended) this.resume();
   };
 
   constructor({
@@ -485,7 +486,27 @@ export class ClockRenderer {
 
   start(): void {
     this.store.set({ hidden: document.hidden });
-    if (!document.hidden) this.resume();
+    if (!document.hidden && !this.suspended) this.resume();
+  }
+
+  /**
+   * Parks or resumes the frame loop for the viewer's large-text choice.
+   *
+   * Distinct from tab visibility (which owns `hidden` and comes back on its
+   * own) and from context loss (which the browser drives): this one is a
+   * settings toggle, so it must survive both — a suspended clock stays
+   * suspended across a tab switch, and resuming re-asserts quality and
+   * framing exactly like a context restore does.
+   */
+  setSuspended(suspended: boolean): void {
+    if (this.suspended === suspended) return;
+    this.suspended = suspended;
+    if (suspended) {
+      this.pause();
+    } else if (!document.hidden && !this.contextLost) {
+      this.refresh();
+      this.resume();
+    }
   }
 
   dispose(): void {
