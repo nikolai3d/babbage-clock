@@ -17,5 +17,7 @@
 declare const process: {
   readonly platform: string;
   readonly env: Record<string, string | undefined>;
+  /** Used to give each concurrent run its own preview port. See `env.ts`. */
+  readonly pid: number;
   cwd(): string;
 };

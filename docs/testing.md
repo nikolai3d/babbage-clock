@@ -30,15 +30,24 @@ CI job, because it needs a browser and takes longer.
    ```bash
    timeout 600 npm run test:e2e > /tmp/e2e.log 2>&1; tail -60 /tmp/e2e.log
    ```
-4. **Take your own port rather than clearing someone else's.** The default is
-   4173; `E2E_PORT` moves it. If several agents or checkouts are working in the
-   same repo at once, a blanket `pkill -f playwright` kills their in-flight runs
-   and the failures look exactly like flaky tests:
+4. **Never clear someone else's port or processes.** A blanket
+   `pkill -f playwright`, or killing whatever holds 4173, destroys the in-flight
+   runs of any other agent or worktree working in this repo — and the resulting
+   failures look exactly like flaky tests. Kill only what you started:
 
    ```bash
-   E2E_PORT=4291 npm run test:e2e            # your own port, nobody else's
-   lsof -ti:4291 -sTCP:LISTEN | xargs kill   # only if *your* run died
+   lsof -ti:"$E2E_PORT" -sTCP:LISTEN | xargs kill   # only if *your* run died
    ```
+
+   You no longer need to pick a port by hand. Outside CI the suite takes a
+   per-process port automatically (4174 + pid % 500); `E2E_PORT` still overrides
+   it, and CI stays on the fixed 4173.
+
+   That default is load-bearing, not tidiness. `webServer.reuseExistingServer` is
+   on outside CI, so two runs on one port do not fail — the second **attaches to
+   the first one's server and tests the first one's build**. Wrong code, green
+   result, nothing in the log to suggest it. A per-process port makes that
+   impossible.
 
    `npm run test:e2e:docker` sidesteps the question entirely, and is how CI runs.
 
