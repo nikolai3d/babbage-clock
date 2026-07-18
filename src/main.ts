@@ -315,6 +315,8 @@ function bootstrap(): void {
       contextLost: true,
       cameraPosition: [0, 0, 0],
       sceneId: null,
+      // No scene was ever built, so no environment map was ever asked for.
+      lighting: 'none',
     }),
   };
   const uninstallTestApi = installTestApi(hooks, {
