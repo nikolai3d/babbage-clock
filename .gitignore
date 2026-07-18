@@ -7,3 +7,6 @@ dist/
 *.db
 .beads-credential-key
 .beads/proxieddb/
+
+# Claude Code agent worktrees
+.claude/worktrees/
