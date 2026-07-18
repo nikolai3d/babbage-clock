@@ -8,12 +8,49 @@
       name="description"
       content="A web-based 3D countdown clock built from spinning gear mechanisms."
     />
+    <meta name="theme-color" content="#17110d" />
   </head>
   <body>
     <canvas id="scene-canvas"></canvas>
     <div id="ui-root"></div>
+
+    <!--
+      The loading state is authored here rather than created in JavaScript, so it
+      is on screen from the first paint — before the module graph, three.js or
+      any texture has loaded. `ui/loadingScreen.ts` adopts this element, drives
+      the bar from real loader progress and removes it when boot completes.
+    -->
+    <div id="loading-screen" class="loader" role="status" aria-live="polite">
+      <div class="loader__inner">
+        <svg class="loader__gears" viewBox="-6 -6 132 108" aria-hidden="true" focusable="false">
+          <g class="loader__gear loader__gear--large" transform="translate(46 50)">
+            <circle class="loader__gear-teeth" r="30" />
+            <circle class="loader__gear-rim" r="21" />
+            <g class="loader__gear-spokes">
+              <line x1="0" y1="-20" x2="0" y2="20" />
+              <line x1="-20" y1="0" x2="20" y2="0" />
+              <line x1="-14" y1="-14" x2="14" y2="14" />
+              <line x1="-14" y1="14" x2="14" y2="-14" />
+            </g>
+            <circle class="loader__gear-hub" r="6" />
+          </g>
+          <g class="loader__gear loader__gear--small" transform="translate(92 28)">
+            <circle class="loader__gear-teeth" r="18" />
+            <circle class="loader__gear-rim" r="12" />
+            <circle class="loader__gear-hub" r="4" />
+          </g>
+        </svg>
+        <p class="loader__title">Babbage Clock</p>
+        <p class="loader__caption">Winding the mainspring</p>
+        <div class="loader__bar">
+          <div class="loader__bar-fill"></div>
+        </div>
+        <p class="loader__percent">0%</p>
+      </div>
+    </div>
+
     <noscript>
-      <p>Babbage Clock needs JavaScript and a WebGL2-capable browser.</p>
+      <p class="noscript">Babbage Clock needs JavaScript and a WebGL2-capable browser.</p>
     </noscript>
     <script type="module" src="/src/main.ts"></script>
   </body>

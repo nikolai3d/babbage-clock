@@ -86,6 +86,7 @@ describe('readLaunchParams', () => {
       sceneId: 'slate-orrery',
       target: '2030-01-01',
       tz: null,
+      mood: null,
     });
   });
 
@@ -94,10 +95,11 @@ describe('readLaunchParams', () => {
       sceneId: null,
       target: '2026-12-31T23:59:59',
       tz: 'Europe/Paris',
+      mood: null,
     });
   });
 
   it('returns nulls when parameters are absent', () => {
-    expect(readLaunchParams('')).toEqual({ sceneId: null, target: null, tz: null });
+    expect(readLaunchParams('')).toEqual({ sceneId: null, target: null, tz: null, mood: null });
   });
 });
