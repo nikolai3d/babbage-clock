@@ -18,6 +18,11 @@ const MAX_FRAME_DELTA_SECONDS = 0.1;
 const FPS_SMOOTHING = 0.1;
 const STORE_UPDATE_INTERVAL_MS = 250;
 
+/** Radians per arrow-key press when orbiting from the keyboard. */
+const KEY_ORBIT_STEP = 0.12;
+/** Multiplier per zoom-key press; its reciprocal zooms back out. */
+const KEY_DOLLY_STEP = 1.12;
+
 export interface ClockRendererOptions {
   readonly canvas: HTMLCanvasElement;
   readonly store: AppStore;
@@ -28,8 +33,20 @@ export interface ClockRendererOptions {
    * wheel and the detent levers. Frames then depend only on the clock reading,
    * which is what makes screenshots reproducible. Defaults to true, so normal
    * application behaviour is unchanged.
+   *
+   * There is one source for this — `app/motion.ts` — combining the viewer's
+   * `prefers-reduced-motion` setting with the `?nomotion=1` hook. Do not add a
+   * second media-query check anywhere below this line.
    */
   readonly motion?: boolean;
+  /**
+   * The GPU took the context away. The frame loop is already paused when this
+   * fires; the app is expected to put a non-WebGL view on screen, because a
+   * canvas frozen on a stale frame shows the wrong time.
+   */
+  readonly onContextLost?: () => void;
+  /** The context came back and the loop has resumed on the correct instant. */
+  readonly onContextRestored?: () => void;
 }
 
 /**
@@ -51,14 +68,22 @@ export class ClockRenderer {
   /** Owns the IBL environment, the mood light rig and the tone-mapping grade. */
   private readonly environment: EnvironmentController;
 
-  private readonly motionEnabled: boolean;
+  private motionEnabled: boolean;
+  private readonly onContextLostCallback: (() => void) | undefined;
+  private readonly onContextRestoredCallback: (() => void) | undefined;
 
   private view: ClockSceneView | null = null;
+  private definition: SceneDefinition | null = null;
   private frameHandle: number | null = null;
   private lastFrameMs = 0;
   private lastStorePushMs = 0;
   private fps = 0;
   private disposed = false;
+  private contextLost = false;
+
+  /** Scratch for keyboard orbiting, so a key press allocates nothing. */
+  private readonly orbitOffset = new THREE.Vector3();
+  private readonly orbitSpherical = new THREE.Spherical();
 
   /** Last digits handed to the scene; read by the `?testApi` observation surface. */
   private frameCount = 0;
@@ -71,11 +96,20 @@ export class ClockRenderer {
     else this.resume();
   };
 
-  constructor({ canvas, store, timeSource, motion = true }: ClockRendererOptions) {
+  constructor({
+    canvas,
+    store,
+    timeSource,
+    motion = true,
+    onContextLost,
+    onContextRestored,
+  }: ClockRendererOptions) {
     this.canvas = canvas;
     this.store = store;
     this.timeSource = timeSource;
     this.motionEnabled = motion;
+    this.onContextLostCallback = onContextLost;
+    this.onContextRestoredCallback = onContextRestored;
 
     this.renderer = new THREE.WebGLRenderer({
       canvas,
@@ -111,6 +145,16 @@ export class ClockRenderer {
     });
     this.resizeObserver.observe(canvas);
     document.addEventListener('visibilitychange', this.onVisibilityChange);
+    // three.js registers its own handlers for these and calls preventDefault on
+    // the loss, which is what makes a restore possible at all. Ours run after
+    // and deal with the parts three cannot know about: the frame loop, the
+    // clock, and the view the app should show meanwhile.
+    canvas.addEventListener('webglcontextlost', this.onWebGLContextLost);
+    canvas.addEventListener('webglcontextrestored', this.onWebGLContextRestored);
+    // The canvas is the keyboard alternative to dragging: `index.html` gives it
+    // `tabindex="0"` and a label, and these keys orbit it. Without this the
+    // view would be reachable only with a pointer.
+    canvas.addEventListener('keydown', this.onCanvasKeyDown);
 
     this.resize();
   }
@@ -123,6 +167,7 @@ export class ClockRenderer {
    */
   setScene(definition: SceneDefinition): void {
     this.view?.dispose();
+    this.definition = definition;
     this.view = new ClockSceneView(this.scene, definition, { motion: this.motionEnabled });
     this.applyCameraConfig(definition);
     // The lighting mood owns the environment, the rig and the grade — including
@@ -137,6 +182,29 @@ export class ClockRenderer {
   /** The active scene view, or null before the first `setScene`. */
   get sceneView(): ClockSceneView | null {
     return this.view;
+  }
+
+  /**
+   * Turns continuous animation on or off after construction.
+   *
+   * The viewer can flip `prefers-reduced-motion` while the page is open, and
+   * `Mechanism` takes its motion setting at construction, so honouring the
+   * change means rebuilding the view. That is a scene swap, which this class
+   * already does correctly (and disposes properly) for the scene picker — so
+   * there is no second path, and no per-frame branch to keep in sync.
+   *
+   * The camera is untouched: the viewer's orbit survives.
+   */
+  setMotion(enabled: boolean): void {
+    if (enabled === this.motionEnabled) return;
+    this.motionEnabled = enabled;
+    this.controls.enableDamping = enabled;
+
+    const definition = this.definition;
+    if (!definition) return;
+    this.view?.dispose();
+    this.view = new ClockSceneView(this.scene, definition, { motion: enabled });
+    this.syncMechanism(this.timeSource.now());
   }
 
   /**
@@ -161,6 +229,8 @@ export class ClockRenderer {
     height: number;
     pixelRatio: number;
     motion: boolean;
+    contextLost: boolean;
+    cameraPosition: readonly [number, number, number];
     sceneId: string | null;
     lighting: IblStatus;
   } {
@@ -176,6 +246,8 @@ export class ClockRenderer {
       height: size.y,
       pixelRatio: this.renderer.getPixelRatio(),
       motion: this.motionEnabled,
+      contextLost: this.contextLost,
+      cameraPosition: [this.camera.position.x, this.camera.position.y, this.camera.position.z],
       sceneId: this.view?.definition.id ?? null,
       // A frame captured while this is 'loading' still shows the previous
       // mood, so anything photographing the scene has to wait it out.
@@ -192,6 +264,9 @@ export class ClockRenderer {
     this.disposed = true;
     this.pause();
     document.removeEventListener('visibilitychange', this.onVisibilityChange);
+    this.canvas.removeEventListener('webglcontextlost', this.onWebGLContextLost);
+    this.canvas.removeEventListener('webglcontextrestored', this.onWebGLContextRestored);
+    this.canvas.removeEventListener('keydown', this.onCanvasKeyDown);
     this.resizeObserver.disconnect();
     this.controls.dispose();
     // Before the view: the controller detaches its rig from the same scene.
@@ -234,8 +309,120 @@ export class ClockRenderer {
     this.camera.updateProjectionMatrix();
   }
 
+  /**
+   * The context is gone. three.js has already called `preventDefault` (which is
+   * what allows a restore at all) and stopped touching GL; this stops the loop
+   * so nothing spins on a dead context, and tells the app to show text instead.
+   */
+  private readonly onWebGLContextLost = (): void => {
+    if (this.disposed || this.contextLost) return;
+    this.contextLost = true;
+    this.pause();
+    console.warn('[renderer] WebGL context lost — falling back to the text countdown.');
+    this.onContextLostCallback?.();
+  };
+
+  /**
+   * The context is back. three.js re-initialises its own GL state and re-uploads
+   * geometry and materials on the next render, so the scene graph, the active
+   * scene and the viewer's camera all survive untouched. What has to be redone
+   * here is the part that is a function of *time*: the mechanism is seeked to
+   * the current instant before the first frame, so the rings come back reading
+   * the right digits rather than the ones frozen at the moment of the loss.
+   */
+  private readonly onWebGLContextRestored = (): void => {
+    if (this.disposed || !this.contextLost) return;
+    this.contextLost = false;
+    this.resize();
+    this.syncMechanism(this.timeSource.now());
+    if (!document.hidden) this.resume();
+    this.onContextRestoredCallback?.();
+  };
+
+  /**
+   * Keyboard orbiting: the alternative to dragging the canvas.
+   *
+   * Arrow keys orbit, `+`/`-` (and PageUp/PageDown) dolly, `Home` or `R` puts
+   * the camera back where the scene asked for it — an escape hatch, since a
+   * keyboard user cannot "throw" the view back into place. Every step is
+   * discrete and applied immediately, so this is unaffected by reduced motion:
+   * there is no easing to disable.
+   */
+  private readonly onCanvasKeyDown = (event: KeyboardEvent): void => {
+    if (event.altKey || event.ctrlKey || event.metaKey) return;
+
+    switch (event.key) {
+      case 'ArrowLeft':
+        this.orbitBy(-KEY_ORBIT_STEP, 0);
+        break;
+      case 'ArrowRight':
+        this.orbitBy(KEY_ORBIT_STEP, 0);
+        break;
+      case 'ArrowUp':
+        this.orbitBy(0, -KEY_ORBIT_STEP);
+        break;
+      case 'ArrowDown':
+        this.orbitBy(0, KEY_ORBIT_STEP);
+        break;
+      case '+':
+      case '=':
+      case 'PageUp':
+        this.dollyBy(1 / KEY_DOLLY_STEP);
+        break;
+      case '-':
+      case '_':
+      case 'PageDown':
+        this.dollyBy(KEY_DOLLY_STEP);
+        break;
+      case 'Home':
+      case 'r':
+      case 'R':
+        if (this.definition) this.applyCameraConfig(this.definition);
+        break;
+      default:
+        return;
+    }
+
+    // Only reached for a key we acted on, so page scrolling and browser
+    // shortcuts are left alone otherwise.
+    event.preventDefault();
+  };
+
+  /** Moves the camera on its sphere about the orbit target. */
+  private orbitBy(deltaTheta: number, deltaPhi: number): void {
+    this.orbitOffset.copy(this.camera.position).sub(this.controls.target);
+    this.orbitSpherical.setFromVector3(this.orbitOffset);
+    this.orbitSpherical.theta += deltaTheta;
+    // The same limits the pointer path obeys, so neither route can put the
+    // camera somewhere the scene says it may not go.
+    this.orbitSpherical.phi = clamp(
+      this.orbitSpherical.phi + deltaPhi,
+      this.controls.minPolarAngle,
+      this.controls.maxPolarAngle,
+    );
+    this.applyOrbit();
+  }
+
+  private dollyBy(factor: number): void {
+    this.orbitOffset.copy(this.camera.position).sub(this.controls.target);
+    this.orbitSpherical.setFromVector3(this.orbitOffset);
+    this.orbitSpherical.radius = clamp(
+      this.orbitSpherical.radius * factor,
+      this.controls.minDistance,
+      this.controls.maxDistance,
+    );
+    this.applyOrbit();
+  }
+
+  private applyOrbit(): void {
+    this.orbitOffset.setFromSpherical(this.orbitSpherical);
+    this.camera.position.copy(this.controls.target).add(this.orbitOffset);
+    this.camera.lookAt(this.controls.target);
+    this.controls.update();
+  }
+
   private resume(): void {
-    if (this.disposed || this.frameHandle !== null) return;
+    if (this.disposed || this.contextLost || this.frameHandle !== null) return;
     this.lastFrameMs = performance.now();
     this.frameHandle = requestAnimationFrame(this.frame);
   }
@@ -298,4 +485,8 @@ export class ClockRenderer {
     view.update(nowMs);
     return remaining;
   }
+}
+
+function clamp(value: number, min: number, max: number): number {
+  return Math.min(Math.max(value, min), max);
 }

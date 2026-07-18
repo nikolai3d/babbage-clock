@@ -65,6 +65,25 @@
   display: none !important;
 }
 
+/*
+ * Available to assistive technology, absent from the picture.
+ *
+ * Not `display: none` and not `visibility: hidden` — both remove the element
+ * from the accessibility tree, which is the opposite of what this is for. The
+ * 1px clipped box is the pattern that survives every screen reader.
+ */
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip-path: inset(50%);
+  border: 0;
+  white-space: nowrap;
+}
+
 html,
 body {
   height: 100%;
@@ -96,6 +115,9 @@ body {
 .hud {
   position: fixed;
   inset: 0;
+  /* Above the fallback view, which fills the viewport: the settings drawer has
+     to stay reachable when there is no WebGL to configure. */
+  z-index: 2;
   display: grid;
   grid-template:
     'status  toggle' auto
@@ -165,6 +187,14 @@ body {
 
 /* --------------------------------------------------------------- status -- */
 
+/*
+ * The chrome floats over an image-based backdrop that scenes and lighting moods
+ * are free to change, so its contrast cannot be reasoned about against the dark
+ * canvas it happens to sit on today. Every panel background here is therefore
+ * opaque enough that the worst case — a blown-out white backdrop showing
+ * through — still clears WCAG AA for the text on it. `docs/accessibility.md`
+ * has the measurements.
+ */
 .status {
   display: flex;
   grid-area: status;
@@ -175,21 +205,30 @@ body {
   padding: 0.3rem 0.7rem;
   border: 1px solid var(--panel-border);
   border-radius: 999px;
-  background: rgb(23 17 13 / 78%);
+  background: rgb(23 17 13 / 94%);
   color: var(--fg-dim);
   font-size: 0.76rem;
   letter-spacing: 0.03em;
   backdrop-filter: blur(8px);
-  transition: opacity 200ms ease;
 }
 
+/*
+ * "Nothing to see here" is said with colour, not opacity. Fading the whole pill
+ * dropped its text to roughly 1.5:1 against a bright backdrop; the dimmer
+ * parchment still measures 5:1 on the same background.
+ */
 .status--quiet {
-  opacity: 0.6;
+  color: var(--parchment-500);
 }
 
 .status:hover,
 .status:focus-within {
-  opacity: 1;
+  color: var(--fg-dim);
+}
+
+/* Wraps rather than pushing the pill past the viewport at 200% zoom. */
+.status__text {
+  overflow-wrap: anywhere;
 }
 
 .status__dot {
@@ -226,7 +265,11 @@ body {
   padding: 0.45rem 0.9rem;
   border: 1px solid var(--panel-border);
   border-radius: 999px;
-  background: linear-gradient(180deg, rgb(216 178 106 / 22%), rgb(23 17 13 / 88%));
+  /* Brass tint over an opaque base rather than a translucent one: the tint
+     alone let a bright backdrop through and took the label to 1.2:1. */
+  background:
+    linear-gradient(180deg, rgb(216 178 106 / 22%), rgb(216 178 106 / 0%)),
+    linear-gradient(180deg, rgb(36 26 19 / 96%), rgb(23 17 13 / 97%));
   color: var(--brass-100);
   font-family: var(--font-display);
   font-size: 0.85rem;
@@ -241,7 +284,9 @@ body {
 
 .hud__settings-toggle:hover {
   border-color: var(--brass-300);
-  background: linear-gradient(180deg, rgb(216 178 106 / 34%), rgb(33 24 17 / 92%));
+  background:
+    linear-gradient(180deg, rgb(216 178 106 / 34%), rgb(216 178 106 / 0%)),
+    linear-gradient(180deg, rgb(36 26 19 / 96%), rgb(23 17 13 / 97%));
 }
 
 .hud__settings-toggle:active {
@@ -676,6 +721,58 @@ body {
   color: #f0d5a4;
 }
 
+/* ------------------------------------------------------------- fallback -- */
+
+/*
+ * The countdown when there is no picture to put it on — WebGL missing, or a
+ * context lost mid-session. It is the hero here, because it is all there is,
+ * and it is driven by the same store as the rings (`app/countdownTicker.ts`).
+ */
+.fallback {
+  position: fixed;
+  inset: 0;
+  /* Below the HUD (z-index 2) so the settings button and drawer stay usable. */
+  z-index: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+  align-items: center;
+  justify-content: center;
+  padding: clamp(1rem, 5vw, 3rem);
+  background: radial-gradient(circle at 50% 40%, #241a13, #0c0906 70%);
+  text-align: center;
+}
+
+.fallback__countdown {
+  margin: 0;
+  color: var(--brass-100);
+  font-family: var(--font-numeral);
+  font-size: clamp(2.4rem, 12vw, 5rem);
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+  line-height: 1.05;
+}
+
+.fallback__label {
+  margin: 0;
+  color: var(--fg-dim);
+  font-family: var(--font-display);
+  font-size: clamp(0.95rem, 2.5vw, 1.1rem);
+  font-style: italic;
+}
+
+.fallback__note {
+  max-width: 34rem;
+  margin: 0.8rem 0 0;
+  padding: 0.7rem 0.9rem;
+  border: 1px solid var(--panel-border);
+  border-radius: var(--radius-sm);
+  background: rgb(36 26 19 / 96%);
+  color: var(--parchment-300);
+  font-size: 0.86rem;
+  line-height: 1.5;
+}
+
 /* -------------------------------------------------------------- loading -- */
 
 .loader {
@@ -811,9 +908,26 @@ body {
 
 /* ------------------------------------------------------------- a11y/env -- */
 
+/*
+ * A two-tone focus ring: brass outline, dark halo behind it.
+ *
+ * A single light ring is invisible against a pale IBL backdrop, and a single
+ * dark one disappears against a dark scene — and the settings button and the
+ * canvas both sit directly on that changing backdrop. The halo is a box-shadow,
+ * which paints *under* the outline, so whichever way the backdrop goes one of
+ * the two rings has 3:1 against it.
+ */
 :where(a, button, input, select, textarea, [tabindex]):focus-visible {
   outline: 2px solid var(--brass-100);
   outline-offset: 2px;
+  box-shadow: 0 0 0 6px rgb(12 9 6 / 85%);
+}
+
+/* The canvas fills the viewport, so an offset ring would be off screen. */
+#scene-canvas:focus-visible {
+  outline: 3px solid var(--brass-100);
+  outline-offset: -3px;
+  box-shadow: inset 0 0 0 7px rgb(12 9 6 / 85%);
 }
 
 @media (width <= 40rem) {
@@ -852,6 +966,29 @@ body {
 
 @media (prefers-contrast: more) {
   .status--quiet {
-    opacity: 1;
+    color: var(--fg);
+  }
+
+  .field__hint,
+  .echo__origin,
+  .tzpicker__option-region {
+    color: var(--fg-dim);
+  }
+}
+
+/*
+ * 200% browser zoom halves the CSS viewport, which is what the narrow layout
+ * above is really for. Two things additionally have to give at that size, and
+ * both are about the drawer: it may not be taller than the viewport it scrolls
+ * inside, and the fixed HUD row above it must be allowed to wrap rather than
+ * push its own contents off screen.
+ */
+@media (height <= 30rem) {
+  .panel {
+    max-height: calc(100dvh - 1rem);
+  }
+
+  .hud {
+    gap: 0.5rem;
   }
 }

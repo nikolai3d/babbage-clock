@@ -172,8 +172,20 @@ export interface RendererState {
   readonly width: number;
   readonly height: number;
   readonly pixelRatio: number;
-  /** Mirrors `?nomotion`: false when drift, rotation and easing are disabled. */
+  /**
+   * The *effective* motion setting: false when drift, rotation and easing are
+   * off, whether that came from `?nomotion` or from the viewer's
+   * `prefers-reduced-motion`. `hooks().motion` reports only the parameter, so
+   * comparing the two is how a spec tells the media query apart from the URL.
+   */
   readonly motion: boolean;
+  /** True while the WebGL context is gone and the text fallback is showing. */
+  readonly contextLost: boolean;
+  /**
+   * Camera position in world space. Surfaced so a spec can prove the keyboard
+   * orbit alternative actually moves the view, rather than photographing it.
+   */
+  readonly cameraPosition: readonly [number, number, number];
   readonly sceneId: string | null;
   /**
    * The lighting mood's state: `loading` while its HDR environment map is on

@@ -21,10 +21,24 @@ import type { RendererState } from '../../src/app/testHooks.js';
 export const SELECTOR = {
   canvas: '#scene-canvas',
   countdown: '.readout__countdown',
+  readout: '#readout',
   loadingScreen: '#loading-screen',
   settingsToggle: '#settings-toggle',
   settingsPanel: '#settings-panel',
+  settingsClose: '#settings-close',
   sceneSelect: '#scene-select',
+  moodSelect: '#mood-select',
+  targetInput: '#target-input',
+  targetApply: '#target-apply',
+  tzInput: '#tz-input',
+  tzListbox: '#tz-input-listbox',
+  shareButton: '#share-button',
+  toastRegion: '.toast-region',
+  /** The throttled live region that mirrors the countdown as text. */
+  announcement: '#countdown-announcement',
+  fallbackView: '#fallback-view',
+  fallbackCountdown: '#fallback-countdown',
+  fallbackNote: '#fallback-note',
 } as const;
 
 /** A time far enough from any real "now" that a stale pin is obvious. */
@@ -244,6 +258,48 @@ export async function openSettings(page: Page): Promise<void> {
 
   await page.locator(SELECTOR.settingsToggle).click();
   await expect(panel).toBeVisible();
+}
+
+/**
+ * Makes WebGL context creation fail, for the whole page, before any script runs.
+ *
+ * This is the real failure being reproduced, not an approximation of it:
+ * `WebGLRenderer` calls `canvas.getContext('webgl2')`, gets null, and throws —
+ * exactly what happens on a machine with no GL stack, with hardware
+ * acceleration disabled, or under a policy that blocks WebGL. Must be installed
+ * before `goto`.
+ */
+export async function disableWebGL(page: Page): Promise<void> {
+  await page.addInitScript(() => {
+    const proto = HTMLCanvasElement.prototype as unknown as {
+      getContext: (this: HTMLCanvasElement, type: string, ...rest: unknown[]) => unknown;
+    };
+    const original = proto.getContext;
+    proto.getContext = function patched(type, ...rest) {
+      if (type.includes('webgl')) return null;
+      return original.call(this, type, ...rest);
+    };
+  });
+}
+
+/** The id of the focused element, or '' — the keyboard specs run on this. */
+export async function focusedId(page: Page): Promise<string> {
+  return page.evaluate(() => document.activeElement?.id ?? '');
+}
+
+/**
+ * Tabs forward until `id` has focus, and fails if it is not reachable.
+ *
+ * Asserting reachability rather than a fixed tab index: the point is that a
+ * keyboard user *can get there*, not that it is the fourth stop. The step count
+ * still catches a control that has fallen out of the tab order entirely.
+ */
+export async function tabTo(page: Page, id: string, maxSteps = 30): Promise<void> {
+  for (let step = 0; step < maxSteps; step += 1) {
+    if ((await focusedId(page)) === id) return;
+    await page.keyboard.press('Tab');
+  }
+  expect(await focusedId(page), `#${id} was not reachable with Tab`).toBe(id);
 }
 
 /** Waits until `count` further frames have been drawn since now. */
