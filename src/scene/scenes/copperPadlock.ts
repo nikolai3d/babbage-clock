@@ -1,14 +1,13 @@
-import { placeholder } from '../materialHelpers.js';
+import { pbr } from '../../materials/looks.js';
 import type { SceneDefinition } from '../types.js';
 
 export const COPPER_PADLOCK_SCENE_ID = 'copper-padlock';
 
 /**
  * The reference preset: a copper cryptex-style padlock with seven coaxial digit
- * rings — `HHH:MM:SS` exactly. Substance materials arrive in a later bead;
- * everything else here is real, and all of it is data: ring count, layout, the
- * gear train, materials, lighting and camera framing come from this definition
- * and never from the render code.
+ * rings — `HHH:MM:SS` exactly. All of it is data: ring count, layout, the gear
+ * train, materials, lighting and camera framing come from this definition and
+ * never from the render code.
  *
  * **The train.** The four wheels form a chain — a meshes b meshes c meshes d —
  * laid out to fill the case behind the ring stack, as in the reference image.
@@ -98,17 +97,29 @@ export const copperPadlockScene: SceneDefinition = {
     },
   ],
 
+  // A look, expressed as data: every slot names a material folder under
+  // `public/assets/materials/`, and the renderer loads it. This is the
+  // validation that the slot abstraction holds — swapping the whole clock from
+  // untextured placeholders to authored PBR sets touched no render code and no
+  // geometry, only these ten lines.
+  //
+  // `numerals` is a folder with no textures at all, only manifest scalars; the
+  // engraved digits want a flat lacquer, and proving that path renders without
+  // a single request is worth as much as proving the textured one does.
+  //
+  // The per-slot `roughness` and `metalness` here are multipliers over the
+  // authored maps, not replacements — see `PbrMaterialBinding`.
   materials: {
-    housing: placeholder(0x8c5a2b, 0.9, 0.35),
-    bezel: placeholder(0xb87333, 0.95, 0.22),
-    ring: placeholder(0xc98a4b, 0.85, 0.3),
-    numerals: placeholder(0x2b1d12, 0.1, 0.7),
-    gearA: placeholder(0xa9743f, 0.9, 0.32),
-    gearB: placeholder(0x96652f, 0.9, 0.34),
-    gearC: placeholder(0xbb8347, 0.9, 0.3),
-    gearD: placeholder(0x7d5426, 0.9, 0.38),
-    arbor: placeholder(0x4a4a4a, 0.95, 0.25),
-    frame: placeholder(0x5c3a1a, 0.8, 0.45),
+    housing: pbr('copper-plate', { roughness: 1.1 }),
+    bezel: pbr('copper-plate', { tiling: [1.2, 1.2], roughness: 0.8 }),
+    ring: pbr('copper-plate', { tiling: [0.9, 0.9] }),
+    numerals: pbr('dark-enamel'),
+    gearA: pbr('copper-plate', { tiling: [1.2, 1.2] }),
+    gearB: pbr('blued-steel'),
+    gearC: pbr('copper-plate', { tiling: [1.4, 1.4], roughness: 0.9 }),
+    gearD: pbr('blued-steel', { roughness: 1.2 }),
+    arbor: pbr('blued-steel', { tiling: [2, 2] }),
+    frame: pbr('copper-plate', { tiling: [0.7, 0.7], roughness: 1.25 }),
   },
 
   lighting: {

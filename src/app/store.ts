@@ -17,6 +17,12 @@ export interface AppState {
    * preset the active scene declares. See `scene/environment.ts`.
    */
   readonly mood: EnvironmentPresetId | null;
+  /**
+   * Material look chosen in the settings panel, or null for the materials the
+   * active scene declares. A look is a slot -> material-id mapping; see
+   * `src/materials/looks.ts`.
+   */
+  readonly materialLook: string | null;
   /** Includes both-zone echoes and DST notes for the UI to surface. */
   readonly target: ResolvedTarget;
   readonly countdown: CountdownParts;

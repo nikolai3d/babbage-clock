@@ -1,0 +1,28 @@
+{
+  "name": "Brushed blued steel",
+  "description": "Synthetic stand-in for a Sampler export using separate roughness/metallic/occlusion maps.",
+  "maps": {
+    "baseColor": "basecolor.png",
+    "normal": "normal.png",
+    "roughness": "roughness.png",
+    "metallic": "metallic.png",
+    "ambientOcclusion": "ao.png"
+  },
+  "normal": {
+    "convention": "opengl",
+    "scale": 0.7
+  },
+  "tiling": [
+    0.8,
+    0.8
+  ],
+  "scalars": {
+    "baseColor": "#3d4756",
+    "metalness": 1,
+    "roughness": 0.3
+  },
+  "physical": {
+    "anisotropy": 0.45,
+    "anisotropyRotation": 1.5708
+  }
+}

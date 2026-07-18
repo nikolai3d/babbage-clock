@@ -7,7 +7,13 @@ import {
   readTestHooks,
   resolveTimeSource,
 } from './testHooks.js';
-import type { ClockTestApi, RendererState, StoreProbe, TestHooks } from './testHooks.js';
+import type {
+  ClockTestApi,
+  MaterialState,
+  RendererState,
+  StoreProbe,
+  TestHooks,
+} from './testHooks.js';
 import type { TimeSource } from '../time/target.js';
 
 const EPOCH = Date.UTC(2026, 0, 1, 0, 0, 0);
@@ -121,6 +127,8 @@ describe('installTestApi', () => {
     running: true,
     drawCalls: 17,
     triangles: 1234,
+    textures: 9,
+    geometries: 12,
     width: 800,
     height: 600,
     pixelRatio: 1,
@@ -131,9 +139,22 @@ describe('installTestApi', () => {
     lighting: 'ready',
   };
 
+  const materialState: MaterialState = {
+    look: null,
+    slots: { housing: 'pbr:copper-plate', numerals: 'placeholder' },
+    textures: 3,
+    sources: 3,
+    pending: 0,
+    ktx2: false,
+  };
+
   function deps(): {
     store: StoreProbe;
-    renderer: { getDigits: () => number[]; getRenderState: () => RendererState };
+    renderer: {
+      getDigits: () => number[];
+      getRenderState: () => RendererState;
+      getMaterialState: () => MaterialState;
+    };
     timeSource: TimeSource;
   } {
     return {
@@ -154,7 +175,11 @@ describe('installTestApi', () => {
           fps: 60,
         }),
       },
-      renderer: { getDigits: () => [1, 2, 3], getRenderState: () => rendererState },
+      renderer: {
+        getDigits: () => [1, 2, 3],
+        getRenderState: () => rendererState,
+        getMaterialState: () => materialState,
+      },
       timeSource: { now: () => EPOCH },
     };
   }
@@ -183,6 +208,7 @@ describe('installTestApi', () => {
     expect(api?.sceneId()).toBe('copper-padlock');
     expect(api?.renderer().webgl2).toBe(true);
     expect(api?.renderer().drawCalls).toBe(17);
+    expect(api?.materials().slots['housing']).toBe('pbr:copper-plate');
     expect(api?.countdown().seconds).toBe(1);
     expect(api?.target().label).toBe('New Year 2027');
     expect(api?.hooks()).toEqual(hooks);

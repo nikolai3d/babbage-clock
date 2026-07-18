@@ -22,6 +22,9 @@ export default tseslint.config(
       'test-results/**',
       'playwright-report/**',
       'artifacts/**',
+      // Served verbatim: sample material folders and the KTX2 transcoder
+      // copied out of `three` at build time. Neither is our source.
+      'public/**',
     ],
   },
   js.configs.recommended,
@@ -82,9 +85,10 @@ export default tseslint.config(
     },
   },
   {
-    // Build-time Node scripts (`npm run ci` and the deploy workflow run these).
-    // Plain ESM JavaScript, outside every tsconfig project, so the type-aware
-    // rules have nothing to work from — same situation as eslint.config.js.
+    // Build-time Node scripts (`npm run ci` and the deploy workflow run these),
+    // plus the material-asset tooling. Plain ESM JavaScript, outside every
+    // tsconfig project, so the type-aware rules have nothing to work from —
+    // same situation as eslint.config.js.
     files: ['scripts/**/*.mjs'],
     extends: [tseslint.configs.disableTypeChecked],
     languageOptions: {

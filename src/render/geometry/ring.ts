@@ -18,6 +18,7 @@ import {
   type NumeralLayoutOptions,
 } from '../../geometry/ringLayout.js';
 import { deformPositions, extrudeOutlines, mergeAndDispose } from './extrude.js';
+import { SURFACE_UNIT_METRES, latheUvToSurface } from './uv.js';
 import type { Axis, RingConfig } from '../../scene/types.js';
 
 export interface RingBodyOptions {
@@ -76,6 +77,10 @@ export function createRingBodyGeometry(
   ];
 
   const geometry = new THREE.LatheGeometry(profile, Math.max(8, radialSegments));
+  // `LatheGeometry` spans 0…1 around the revolution and 0…1 along the profile.
+  // Restated in surface units so a tiled material repeats at the documented
+  // rate rather than once per drum, however big the drum is.
+  latheUvToSurface(geometry, profile);
   alignToAxis(geometry, axis);
   geometry.name = 'ring:body';
   return geometry;
@@ -131,7 +136,18 @@ export function createRingNumeralsGeometry(
     // Flat glyph -> cylinder: glyph width runs along the ring axis, glyph
     // height runs around the circumference (so digits scroll past the reading
     // line), glyph depth becomes radial relief.
-    deformPositions(geometry, (point) => {
+    //
+    // The UVs are restated in the same breath, and that is not tidiness. The
+    // extruder writes UVs for the *flat* profile — the glyph as it was before
+    // it was bent — so a texture applied to the `numerals` slot would be
+    // stretched around the curve and sheared across the extrusion walls. What
+    // is wanted is the cylindrical frame the drum itself lives in: `u` is arc
+    // length around the drum, `v` is distance along the ring axis. Because
+    // `theta` is known analytically here, that is exact rather than fitted, and
+    // it is continuous with `createRingBodyGeometry` — the numerals and the
+    // drum under them share one unbroken cylindrical parameterisation, so a
+    // material tiled across both lines up.
+    deformPositions(geometry, (point, uv) => {
       const along = point.x;
       const height = point.y;
       const depth = point.z;
@@ -141,6 +157,10 @@ export function createRingNumeralsGeometry(
       point[axis] = along;
       point[uAxis] = r * Math.cos(theta);
       point[vAxis] = r * Math.sin(theta);
+      // Arc length at the drum surface, not at `r`: the relief is a fraction of
+      // a percent of the radius, and measuring at the surface keeps the glyph
+      // faces and their side walls on one consistent density.
+      uv.set((theta * radius) / SURFACE_UNIT_METRES, along / SURFACE_UNIT_METRES);
     });
 
     parts.push(geometry);

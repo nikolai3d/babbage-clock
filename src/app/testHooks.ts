@@ -169,6 +169,16 @@ export interface RendererState {
   /** Draw calls in the last frame. Zero means an empty scene was presented. */
   readonly drawCalls: number;
   readonly triangles: number;
+  /**
+   * Live GPU textures, read from `renderer.info.memory`.
+   *
+   * The leak canary for the material pipeline: swapping looks back and forth
+   * must return this to where it started, or something is holding a reference
+   * it should have given back.
+   */
+  readonly textures: number;
+  /** Live GPU geometries, likewise. */
+  readonly geometries: number;
   readonly width: number;
   readonly height: number;
   readonly pixelRatio: number;
@@ -200,6 +210,22 @@ export interface RendererState {
   readonly lighting: 'none' | 'loading' | 'ready' | 'error';
 }
 
+/** What the material pipeline is currently doing. */
+export interface MaterialState {
+  /** Active look id, or null when the scene's own materials are in force. */
+  readonly look: string | null;
+  /** Slot -> `pbr:<material-id>` or `placeholder`. */
+  readonly slots: Record<string, string>;
+  /** Texture instances the registry has handed out and not had back. */
+  readonly textures: number;
+  /** Distinct image files decoded and cached. */
+  readonly sources: number;
+  /** Loads still in flight. */
+  readonly pending: number;
+  /** True when a KTX2 transcoder was found and compressed maps are preferred. */
+  readonly ktx2: boolean;
+}
+
 /**
  * The slice of the renderer the test API needs.
  *
@@ -209,6 +235,7 @@ export interface RendererState {
 export interface RendererProbe {
   getDigits(): readonly number[];
   getRenderState(): RendererState;
+  getMaterialState(): MaterialState;
 }
 
 /** The slice of the store the test API needs. */
@@ -237,6 +264,8 @@ export interface ClockTestApi {
   countdown(): CountdownParts;
   target(): CountdownTarget;
   renderer(): RendererState;
+  /** Material bindings, look and texture accounting. */
+  materials(): MaterialState;
   /** The hooks in force, echoed back for diagnostics. */
   hooks(): TestHooks;
   /** The effective clock reading, via the same source the renderer uses. */
@@ -277,6 +306,7 @@ export function installTestApi(
     countdown: () => store.get().countdown,
     target: () => store.get().target,
     renderer: () => renderer.getRenderState(),
+    materials: () => renderer.getMaterialState(),
     hooks: () => hooks,
     now: () => timeSource.now(),
   };

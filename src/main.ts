@@ -10,6 +10,7 @@ import {
   parseEnvironmentPreset,
   withEnvironmentPreset,
 } from './scene/environment.js';
+import { MATERIAL_LOOKS } from './materials/looks.js';
 import { sceneRegistry } from './scene/scenes/index.js';
 import { computeCountdown, computeRemaining } from './time/countdown.js';
 import {
@@ -88,6 +89,7 @@ function bootstrap(): void {
   const store = new Store<AppState>({
     sceneId,
     mood: params.mood,
+    materialLook: null,
     target,
     countdown: computeCountdown(target.atMs, nowMs),
     remaining: computeRemaining(target.atMs, nowMs),
@@ -103,6 +105,7 @@ function bootstrap(): void {
   const loading = new LoadingTracker();
   const sceneTask = loading.task('scene', { label: 'Assembling the mechanism', weight: 2 });
   const clockTask = loading.task('time-sync', { label: 'Checking world time', weight: 1 });
+  const materialTask = loading.task('materials', { label: 'Loading materials', weight: 3 });
 
   const unsubscribeTime = getTrueTimeClock().subscribe((timeStatus) => {
     store.set({ timeStatus });
@@ -200,6 +203,17 @@ function bootstrap(): void {
 
   applyScene();
 
+  // Real progress, not a guess: the loader waits for the first scene's textures
+  // so the clock is never photographed — or first seen — half-skinned. A folder
+  // that fails to load still settles the task; the material falls back to a
+  // neutral surface rather than holding the loading screen up for ever.
+  void renderer
+    .materialsReady()
+    .catch(() => undefined)
+    .finally(() => {
+      materialTask.done();
+    });
+
   const controls: readonly SettingControl[] = [
     defineSelect({
       id: 'scene-select',
@@ -216,6 +230,26 @@ function bootstrap(): void {
         store.set({ sceneId: definition.id });
         applyScene();
         writeAppParams(shareState());
+      },
+    }),
+    defineSelect({
+      id: 'look-select',
+      label: 'Material look',
+      hint: 'Rebinds every material slot at runtime — no reload, no scene rebuild.',
+      options: [
+        { value: '', label: 'Scene default' },
+        ...MATERIAL_LOOKS.map((look) => ({
+          value: look.id,
+          label: look.name,
+          hint: look.description,
+        })),
+      ],
+      read: (state) => state.materialLook ?? '',
+      apply: (value) => {
+        const materialLook = value === '' ? null : value;
+        if (materialLook === store.get().materialLook) return;
+        store.set({ materialLook });
+        renderer.setMaterialLook(materialLook);
       },
     }),
     defineSelect({

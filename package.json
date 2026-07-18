@@ -6,7 +6,9 @@
   "description": "A web-based 3D HTML clock / countdown rendered with three.js.",
   "scripts": {
     "dev": "vite",
+    "predev": "node scripts/sync-basis-transcoder.mjs",
     "build": "vite build",
+    "prebuild": "node scripts/sync-basis-transcoder.mjs",
     "preview": "vite preview",
     "lint": "eslint . && prettier --check .",
     "lint:fix": "eslint . --fix && prettier --write .",
@@ -23,6 +25,8 @@
     "capture:demo": "playwright test --config playwright.capture.config.ts --reporter=line",
     "check:base": "node scripts/check-base-path.mjs",
     "test:e2e:live": "playwright test --config playwright.smoke.config.ts --reporter=line",
+    "materials:generate": "node scripts/generate-material-textures.mjs",
+    "materials:compress": "node scripts/compress-material.mjs",
     "ci": "npm run typecheck && npm run lint && npm run test && npm run build && npm run check:base"
   },
   "dependencies": {

@@ -1,0 +1,16 @@
+{
+  "name": "UV grid",
+  "description": "Diagnostic checker for inspecting UV layout and texel density.",
+  "maps": {
+    "baseColor": "basecolor.png"
+  },
+  "tiling": [
+    0.5,
+    0.5
+  ],
+  "scalars": {
+    "baseColor": "#ffffff",
+    "metalness": 0,
+    "roughness": 0.55
+  }
+}

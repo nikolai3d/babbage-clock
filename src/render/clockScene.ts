@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { MaterialLibrary } from './materials.js';
+import { sharedMaterialRegistry } from './materialRegistry.js';
 import { SceneLighting } from './lighting.js';
 import { createGearGeometry, defaultSpokeStyleFor } from './geometry/gear.js';
 import { createHousingParts } from './geometry/housing.js';
@@ -15,8 +16,17 @@ import {
   ringPlaneAxes,
   ringStackSpan,
 } from '../geometry/ringLayout.js';
+import { boxProjectUv } from './geometry/uv.js';
 import { Mechanism, type MechanismEvent, type MechanismInput } from '../mechanism/index.js';
-import type { Axis, GearSpec, RingConfig, SceneDefinition } from '../scene/types.js';
+import type { MaterialRegistry } from './materialRegistry.js';
+import type {
+  Axis,
+  GearSpec,
+  MaterialBinding,
+  MaterialSlot,
+  RingConfig,
+  SceneDefinition,
+} from '../scene/types.js';
 
 const TWO_PI = Math.PI * 2;
 /** Extra rotation the train takes from each tick, in radians. */
@@ -54,6 +64,12 @@ export interface ClockSceneViewOptions {
    * `?nomotion`; see `app/testHooks.ts`.
    */
   readonly motion?: boolean;
+  /**
+   * Where PBR material folders are loaded and cached. Shared across scenes on
+   * purpose: switching away and back must not re-download anything. Defaults to
+   * the process-wide registry, which is what the headless unit tests use.
+   */
+  readonly materials?: MaterialRegistry;
 }
 
 /**
@@ -114,7 +130,10 @@ export class ClockSceneView {
     this.definition = definition;
     this.root.name = `scene:${definition.id}`;
 
-    this.materials = new MaterialLibrary(definition.materials);
+    this.materials = new MaterialLibrary(
+      definition.materials,
+      options.materials ?? sharedMaterialRegistry(),
+    );
     this.lighting = new SceneLighting(scene, definition.lighting);
     this.caseMetrics = measureCase(definition);
     this.mechanism = new Mechanism({
@@ -134,6 +153,28 @@ export class ClockSceneView {
 
   get ringCount(): number {
     return this.definition.rings.count;
+  }
+
+  /**
+   * Rebinds material slots at runtime.
+   *
+   * Nothing in the scene graph is touched: meshes hold the same material
+   * instances they were built with, and `MaterialLibrary` rewrites those in
+   * place once the new textures are in hand. No reload, no rebuild, no flash
+   * through an untextured frame.
+   */
+  setMaterials(bindings: Partial<Record<MaterialSlot, MaterialBinding>>): void {
+    this.materials.apply(bindings);
+  }
+
+  /** Resolves once every slot has finished loading whatever it was last given. */
+  materialsReady(): Promise<void> {
+    return this.materials.ready();
+  }
+
+  /** The binding currently in force for a slot. Read by the test API. */
+  bindingFor(slot: MaterialSlot): MaterialBinding {
+    return this.materials.bindingFor(slot);
   }
 
   /**
@@ -251,14 +292,19 @@ export class ClockSceneView {
     const { radius, thickness, axis, radialSegments } = config;
     const span = ringStackSpan(config);
 
+    // Raw three.js primitives arrive with their own 0…1 parameterisation, which
+    // would tile a material at a different rate on every one of them. Projected
+    // into the shared surface units documented in `./geometry/uv.ts`.
     const arbor = this.track(
-      new THREE.CylinderGeometry(radius * 0.2, radius * 0.2, span * 1.3, 24),
+      boxProjectUv(new THREE.CylinderGeometry(radius * 0.2, radius * 0.2, span * 1.3, 24)),
     );
     alignToAxis(arbor, axis);
     this.root.add(new THREE.Mesh(arbor, this.materials.get('arbor')));
 
     const boss = this.track(
-      new THREE.CylinderGeometry(radius * 0.34, radius * 0.28, thickness * 0.6, radialSegments),
+      boxProjectUv(
+        new THREE.CylinderGeometry(radius * 0.34, radius * 0.28, thickness * 0.6, radialSegments),
+      ),
     );
     alignToAxis(boss, axis);
 
@@ -416,11 +462,13 @@ export class ClockSceneView {
     // The arbor pin sits on the static group, not the spinner: a real one does
     // not turn with the wheel.
     const pin = this.track(
-      new THREE.CylinderGeometry(
-        spec.radius * 0.075,
-        spec.radius * 0.075,
-        spec.thickness * 2.4,
-        12,
+      boxProjectUv(
+        new THREE.CylinderGeometry(
+          spec.radius * 0.075,
+          spec.radius * 0.075,
+          spec.thickness * 2.4,
+          12,
+        ),
       ),
     );
     group.add(new THREE.Mesh(pin, this.materials.get('arbor')));

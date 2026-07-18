@@ -13,6 +13,7 @@
 
 import * as THREE from 'three';
 import { createGearGeometry } from './gear.js';
+import { boxProjectUv } from './uv.js';
 import { mergeAndDispose } from './extrude.js';
 import type { MaterialSlot } from '../../scene/types.js';
 
@@ -113,6 +114,7 @@ function balanceWheel(radius: number, thickness: number, spokes: number): THREE.
   parts.push(staff);
 
   const merged = mergeAndDispose(parts);
+  boxProjectUv(merged);
   merged.name = 'escapement:balance';
   return merged;
 }
@@ -151,6 +153,7 @@ function balanceCock(radius: number, thickness: number, reach: number): THREE.Bu
   foot.translate(length - radius * 0.2, thickness * 0.55, 0);
 
   const merged = mergeAndDispose([plate, boss, foot]);
+  boxProjectUv(merged);
   merged.name = 'escapement:cock';
   return merged;
 }
@@ -179,6 +182,7 @@ export function createDetentLeverGeometry(length: number, width: number): THREE.
   nose.translate(0, -length - armThickness * 0.5, 0);
 
   const merged = mergeAndDispose([pivot, arm, nose]);
+  boxProjectUv(merged);
   merged.name = 'escapement:detent';
   return merged;
 }

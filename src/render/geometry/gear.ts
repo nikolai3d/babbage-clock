@@ -13,6 +13,7 @@ import {
   type GearSpokeStyle,
 } from '../../geometry/gearProfile.js';
 import { extrudeOutlines } from './extrude.js';
+import { boxProjectUv } from './uv.js';
 
 export interface GearGeometryParams extends GearBodyParams {
   /** Face width in metres, measured along the rotation axis. */
@@ -46,6 +47,11 @@ export function createGearGeometry(params: GearGeometryParams): THREE.BufferGeom
   });
 
   geometry.rotateX(-Math.PI / 2);
+  // `ExtrudeGeometry` writes cap UVs in metres of profile space but parameterises
+  // the tooth flanks quite differently, so the two halves of a wheel would tile
+  // at different rates. Projected instead, which puts faces and flanks on the
+  // one convention documented in `./uv.ts`.
+  boxProjectUv(geometry);
   geometry.computeBoundingSphere();
   geometry.name = `gear:${params.teeth}:${params.spokeStyle ?? 'solid'}`;
   return geometry;

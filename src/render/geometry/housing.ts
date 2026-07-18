@@ -14,6 +14,7 @@
 
 import * as THREE from 'three';
 import { mergeAndDispose } from './extrude.js';
+import { boxProjectUv, latheUvToSurface } from './uv.js';
 import type { MaterialSlot } from '../../scene/types.js';
 
 export interface HousingParams {
@@ -141,6 +142,7 @@ function caseShell(
     new THREE.Vector2(0, back),
   ];
   const geometry = new THREE.LatheGeometry(profile, segments);
+  latheUvToSurface(geometry, profile);
   geometry.rotateX(Math.PI / 2);
   geometry.name = 'housing:case';
   return geometry;
@@ -162,6 +164,7 @@ function bezelRing(
     new THREE.Vector2(innerRadius, halfDepth - lip),
   ];
   const geometry = new THREE.LatheGeometry(profile, segments);
+  latheUvToSurface(geometry, profile);
   geometry.rotateX(Math.PI / 2);
   geometry.name = 'housing:bezel';
   return geometry;
@@ -174,6 +177,7 @@ function screwStud(radius: number, height: number): THREE.BufferGeometry {
   const slot = new THREE.BoxGeometry(radius * 1.9, radius * 0.34, height * 0.4);
   slot.translate(0, 0, height * 0.42);
   const merged = mergeAndDispose([head, slot]);
+  boxProjectUv(merged);
   merged.name = 'housing:stud';
   return merged;
 }
@@ -214,6 +218,7 @@ function lid(
     new THREE.Vector2(0, 0),
   ];
   const geometry = new THREE.LatheGeometry(profile, segments);
+  latheUvToSurface(geometry, profile);
   geometry.rotateX(-Math.PI / 2);
 
   // Hinge at the case rim on -X: move the lid so its edge sits on the hinge,
@@ -239,6 +244,7 @@ function hinge(radius: number, halfDepth: number, wall: number): THREE.BufferGeo
   }
   const merged = mergeAndDispose(parts);
   merged.translate(-radius, 0, halfDepth * 0.2);
+  boxProjectUv(merged);
   merged.name = 'housing:hinge';
   return merged;
 }
@@ -270,6 +276,7 @@ function shackle(caseRadius: number, wall: number, halfDepth: number): THREE.Buf
 
   const merged = mergeAndDispose(parts);
   merged.translate(0, 0, -halfDepth * 0.45);
+  boxProjectUv(merged);
   merged.name = 'housing:shackle';
   return merged;
 }
