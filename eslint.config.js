@@ -5,7 +5,17 @@ import prettier from 'eslint-config-prettier';
 
 export default tseslint.config(
   {
-    ignores: ['dist/**', 'node_modules/**', 'coverage/**', '.beads/**'],
+    ignores: [
+      'dist/**',
+      'node_modules/**',
+      'coverage/**',
+      '.beads/**',
+      // Playwright output: baselines, videos, traces and diffs.
+      'e2e/__screenshots__/**',
+      'test-results/**',
+      'playwright-report/**',
+      'artifacts/**',
+    ],
   },
   js.configs.recommended,
   ...tseslint.configs.recommendedTypeChecked,
@@ -46,6 +56,22 @@ export default tseslint.config(
       globals: {
         ...globals.node,
       },
+    },
+  },
+  {
+    // Playwright specs and configs run in Node, but the code inside
+    // `page.evaluate()` is browser code, so both global sets apply.
+    files: ['e2e/**/*.ts', 'capture/**/*.ts', 'playwright*.config.ts'],
+    languageOptions: {
+      globals: {
+        ...globals.node,
+        ...globals.browser,
+      },
+    },
+    rules: {
+      // Specs legitimately log which GL backend served the run and where the
+      // demo video landed; that output is the point of running them.
+      'no-console': 'off',
     },
   },
   {

@@ -15,6 +15,12 @@
     "typecheck": "tsc --noEmit",
     "test": "vitest --run",
     "test:watch": "vitest",
+    "test:e2e": "playwright test --reporter=line",
+    "test:e2e:ui": "playwright test --ui",
+    "test:e2e:update": "playwright test --reporter=line --update-snapshots",
+    "test:e2e:docker": "scripts/e2e-docker.sh",
+    "test:e2e:docker:update": "scripts/e2e-docker.sh --update-snapshots",
+    "capture:demo": "playwright test --config playwright.capture.config.ts --reporter=line",
     "ci": "npm run typecheck && npm run lint && npm run test && npm run build"
   },
   "dependencies": {
@@ -24,6 +30,7 @@
   "devDependencies": {
     "@eslint/js": "^9.39.1",
     "@playwright/test": "^1.61.1",
+    "@types/node": "^24.13.3",
     "@types/three": "^0.182.0",
     "eslint": "^9.39.1",
     "eslint-config-prettier": "^10.1.8",

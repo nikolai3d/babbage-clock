@@ -2,6 +2,13 @@ node_modules/
 dist/
 .DS_Store
 
+# Playwright run output. Baselines under e2e/__screenshots__/ ARE committed.
+test-results/
+playwright-report/
+blob-report/
+/artifacts/
+.playwright/
+
 # Beads / Dolt files (added by bd init)
 .dolt/
 *.db

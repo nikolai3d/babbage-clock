@@ -4,7 +4,10 @@
     "lib": ["ES2022", "DOM", "DOM.Iterable"],
     "module": "ESNext",
     "moduleResolution": "bundler",
-    "types": ["vite/client"],
+    // `node` is here for the Playwright configs and specs, which run outside
+    // the browser. Application code under `src/` must not use Node globals;
+    // ESLint enforces that by giving those files browser globals only.
+    "types": ["vite/client", "node"],
 
     "strict": true,
     "noUnusedLocals": true,
@@ -22,5 +25,12 @@
     "forceConsistentCasingInFileNames": true,
     "noEmit": true
   },
-  "include": ["src", "vite.config.ts"]
+  "include": [
+    "src",
+    "e2e",
+    "capture",
+    "vite.config.ts",
+    "playwright.config.ts",
+    "playwright.capture.config.ts"
+  ]
 }

@@ -4,6 +4,12 @@ coverage/
 package-lock.json
 docs/reference/
 
+# Playwright output and committed image baselines.
+test-results/
+playwright-report/
+artifacts/
+e2e/__screenshots__/
+
 # Tool-managed files: these are generated/maintained by bd and the agent
 # harnesses, and reformatting them produces spurious diffs.
 .beads/

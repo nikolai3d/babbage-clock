@@ -62,7 +62,11 @@ export class ClockSceneView {
 
   private readonly motion: boolean;
 
-  constructor(scene: THREE.Scene, definition: SceneDefinition, options: ClockSceneViewOptions = {}) {
+  constructor(
+    scene: THREE.Scene,
+    definition: SceneDefinition,
+    options: ClockSceneViewOptions = {},
+  ) {
     this.definition = definition;
     this.motion = options.motion ?? true;
     this.root.name = `scene:${definition.id}`;

@@ -31,3 +31,63 @@ jobs:
 
       - name: Run CI pipeline
         run: npm run ci
+
+  e2e:
+    name: e2e (Playwright, SwiftShader)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    # Running inside the official Playwright image is what makes the screenshot
+    # baselines reproducible: it pins the browser build, the system fonts and
+    # the graphics stack, so a baseline regenerated locally with
+    # `npm run test:e2e:docker:update` is comparable with what CI renders.
+    # The image also ships the browsers preinstalled, which is faster and more
+    # reliable than downloading and caching them on every run.
+    #
+    # Keep this tag in step with @playwright/test in package.json — the step
+    # below fails the build if they drift.
+    container:
+      image: mcr.microsoft.com/playwright:v1.61.1-noble
+      # Chromium exhausts the default 64 MB /dev/shm and crashes without this.
+      options: --ipc=host
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Verify the container matches package.json
+        # A drifted image is the most likely cause of unexplained screenshot
+        # churn, so fail fast with a clear message rather than diffing pixels.
+        run: |
+          expected="$(node -p "require('@playwright/test/package.json').version")"
+          actual="$(npx playwright --version | awk '{print $2}')"
+          echo "package.json: ${expected} | container: ${actual}"
+          if [ "${expected}" != "${actual}" ]; then
+            echo "::error::Playwright ${expected} in package.json but ${actual} in the container image."
+            echo "::error::Update the container image tag in .github/workflows/ci.yml to v${expected}-noble."
+            exit 1
+          fi
+
+      - name: Run e2e suite
+        # `--reporter=line` (set by the script) is mandatory: the default html
+        # reporter starts a server on failure and the job would hang until it
+        # hit the job timeout.
+        run: npm run test:e2e
+
+      - name: Upload failure artifacts
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: e2e-artifacts
+          # Screenshot actuals and diffs, videos and traces all land here.
+          # Inspect a trace with `npx playwright show-trace <file>.zip`.
+          path: test-results/
+          retention-days: 7
+          if-no-files-found: ignore
