@@ -30,6 +30,74 @@ describe('shipped scenes', () => {
     }
   });
 
+  /**
+   * The gear train is decorative, but it must not be *incoherent*. These are
+   * the two things a viewer would notice immediately if they were wrong, and
+   * they are properties of the scene data alone — no WebGL needed to check.
+   */
+  it('counter-rotates meshed neighbours along every train', () => {
+    for (const scene of sceneRegistry.list()) {
+      // Gears are authored as a chain: each one meshes with the one before it.
+      expect(scene.gears.length).toBeGreaterThan(1);
+
+      for (let i = 1; i < scene.gears.length; i += 1) {
+        const previous = scene.gears[i - 1]!;
+        const gear = scene.gears[i]!;
+        expect(Math.sign(gear.angularVelocity)).toBe(-Math.sign(previous.angularVelocity));
+      }
+    }
+  });
+
+  it('spins small wheels faster than large ones', () => {
+    for (const scene of sceneRegistry.list()) {
+      const byRadius = [...scene.gears].sort((a, b) => a.radius - b.radius);
+      for (let i = 1; i < byRadius.length; i += 1) {
+        expect(Math.abs(byRadius[i]!.angularVelocity)).toBeLessThan(
+          Math.abs(byRadius[i - 1]!.angularVelocity),
+        );
+      }
+    }
+  });
+
+  it('meshes each wheel with the next at the sum of their radii', () => {
+    for (const scene of sceneRegistry.list()) {
+      for (let i = 1; i < scene.gears.length; i += 1) {
+        const previous = scene.gears[i - 1]!;
+        const gear = scene.gears[i]!;
+        const centres = Math.hypot(
+          gear.position[0] - previous.position[0],
+          gear.position[1] - previous.position[1],
+        );
+        // Within a couple of centimetres of true contact — close enough that
+        // the teeth visibly interleave rather than float apart.
+        expect(centres).toBeCloseTo(previous.radius + gear.radius, 1);
+        // And the ratio matches the tooth counts, so the picture is consistent.
+        expect(Math.abs(gear.angularVelocity / previous.angularVelocity)).toBeCloseTo(
+          previous.teeth / gear.teeth,
+          2,
+        );
+      }
+    }
+  });
+
+  /**
+   * The train fills the case *behind* the drums, as in the reference image —
+   * which means no wheel may pass through the ring stack. A wheel is a disc in
+   * a plane parallel to the drums' axis, so the nearest it comes to that axis
+   * is `(|y| - r)` across and `(|z| - t/2)` back; if that point is inside the
+   * drum radius, the wheel is cutting through a ring.
+   */
+  it('keeps every wheel clear of the ring stack', () => {
+    for (const scene of sceneRegistry.list()) {
+      expect(scene.rings.axis).toBe('x');
+      for (const gear of scene.gears) {
+        const across = Math.max(0, Math.abs(gear.position[1]) - gear.radius);
+        const back = Math.abs(gear.position[2]) - gear.thickness / 2;
+        expect(Math.hypot(across, back)).toBeGreaterThan(scene.rings.radius);
+      }
+    }
+  });
+
   it('drives ring layout from data, not from render code', () => {
     // The whole point of the second preset: a different configuration with no
     // renderer changes. If these ever match, the registry is proving nothing.

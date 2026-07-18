@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ClockSceneView } from './clockScene.js';
 import { MaterialLibrary } from './materials.js';
+import { ringAngleForDigit } from '../geometry/ringLayout.js';
 import { copperPadlockScene } from '../scene/scenes/copperPadlock.js';
 import { slateOrreryScene } from '../scene/scenes/slateOrrery.js';
 import { MATERIAL_SLOTS, type SceneDefinition } from '../scene/types.js';
@@ -28,6 +29,47 @@ function countMeshes(root: THREE.Object3D): number {
     if (object instanceof THREE.Mesh) total += 1;
   });
   return total;
+}
+
+/** Feeds the view one countdown frame and draws it, as the renderer does. */
+function show(view: ClockSceneView, digits: readonly number[], nowMs: number, sequence = 0): void {
+  view.setFrame({ digits, sequence, expired: false, direction: 'down' }, nowMs);
+  view.update(nowMs);
+}
+
+/** Current rotation of each ring group about the ring axis. */
+function ringAngles(view: ClockSceneView): number[] {
+  const axis = view.definition.rings.axis;
+  return Array.from(
+    { length: view.ringCount },
+    (_, i) => view.root.getObjectByName(`ring:${i}`)!.rotation[axis],
+  );
+}
+
+/** A copy of each detent lever's instance matrix. */
+function detentMatrices(view: ClockSceneView): number[][] {
+  const mesh = view.root.getObjectByName('detents') as THREE.InstancedMesh;
+  const matrix = new THREE.Matrix4();
+  return Array.from({ length: mesh.count }, (_, i) => {
+    mesh.getMatrixAt(i, matrix);
+    return [...matrix.elements];
+  });
+}
+
+/** Triangles and draw calls, counted the way the budget in docs/assets.md is. */
+function countBudget(root: THREE.Object3D): { triangles: number; drawCalls: number } {
+  let triangles = 0;
+  let drawCalls = 0;
+  root.traverse((object) => {
+    if (!(object instanceof THREE.Mesh)) return;
+    const geometry = (object as THREE.Mesh<THREE.BufferGeometry>).geometry;
+    const vertices =
+      geometry.index !== null ? geometry.index.count : geometry.getAttribute('position').count;
+    const instances = object instanceof THREE.InstancedMesh ? object.count : 1;
+    triangles += (vertices / 3) * instances;
+    drawCalls += 1;
+  });
+  return { triangles: Math.round(triangles), drawCalls };
 }
 
 describe('ClockSceneView', () => {
@@ -77,33 +119,46 @@ describe('ClockSceneView', () => {
 
     expect(gearIds).toHaveLength(copperPadlockScene.gears.length);
 
-    const gear = view.root.getObjectByName('gear:gear-a')!;
-    const spinner = gear.children[0]!;
-    view.update(1);
+    const spinner = view.root.getObjectByName('gear:gear-a')!.children[0]!;
+    show(view, [0, 0, 0, 0, 0, 0, 1], 0);
+    show(view, [0, 0, 0, 0, 0, 0, 1], 1000);
 
-    expect(spinner.rotation.y).toBeCloseTo(copperPadlockScene.gears[0]!.angularVelocity);
+    // One second of drive time, one second of rotation.
+    expect(spinner.rotation.y).toBeCloseTo(copperPadlockScene.gears[0]!.angularVelocity, 6);
     view.dispose();
   });
 
-  it('rotates rings toward the digit they were given', () => {
+  it('drives the train from the clock, not from accumulated frames', () => {
+    const view = new ClockSceneView(scene, copperPadlockScene);
+    const spinner = view.root.getObjectByName('gear:gear-a')!.children[0]!;
+
+    show(view, [0, 0, 0, 0, 0, 0, 1], 0);
+    // The tab sleeps for ten seconds and comes back on a single frame.
+    show(view, [0, 0, 0, 0, 0, 0, 1], 10_000);
+
+    expect(spinner.rotation.y).toBeCloseTo(
+      (copperPadlockScene.gears[0]!.angularVelocity * 10) % (Math.PI * 2),
+      6,
+    );
+    view.dispose();
+  });
+
+  it('rotates rings to the digit they were given', () => {
     const view = new ClockSceneView(scene, copperPadlockScene);
     const ring = view.root.getObjectByName('ring:0')!;
 
-    view.setDigits([5, 0, 0, 0, 0, 0, 0]);
-    // Several large steps let the easing settle on the target angle.
-    for (let i = 0; i < 20; i += 1) view.update(0.1);
+    show(view, [5, 0, 0, 0, 0, 0, 0], 0);
 
-    expect(ring.rotation.x).toBeCloseTo(-5 * ((Math.PI * 2) / 10), 3);
+    expect(ring.rotation.x).toBeCloseTo(-5 * ((Math.PI * 2) / 10), 9);
     view.dispose();
   });
 
-  it('ignores digit arrays shorter than the ring count', () => {
+  it('rejects a digit array that does not match the ring count', () => {
     const view = new ClockSceneView(scene, copperPadlockScene);
 
-    expect(() => {
-      view.setDigits([1, 2]);
-      view.update(0.016);
-    }).not.toThrow();
+    // Silence is worse than a throw here: a short array used to leave rings
+    // showing a stale digit with nothing to say so.
+    expect(() => show(view, [1, 2], 0)).toThrow(/expected 7 digits/);
     view.dispose();
   });
 
@@ -160,9 +215,10 @@ describe('ClockSceneView', () => {
       // three.js types InstancedMesh generically, so narrow it explicitly.
       if (object instanceof THREE.InstancedMesh) instanced.push(object as THREE.InstancedMesh);
     });
-    // The bezel screw studs. Gear teeth used to be instanced too; they are now
-    // part of the extruded gear profile, so a wheel is a single mesh.
-    expect(instanced).toHaveLength(1);
+    // The bezel screw studs and the detent levers. Gear teeth used to be
+    // instanced too; they are now part of the extruded gear profile, so a wheel
+    // is a single mesh.
+    expect(instanced.map((mesh) => mesh.name).sort()).toEqual(['detents', 'housing:studs']);
 
     // InstancedMesh.dispose() releases instanceMatrix; disposing the geometry
     // and material alone would leak it on every scene switch.
@@ -250,8 +306,7 @@ describe('ClockSceneView', () => {
     };
 
     const view = new ClockSceneView(scene, sixRing);
-    view.setDigits([1, 2, 3, 4, 5, 6]);
-    view.update(0.1);
+    show(view, [1, 2, 3, 4, 5, 6], 0);
 
     expect(view.ringCount).toBe(6);
     expect(view.root.children.filter((child) => child.name.startsWith('ring:'))).toHaveLength(6);
@@ -266,8 +321,9 @@ describe('ClockSceneView', () => {
 
   it('survives repeated build/dispose cycles, as scene switching requires', () => {
     for (let i = 0; i < 5; i += 1) {
-      const view = new ClockSceneView(scene, i % 2 === 0 ? copperPadlockScene : slateOrreryScene);
-      view.update(0.016);
+      const definition = i % 2 === 0 ? copperPadlockScene : slateOrreryScene;
+      const view = new ClockSceneView(scene, definition);
+      show(view, new Array<number>(definition.rings.count).fill(0), i * 1000);
       view.dispose();
     }
 
@@ -279,36 +335,42 @@ describe('ClockSceneView', () => {
  * The `?nomotion` half of the determinism contract. The other half (a pinned
  * clock) lives in `src/app/testHooks.test.ts`; together they are what make the
  * screenshot baselines reproducible.
+ *
+ * Carried over from the testing bead and rewritten against the mechanism API:
+ * the assertions are the same, but a frame is now an instant rather than a
+ * delta, and rings are fed a whole reading rather than raw digits.
  */
 describe('ClockSceneView motion', () => {
-  function ringAngles(view: ClockSceneView): number[] {
-    const axis = copperPadlockScene.rings.axis;
-    return view.root.children
-      .filter((child) => child.name.startsWith('ring:'))
-      .map((child) => child.rotation[axis]);
-  }
-
   it('eases rings towards their digit over several frames by default', () => {
     const view = new ClockSceneView(scene, copperPadlockScene);
-    view.setDigits([5, 5, 5, 5, 5, 5, 5]);
+    show(view, [0, 0, 0, 0, 0, 0, 0], 0);
 
-    view.update(0.016);
-    const afterOneFrame = ringAngles(view);
+    const event = view.setFrame(
+      { digits: [5, 5, 5, 5, 5, 5, 5], sequence: 1, expired: false, direction: 'down' },
+      1000,
+    )!;
+    view.update(1000 + event.durationMs * 0.25);
+    const partWay = ringAngles(view);
 
     // Part of the way there, not all of it: that is the easing.
-    expect(afterOneFrame[0]).not.toBe(0);
-    expect(Math.abs(afterOneFrame[0] ?? 0)).toBeLessThan(Math.PI);
+    expect(partWay[0]).not.toBe(0);
+    expect(partWay[0]).not.toBeCloseTo(ringAngleForDigit(5), 3);
+    expect(Math.abs(partWay[0] ?? 0)).toBeLessThan(Math.PI);
 
     view.dispose();
   });
 
   it('snaps rings to their digit in a single frame with motion off', () => {
     const view = new ClockSceneView(scene, copperPadlockScene, { motion: false });
-    view.setDigits([5, 5, 5, 5, 5, 5, 5]);
+    show(view, [0, 0, 0, 0, 0, 0, 0], 0);
 
-    view.update(0.016);
+    view.setFrame(
+      { digits: [5, 5, 5, 5, 5, 5, 5], sequence: 1, expired: false, direction: 'down' },
+      1000,
+    );
+    view.update(1000);
     const afterOneFrame = ringAngles(view);
-    view.update(0.5);
+    view.update(1500);
     const afterALongFrame = ringAngles(view);
 
     // Frame-rate independent: the angle depends only on the digit.
@@ -325,14 +387,229 @@ describe('ClockSceneView motion', () => {
     };
 
     const moving = new ClockSceneView(scene, copperPadlockScene);
-    moving.update(0.5);
+    show(moving, [0, 0, 0, 0, 0, 0, 0], 0);
+    moving.update(500);
     expect(gearRotation(moving)).not.toBe(0);
     moving.dispose();
 
     const still = new ClockSceneView(scene, copperPadlockScene, { motion: false });
-    still.update(0.5);
+    show(still, [0, 0, 0, 0, 0, 0, 0], 0);
+    still.update(500);
     expect(gearRotation(still)).toBe(0);
     still.dispose();
+  });
+});
+
+describe('ClockSceneView — the mechanism', () => {
+  it('reports the digits it is displaying, for the e2e test hooks', () => {
+    const view = new ClockSceneView(scene, copperPadlockScene);
+    show(view, [0, 9, 9, 5, 9, 5, 9], 0);
+
+    expect(view.displayedDigits).toEqual([0, 9, 9, 5, 9, 5, 9]);
+    view.dispose();
+  });
+
+  it('turns every carried ring at once on a cascade', () => {
+    const view = new ClockSceneView(scene, copperPadlockScene);
+    show(view, [1, 0, 0, 0, 0, 0, 0], 0);
+
+    const event = view.setFrame(
+      { digits: [0, 9, 9, 5, 9, 5, 9], sequence: 1, expired: false, direction: 'down' },
+      1000,
+    )!;
+    expect(event.motions).toHaveLength(7);
+
+    // Part way through, every ring is between its old and new angle at once.
+    view.update(1000 + event.durationMs / 2);
+    const midway = ringAngles(view);
+    view.update(1000 + event.durationMs + 1);
+    const settled = ringAngles(view);
+
+    for (let i = 0; i < 7; i += 1) {
+      expect(midway[i]).not.toBe(settled[i]);
+      expect(settled[i]).toBeCloseTo(ringAngleForDigit([0, 9, 9, 5, 9, 5, 9][i]!), 9);
+    }
+    view.dispose();
+  });
+
+  it('rocks the detent of a turning ring and leaves the others seated', () => {
+    const view = new ClockSceneView(scene, copperPadlockScene);
+    show(view, [0, 0, 0, 0, 0, 0, 1], 0);
+    const seated = detentMatrices(view);
+
+    const event = view.setFrame(
+      { digits: [0, 0, 0, 0, 0, 0, 0], sequence: 1, expired: false, direction: 'down' },
+      1000,
+    )!;
+    view.update(1000 + event.durationMs / 2);
+    const lifted = detentMatrices(view);
+
+    // Only the seconds lever moved.
+    for (let i = 0; i < 6; i += 1) expect(lifted[i]).toEqual(seated[i]);
+    expect(lifted[6]).not.toEqual(seated[6]);
+
+    view.update(1000 + event.durationMs + 1);
+    expect(detentMatrices(view)[6]).toEqual(seated[6]);
+    view.dispose();
+  });
+
+  it('keeps something moving between ticks, and stops it all at expiry', () => {
+    const view = new ClockSceneView(scene, copperPadlockScene);
+    const balance = view.root.getObjectByName('escapement:balance:spinner')!;
+    show(view, [0, 0, 0, 0, 0, 0, 1], 0);
+
+    view.update(60);
+    const first = balance.rotation.y;
+    view.update(160);
+    expect(balance.rotation.y).not.toBe(first);
+
+    view.setFrame(
+      { digits: [0, 0, 0, 0, 0, 0, 0], sequence: 1, expired: true, direction: 'down' },
+      1000,
+    );
+    view.update(1000 + 5000);
+    const stopped = balance.rotation.y;
+    view.update(1000 + 9000);
+
+    expect(balance.rotation.y).toBe(stopped);
+    // Come to rest centred, not frozen mid-swing.
+    expect(Math.abs(stopped)).toBe(0);
+    view.dispose();
+  });
+
+  it('freezes completely when motion is disabled', () => {
+    const view = new ClockSceneView(scene, copperPadlockScene, { motion: false });
+    show(view, [0, 0, 0, 0, 0, 0, 1], 0);
+
+    view.setFrame(
+      { digits: [0, 0, 0, 0, 0, 0, 0], sequence: 1, expired: false, direction: 'down' },
+      1000,
+    );
+    view.update(1000);
+    const immediate = ringAngles(view);
+    // Snapped, not eased: the target angle is reached on the same frame.
+    expect(immediate[6]).toBeCloseTo(ringAngleForDigit(0), 9);
+
+    view.update(1500);
+    expect(ringAngles(view)).toEqual(immediate);
+    expect(view.root.getObjectByName('gear:gear-a')!.children[0]!.rotation.y).toBe(0);
+    view.dispose();
+  });
+
+  it('builds the escapement and consumes the frame and bezel slots with it', () => {
+    const view = new ClockSceneView(scene, copperPadlockScene);
+    const escapement = view.root.getObjectByName('escapement')!;
+
+    const names = escapement.children.map((child) => child.name);
+    expect(names).toContain('escapement:balance');
+    expect(names).toContain('escapement:escape-wheel');
+    expect(names).toContain('escapement:cock');
+
+    const used = new Set<string>();
+    escapement.traverse((object) => {
+      if (object instanceof THREE.Mesh && object.material instanceof THREE.Material) {
+        used.add(object.material.name);
+      }
+    });
+    expect(used).toContain('slot:frame');
+    expect(used).toContain('slot:bezel');
+    view.dispose();
+  });
+
+  it('puts the movement behind the drums, inside the case', () => {
+    const view = new ClockSceneView(scene, copperPadlockScene);
+    const shell = view.root.getObjectByName('housing:case') as THREE.Mesh;
+    shell.geometry.computeBoundingBox();
+    const back = shell.geometry.boundingBox!.min.z;
+
+    const balance = view.root.getObjectByName('escapement:balance')!;
+    // Clear of the drums (which reach z = -radius) and clear of the case back.
+    expect(balance.position.z).toBeLessThan(-copperPadlockScene.rings.radius);
+    expect(balance.position.z).toBeGreaterThan(back);
+
+    for (const gear of copperPadlockScene.gears) {
+      expect(gear.position[2]).toBeLessThan(-copperPadlockScene.rings.radius);
+      expect(gear.position[2]).toBeGreaterThan(back);
+    }
+    view.dispose();
+  });
+});
+
+describe('ClockSceneView — budgets and framing', () => {
+  it('stays inside the documented triangle and draw-call budget', () => {
+    for (const definition of [copperPadlockScene, slateOrreryScene]) {
+      const view = new ClockSceneView(new THREE.Scene(), definition);
+      const { triangles, drawCalls } = countBudget(view.root);
+
+      expect(triangles).toBeLessThan(150_000);
+      expect(drawCalls).toBeLessThan(40);
+      view.dispose();
+    }
+  });
+
+  /**
+   * Framing is a property, not a taste: the case body has to project inside
+   * the frustum from the camera the scene declares. The open lid is excluded —
+   * it deliberately runs off the edge, as in the reference image.
+   */
+  it('frames the whole case body from the scene camera', () => {
+    for (const definition of [copperPadlockScene, slateOrreryScene]) {
+      const view = new ClockSceneView(new THREE.Scene(), definition);
+      view.root.updateMatrixWorld(true);
+
+      for (const aspect of [16 / 9, 4 / 3, 1]) {
+        const camera = new THREE.PerspectiveCamera(
+          definition.camera.fov,
+          aspect,
+          definition.camera.near,
+          definition.camera.far,
+        );
+        camera.position.set(...definition.camera.position);
+        camera.lookAt(new THREE.Vector3(...definition.camera.target));
+        camera.updateMatrixWorld(true);
+
+        const vertex = new THREE.Vector3();
+        let worstX = 0;
+        let worstY = 0;
+        view.root.traverse((object) => {
+          if (!(object instanceof THREE.Mesh)) return;
+          if (object.name === 'housing:lid' || object.name === 'housing:hinge') return;
+          const position = (object as THREE.Mesh<THREE.BufferGeometry>).geometry.getAttribute(
+            'position',
+          );
+          for (let i = 0; i < position.count; i += 1) {
+            vertex.fromBufferAttribute(position, i).applyMatrix4(object.matrixWorld);
+            vertex.project(camera);
+            worstX = Math.max(worstX, Math.abs(vertex.x));
+            worstY = Math.max(worstY, Math.abs(vertex.y));
+          }
+        });
+
+        expect(worstY).toBeLessThan(1);
+        expect(worstX).toBeLessThan(1);
+        // And it fills the frame rather than sitting as a speck in the middle.
+        expect(worstY).toBeGreaterThan(0.75);
+      }
+
+      const distance = new THREE.Vector3(...definition.camera.position).distanceTo(
+        new THREE.Vector3(...definition.camera.target),
+      );
+      expect(distance).toBeGreaterThanOrEqual(definition.camera.minDistance);
+      expect(distance).toBeLessThanOrEqual(definition.camera.maxDistance);
+      view.dispose();
+    }
+  });
+
+  /**
+   * The numerals are engraved at `digitAngle` and the rings are turned by
+   * `ringAngleForDigit`; that only reads upright if the camera is on the side
+   * the reading line faces. For an x-axis stack that is +Z.
+   */
+  it('keeps the camera on the side the numerals read from', () => {
+    for (const definition of [copperPadlockScene, slateOrreryScene]) {
+      expect(definition.rings.axis).toBe('x');
+      expect(definition.camera.position[2]).toBeGreaterThan(0);
+    }
   });
 });
 

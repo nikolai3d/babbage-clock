@@ -5,10 +5,28 @@ export const COPPER_PADLOCK_SCENE_ID = 'copper-padlock';
 
 /**
  * The reference preset: a copper cryptex-style padlock with seven coaxial digit
- * rings. Geometry here is a deliberate stub — the real mechanism, numerals and
- * Substance materials arrive in later beads. What is real is the wiring: ring
- * count, layout, materials, lighting and camera framing all come from this
- * definition, never from the render code.
+ * rings — `HHH:MM:SS` exactly. Substance materials arrive in a later bead;
+ * everything else here is real, and all of it is data: ring count, layout, the
+ * gear train, materials, lighting and camera framing come from this definition
+ * and never from the render code.
+ *
+ * **The train.** The four wheels form a chain — a meshes b meshes c meshes d —
+ * laid out to fill the case behind the ring stack, as in the reference image.
+ * Two properties are asserted in `registry.test.ts` rather than left to
+ * eyeballing:
+ *
+ * - meshed neighbours counter-rotate (the sign alternates along the chain), and
+ * - the smaller the wheel, the faster it turns.
+ *
+ * Both follow from sharing one module (m = 2r/teeth = 0.055) and taking each
+ * ratio from the tooth counts: `w_next = -w * teeth / teethNext`. Centre
+ * distances are the sum of the two pitch radii, so the wheels visibly mesh.
+ * The ratios are not the real gearing of a clock — that is the point of a
+ * decorative train — but nothing about them contradicts itself.
+ *
+ * Everything sits at z = -1.05, behind the drums (which reach z = -1.0) and
+ * clear of them, so the case reads as full rather than as rings with wheels
+ * parked underneath.
  *
  * Design reference: docs/reference/preset-1-copper-padlock.png
  */
@@ -30,35 +48,53 @@ export const copperPadlockScene: SceneDefinition = {
   },
 
   gears: [
+    // A four-wheel chain filling the case behind the drums, as in the
+    // reference: the big wheels ride high enough to show above the ring stack
+    // and the last one drops below it, so the movement reads as a movement
+    // rather than as two slivers of tooth.
     {
       id: 'gear-a',
       slot: 'gearA',
-      radius: 0.62,
-      thickness: 0.12,
-      teeth: 18,
-      position: [-1.35, -1.45, 0.35],
+      radius: 0.825,
+      thickness: 0.13,
+      teeth: 30,
+      position: [-0.85, 1.25, -1.15],
       axis: [0, 0, 1],
-      angularVelocity: 0.45,
+      angularVelocity: 0.42,
     },
+    // Upper right; 1.485 m from gear-a, which is 0.825 + 0.66.
     {
       id: 'gear-b',
       slot: 'gearB',
-      radius: 0.44,
-      thickness: 0.12,
-      teeth: 13,
-      position: [0.15, -1.6, 0.35],
+      radius: 0.66,
+      thickness: 0.13,
+      teeth: 24,
+      position: [0.619, 1.47, -1.15],
       axis: [0, 0, 1],
-      angularVelocity: -0.62,
+      angularVelocity: -0.525,
     },
+    // Right; 1.265 m from gear-b, which is 0.66 + 0.605.
     {
       id: 'gear-c',
       slot: 'gearC',
-      radius: 0.34,
-      thickness: 0.1,
-      teeth: 10,
-      position: [1.45, -1.35, 0.35],
+      radius: 0.605,
+      thickness: 0.13,
+      teeth: 22,
+      position: [1.368, 0.451, -1.15],
       axis: [0, 0, 1],
-      angularVelocity: 0.81,
+      angularVelocity: 0.5727,
+    },
+    // Lower right; 1.2375 m from gear-c, which is 0.605 + 0.6325. The lower
+    // left is left free for the escapement, which the renderer places there.
+    {
+      id: 'gear-d',
+      slot: 'gearD',
+      radius: 0.6325,
+      thickness: 0.13,
+      teeth: 23,
+      position: [1.125, -0.763, -1.15],
+      axis: [0, 0, 1],
+      angularVelocity: -0.5478,
     },
   ],
 
@@ -86,14 +122,20 @@ export const copperPadlockScene: SceneDefinition = {
     exposure: 1.05,
   },
 
+  // Framed on the case itself: bezel to bezel and shackle to base, a little
+  // above and to the right, with the open lid running off the left edge as it
+  // does in the reference. The framing was widened as a stopgap while the gears
+  // sat low and outside the case; now that the train fills the case behind the
+  // rings it is pulled back in. `clockScene.test.ts` asserts the whole case
+  // body still projects inside the frustum from here.
   camera: {
     fov: 45,
-    position: [0, 1.6, 10.5],
-    target: [0, 0.2, 0],
+    position: [1.15, 1.0, 10.6],
+    target: [0, 0.45, 0],
     near: 0.1,
     far: 100,
-    minDistance: 5,
-    maxDistance: 20,
+    minDistance: 6,
+    maxDistance: 22,
     minPolarAngle: Math.PI * 0.12,
     maxPolarAngle: Math.PI * 0.86,
   },

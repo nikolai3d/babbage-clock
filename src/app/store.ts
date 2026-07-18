@@ -1,5 +1,5 @@
 import type { EnvironmentPresetId } from '../scene/types.js';
-import type { CountdownParts } from '../time/countdown.js';
+import type { CountdownParts, RemainingTime } from '../time/countdown.js';
 import type { ResolvedTarget } from '../time/target.js';
 import type { TrueTimeStatus } from '../time/trueTime.js';
 
@@ -20,6 +20,12 @@ export interface AppState {
   /** Includes both-zone echoes and DST notes for the UI to surface. */
   readonly target: ResolvedTarget;
   readonly countdown: CountdownParts;
+  /**
+   * The countdown exactly as the rings display it: `HHH:MM:SS`, clamped at
+   * 999:59:59 with `clamped` set beyond that. This is the readout to show
+   * alongside the mechanism; `countdown` keeps the uncapped calendar split.
+   */
+  readonly remaining: RemainingTime;
   /**
    * Accuracy of the clock the countdown is running on. The UI shows the tier
    * and the skew warning; it starts as `device-clock` and improves once the

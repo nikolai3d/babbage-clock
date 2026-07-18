@@ -22,6 +22,7 @@ export {
   formatCountdown,
   formatRemaining,
   countdownDigits,
+  remainingDigits,
   clockDigits,
 } from './countdown.js';
 export type { CountdownParts, RemainingTime } from './countdown.js';

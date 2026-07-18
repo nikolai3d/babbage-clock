@@ -47,9 +47,14 @@ test.describe('screenshots', () => {
   }
 
   /**
-   * A carry boundary: `9d 23:59:59` remaining, so every ring sits on its
-   * highest digit and the very next tick rolls all of them over at once. This
-   * is the frame where an off-by-one in digit packing shows up visually.
+   * A packing boundary: 9 days 23:59:59 of real remaining time, which the
+   * seven rings read as `239:59:59` — hours, not days.
+   *
+   * This frame is where a digit-packing error shows up visually, and it is a
+   * regression guard for a specific bug: the rings used to be fed a
+   * `D HH MM SS` split, so this same instant read `9 23 59 59` on a readout
+   * labelled `HHH:MM:SS`. Every digit here is distinct, so an off-by-one
+   * anywhere in the packing moves a ring.
    */
   test('carry boundary frame', async ({ page }) => {
     const carryScene = scenes[0]!;
@@ -63,7 +68,7 @@ test.describe('screenshots', () => {
     await settle(page);
 
     // Assert the frame really is the boundary before trusting the pixels.
-    expect(await readDigits(page)).toEqual([9, 2, 3, 5, 9, 5, 9].slice(-carryScene.rings.count));
+    expect(await readDigits(page)).toEqual([2, 3, 9, 5, 9, 5, 9].slice(-carryScene.rings.count));
 
     await expect(page).toHaveScreenshot('carry-boundary.png');
   });

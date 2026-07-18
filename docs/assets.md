@@ -52,7 +52,7 @@ explicitly deferred by the owner and is not implemented here.
 
 ## Polygon budgets
 
-Measured on the shipped scenes (`copper-padlock`, 7 rings, 3 gears):
+Measured on the shipped scenes (`copper-padlock`, 7 rings, 4 gears, escapement):
 
 | Asset class         | Triangles   | Notes                                       |
 | ------------------- | ----------- | ------------------------------------------- |
@@ -60,13 +60,23 @@ Measured on the shipped scenes (`copper-padlock`, 7 rings, 3 gears):
 | Ring numerals (x10) | ~1,500      | one merged buffer, shared by every ring     |
 | Gear                | ~2,600      | scales with tooth count and spoke style     |
 | Housing (all parts) | ~3,500      | shell, bezel, 10 studs, lid, hinge, shackle |
+| Escapement          | ~3,000      | balance, escape wheel, cock                 |
+| Detent levers (x7)  | ~700        | one buffer, one InstancedMesh               |
 | Arbor and bosses    | ~600        |                                             |
-| **Whole scene**     | **~27,900** | copper-padlock at default parameters        |
+| **Whole scene**     | **~40,400** | copper-padlock at default parameters        |
 
 Budget: **under 150k triangles per scene** and **under 40 draw calls**. The
-copper preset currently uses 29 draw calls: 7 drums + 7 numeral meshes (each a
-separate mesh only because rings rotate independently), 3 gears + 3 pins, 1
-arbor, 2 bosses, 5 housing parts and 1 instanced stud mesh.
+copper preset currently uses 35 draw calls: 7 drums + 7 numeral meshes (each a
+separate mesh only because rings rotate independently), 4 gears + 4 pins, 1
+arbor, 2 bosses, 5 housing parts, 3 escapement parts and 2 instanced meshes (the
+bezel studs and the detent levers). `clockScene.test.ts` asserts both budgets
+for every registered scene, so a scene that blows them fails the suite rather
+than the frame rate.
+
+The detent levers are the pattern to copy for anything that repeats _and_
+animates independently: one geometry, one `InstancedMesh`, per-instance matrices
+rewritten each frame. Seven levers that each rock on their own ring cost one
+draw call.
 
 Two rules keep those numbers down:
 
@@ -85,15 +95,15 @@ runtime action, so leaks compound.
 Slots are fixed in `MATERIAL_SLOTS` (`src/scene/types.ts`). Geometry never
 creates a material; it declares which slot it belongs to and the caller binds it.
 
-| Slot            | Used by                                 |
-| --------------- | --------------------------------------- |
-| `housing`       | case shell, ring-stack bearing bosses   |
-| `bezel`         | bezel ring, screw studs                 |
-| `frame`         | lid, hinge, shackle                     |
-| `ring`          | digit drums (`RingConfig.slot`)         |
-| `numerals`      | engraved digits (`RingConfig.markSlot`) |
-| `gearA`–`gearD` | gear wheels, per `GearSpec.slot`        |
-| `arbor`         | ring shaft, gear pins                   |
+| Slot            | Used by                                                        |
+| --------------- | -------------------------------------------------------------- |
+| `housing`       | case shell, ring-stack bearing bosses                          |
+| `bezel`         | bezel ring, screw studs, balance wheel                         |
+| `frame`         | lid, hinge, shackle, balance cock                              |
+| `ring`          | digit drums (`RingConfig.slot`)                                |
+| `numerals`      | engraved digits (`RingConfig.markSlot`)                        |
+| `gearA`–`gearD` | gear wheels per `GearSpec.slot`; `gearD` also the escape wheel |
+| `arbor`         | ring shaft, gear pins, detent levers                           |
 
 **For any future authored glTF:** name each mesh or material after the slot it
 targets (`housing`, `bezel`, …). A loader can then bind an imported part to the

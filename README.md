@@ -46,6 +46,8 @@ than erroring.
 There are also test-only parameters — `mockNow`, `mockNowMode`, `nomotion` and
 `testApi` — used by the e2e suite and the demo capture. Each is inert unless
 explicitly set; see [docs/testing.md](docs/testing.md#determinism-hooks).
+`?nomotion` freezes every moving part — the tick easing, the gear train, the
+balance wheel and the detents — without changing what the rings read.
 
 ## Architecture
 
@@ -58,6 +60,11 @@ new scene.
 The countdown runs on a network-corrected clock rather than the device clock,
 and targets resolve through the real IANA timezone database. See
 [docs/timing.md](docs/timing.md).
+
+The rings tick like an escapement rather than sliding, and a carry cascade —
+`100:00:00` becoming `099:59:59` — turns every affected ring as one coordinated
+event. That state machine is three.js-free and unit-tested on its own; see
+[docs/mechanism.md](docs/mechanism.md).
 
 ## Task tracking
 

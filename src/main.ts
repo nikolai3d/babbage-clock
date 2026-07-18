@@ -9,7 +9,7 @@ import {
   withEnvironmentPreset,
 } from './scene/environment.js';
 import { sceneRegistry } from './scene/scenes/index.js';
-import { computeCountdown } from './time/countdown.js';
+import { computeCountdown, computeRemaining } from './time/countdown.js';
 import {
   TargetError,
   defaultTarget,
@@ -75,6 +75,7 @@ function bootstrap(): void {
     mood: params.mood,
     target,
     countdown: computeCountdown(target.atMs, nowMs),
+    remaining: computeRemaining(target.atMs, nowMs),
     timeStatus: getTimeStatus(),
     syncPending: true,
     settingsOpen: false,

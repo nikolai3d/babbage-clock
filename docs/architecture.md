@@ -24,6 +24,10 @@ src/
     digitGlyphs.ts       the procedural stroke font for 0-9
     gearProfile.ts       involute tooth profiles, spoke and crescent cutouts
     ringLayout.ts        digit angles, ring offsets, numeral sizing
+  mechanism/             ── the moving parts, no three.js (see docs/mechanism.md) ──
+    easing.ts            the escapement curve and friends
+    mechanism.ts         tick / carry / seek / expire state machine
+    frames.ts            RemainingTime or wall clock -> a mechanism frame
   scene/                 ── no three.js imports anywhere below this line ──
     types.ts             SceneDefinition and everything it contains
     validate.ts          structural checks for scene definitions
@@ -41,6 +45,7 @@ src/
       gear.ts            createGearGeometry
       ring.ts            createRingBodyGeometry / createRingNumeralsGeometry
       housing.ts         createHousingParts (case, bezel, studs, lid, shackle)
+      escapement.ts      balance, escape wheel, cock, detent lever
     materials.ts         material slot map -> three.js materials
     lighting.ts          lighting config -> three.js lights
   time/                  ── pure, no DOM, no three.js ──
@@ -62,7 +67,7 @@ src/
     debugPanel.ts        dev-only diagnostics; never imported statically
 ```
 
-Three boundaries matter and should be preserved:
+Four boundaries matter and should be preserved:
 
 1. **`geometry/` never imports three.js.** Tooth profiles, glyph outlines and
    digit angles are plain maths over `{x, y}` points. `render/geometry/` is the
@@ -76,6 +81,11 @@ Three boundaries matter and should be preserved:
    intents (`onSelectScene`); `main.ts` decides what those mean. The renderer
    subscribes to the same store. If a UI bead finds itself importing `three`,
    the state it needs belongs in the store instead.
+4. **`mechanism/` never imports three.js.** Ticks, carry cascades, easing and
+   the wind-down are decided over plain digit arrays and angles, so the
+   boundary cases are unit tests rather than screenshots. `ClockSceneView`
+   samples it and writes transforms; it never re-decides any of it. See
+   **[mechanism.md](mechanism.md)**.
 
 ## Data flow
 
@@ -96,13 +106,18 @@ the store. That is why the panel can be rebuilt or replaced without touching
 anything else, and why the same state that draws the DOM also draws the rings.
 
 The frame loop lives in `ClockRenderer`. Each frame it asks the `TimeSource` for
-the current time, computes the countdown, packs it into digits sized to the
-active scene's ring count, and hands those to `ClockSceneView`. It pushes to the
-store only every 250 ms, because the store drives DOM updates.
+the current instant, turns it into a `RemainingTime` with `computeRemaining` —
+so the `HHH:MM:SS` cap reaches the rings — packs that into digits sized to the
+active scene's ring count, and hands the frame to `ClockSceneView`, which feeds
+the mechanism and samples it. It pushes to the store only every 250 ms, because
+the store drives DOM updates.
+
+Nothing in that path integrates a frame delta: every transform is a function of
+the instant, which is what keeps the display correct across tab sleeps and clock
+re-syncs. The delta is used for the fps readout and nothing else.
 
 The loop pauses when `document.hidden` and resumes on `visibilitychange`.
-Device pixel ratio is capped at 2. Frame deltas are clamped so a long-hidden tab
-does not resume with a huge time step.
+Device pixel ratio is capped at 2.
 
 ## SceneDefinition
 
@@ -141,12 +156,16 @@ reads:
   file and the drums, the numerals and the case that encloses them all follow.
   Both buffers are built once and shared by every ring in the stack.
 - **Numerals** — a procedural stroke font, extruded and bent onto the drum.
-  Digit `d` is engraved at `digitAngle(d)`, which is exactly the angle
-  `setDigits` rotates to. See `docs/assets.md` for why this rather than a
-  texture atlas.
+  Digit `d` is engraved at `digitAngle(d)`, which is exactly the angle the
+  mechanism rotates to. See `docs/assets.md` for why this rather than a texture
+  atlas.
 - **Housing** — `createHousingParts` returns the case, bezel, screw studs, open
   lid, hinge and shackle, each tagged with the material slot it belongs to. It
   is sized to enclose whatever the scene contains.
+- **Escapement** — `createEscapementParts` returns the balance wheel, its escape
+  wheel and the cock that holds them; `createDetentLeverGeometry` returns the
+  pawl that rides on each ring. These are placed from the case rather than from
+  scene data, so every scene gets a movement without editing a scene file.
 
 Conventions (units, origin, axes, polygon budgets, the material-slot contract
 for authored glTF) live in **[assets.md](assets.md)**.
@@ -161,10 +180,18 @@ That is the whole procedure. It is now listed in the picker and reachable at
 mistake — rings that would intersect, an unbound material slot, inverted camera
 limits — fails loudly and immediately rather than rendering something wrong.
 
+A scene's gear train is data too, and two properties of it are asserted in
+`registry.test.ts` rather than left to the eye: meshed neighbours counter-rotate,
+and smaller wheels turn faster. Author a chain by keeping one module
+(`m = 2r/teeth`) across the wheels, placing each centre `r + r'` from the last,
+and taking each speed as `-w * teeth / teeth'`. Wheels must also sit clear of
+the ring stack — the test checks that too.
+
 **Planned 6-ring clock variant:** copy a preset, set `rings.count: 6` and
 `mode: 'clock'`. No render-code changes are required; `clockDigits` already
-produces exactly six digits for that case, and the ring, numeral and housing
-generators are all functions of `RingConfig`.
+produces exactly six digits for that case, the mechanism already turns the drums
+the other way for a readout that counts up (`clockFrame`), and the ring, numeral
+and housing generators are all functions of `RingConfig`.
 
 ## The UI shell
 
@@ -229,9 +256,18 @@ per slot, and nothing else moves.
 
 Slot names are fixed in `MATERIAL_SLOTS`: `housing`, `bezel`, `ring`,
 `numerals`, `gearA`–`gearD`, `arbor`, `frame`. Authored texture sets should be
-keyed by these names. Every slot is now consumed by geometry: the case takes
-`housing`, the bezel and its studs take `bezel`, the lid, hinge and shackle take
-`frame`.
+keyed by these names. Every slot is consumed by geometry, so the materials bead
+needs no scene-file edits beyond swapping bindings: the case and the bearing
+bosses take `housing`, the bezel, its studs and the balance rim take `bezel`,
+the lid, hinge, shackle and balance cock take `frame`, the arbor, gear pins and
+detent levers take `arbor`, and the escape wheel takes `gearD`.
+
+### Audio (sound bead)
+
+`Mechanism.subscribe` already emits the events the animation runs on — `tick`,
+`seek`, `expire`, each with the rings that move, the carry depth and the exact
+start and duration. Play sound from those rather than from a timer of your own,
+and it is in sync by construction. See **[mechanism.md](mechanism.md)**.
 
 ### Lighting / IBL (environment bead)
 

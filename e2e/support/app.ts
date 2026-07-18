@@ -31,6 +31,16 @@ export const SELECTOR = {
 export const PINNED_NOW = Date.UTC(2026, 5, 15, 12, 0, 0);
 /** Roughly 200 days after {@link PINNED_NOW}, so every ring has a digit on it. */
 export const PINNED_TARGET = '2027-01-01T00:00:00Z';
+/**
+ * A target inside the `HHH:MM:SS` display range (~10 hours after
+ * {@link PINNED_NOW}).
+ *
+ * {@link PINNED_TARGET} is ~4,800 hours out, which the rings correctly pin at
+ * `999:59:59` — so a spec that needs to watch the digits *move* has to count
+ * down from somewhere under the cap. Use this one for anything asserting that
+ * the mechanism advances, and `PINNED_TARGET` for everything else.
+ */
+export const TICKING_TARGET = '2026-06-15T22:30:00Z';
 
 export interface AppOptions {
   /** Scene id for `?scene=`. Omit to exercise the default. */

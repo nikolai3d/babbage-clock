@@ -131,6 +131,29 @@ export function countdownDigits(parts: CountdownParts, count: number): number[] 
 }
 
 /**
+ * Packs the *displayed* remaining time into `count` decimal digits.
+ *
+ * This is the digit source the rings run on, and the difference from
+ * `countdownDigits` is the point: it reads `HHH:MM:SS` off a `RemainingTime`,
+ * so the 999-hour cap reaches the rings. A target 4,000 hours away shows
+ * `999:59:59` and holds there until it falls under the cap, rather than showing
+ * a days field the rings have no room for.
+ *
+ * Seven rings is the exact fit. With fewer, the least significant digits are
+ * kept (so seconds always land on the right-hand rings); with more, the readout
+ * is zero-padded on the left.
+ */
+export function remainingDigits(remaining: RemainingTime, count: number): number[] {
+  if (count < 1) return [];
+
+  const pad = (value: number, width: number): string => String(value).padStart(width, '0');
+  const full = `${pad(remaining.hours, 3)}${pad(remaining.minutes, 2)}${pad(remaining.seconds, 2)}`;
+  const fitted = full.length >= count ? full.slice(full.length - count) : full.padStart(count, '0');
+
+  return [...fitted].map((char) => Number(char));
+}
+
+/**
  * Wall-clock digits (`HHMMSS`) for scenes running in `clock` mode.
  *
  * With fewer than six rings the least significant digits are dropped, so a
