@@ -48,6 +48,7 @@ import {
 import { FallbackClock } from './ui/fallbackClock.js';
 import { Hud } from './ui/hud.js';
 import { defineSelect, defineToggle } from './ui/settings.js';
+import { AudioEngine } from './audio/engine.js';
 import type { AppState } from './app/store.js';
 import type { RendererProbe } from './app/testHooks.js';
 import type { ShareableState } from './app/urlParams.js';
@@ -110,13 +111,20 @@ async function bootstrap(): Promise<void> {
   const deviceProfile = readDeviceProfile();
   const qualityTier = resolveQualityTier(params.quality, deviceProfile);
 
+  const SOUND_KEY = 'babbage-clock:sound';
   const LARGE_TEXT_KEY = 'babbage-clock:large-text';
   let storedLargeText = false;
+  let storedSound = false;
   try {
     storedLargeText = window.localStorage.getItem(LARGE_TEXT_KEY) === '1';
+    storedSound = window.localStorage.getItem(SOUND_KEY) === '1';
   } catch {
-    // Storage may be walled off (privacy mode); the toggle just starts off.
+    // Storage may be walled off (privacy mode); the toggles just start off.
   }
+  // `?sound=1` honours a shared link's wish — but it cannot *unlock* audio.
+  // The context still needs the toggle's click if the browser demands a
+  // gesture; the flag pre-arms the toggle so one click does everything.
+  const wantSound = storedSound || new URLSearchParams(window.location.search).get('sound') === '1';
 
   const store = new Store<AppState>({
     sceneId,
@@ -124,6 +132,7 @@ async function bootstrap(): Promise<void> {
     materialLook: null,
     background: params.background,
     largeText: storedLargeText,
+    sound: false,
     mode: params.mode,
     hours12: params.hours12,
     clockReading: null,
@@ -275,6 +284,32 @@ async function bootstrap(): Promise<void> {
     renderer?.setScene(withEnvironmentPreset(sceneRegistry.resolve(state.sceneId), state.mood));
   };
 
+  // The audio engine exists only while sound is on. Constructing the
+  // AudioContext synchronously inside the toggle's click is what satisfies
+  // the autoplay policy — the toggle is the unlock gesture.
+  let audio: AudioEngine | null = null;
+  let unsubscribeAudio: (() => void) | null = null;
+  function setSound(sound: boolean): void {
+    store.set({ sound });
+    try {
+      window.localStorage.setItem(SOUND_KEY, sound ? '1' : '0');
+    } catch {
+      // Session-only is fine.
+    }
+    if (sound && audio === null) {
+      audio = new AudioEngine(new AudioContext());
+      unsubscribeAudio =
+        renderer?.onMechanismEvent((event) => {
+          audio?.play(event);
+        }) ?? null;
+    } else if (!sound && audio !== null) {
+      unsubscribeAudio?.();
+      unsubscribeAudio = null;
+      audio.dispose();
+      audio = null;
+    }
+  }
+
   const shareState = (): ShareableState => {
     const state = store.get();
     return {
@@ -394,6 +429,17 @@ async function bootstrap(): Promise<void> {
         if (hours12 === store.get().hours12) return;
         store.set({ hours12 });
         writeAppParams(shareState());
+      },
+    }),
+    defineToggle({
+      id: 'sound-toggle',
+      label: 'Sound',
+      hint: 'Ticks, carry clunks and an hour-glass bell at zero. Synthesised, nothing downloads.',
+      read: (state) => state.sound,
+      apply: (value) => {
+        const sound = value === true;
+        if (sound === store.get().sound) return;
+        setSound(sound);
       },
     }),
     defineToggle({
@@ -528,6 +574,10 @@ async function bootstrap(): Promise<void> {
     enterFallback('no-webgl');
   }
   if (storedLargeText) syncFallbackView();
+  // A remembered or linked sound wish cannot create the context — that may
+  // need a gesture — but the toggle starts checked, so the drawer says the
+  // truth and one click (or none, where policy allows) brings the sound up.
+  if (wantSound) setSound(true);
   sceneTask.done();
 
   if (import.meta.env.DEV) {
