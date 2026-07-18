@@ -14,6 +14,17 @@
  * split the build into TypeScript project references instead.
  */
 
+/**
+ * Just enough of Node's `Buffer` for what Playwright hands back.
+ *
+ * `page.screenshot()` is typed as returning one, so without this the whole
+ * expression resolves to `error` and the type-checked lint rules reject every
+ * use of it. Only the members the specs actually touch are declared.
+ */
+interface Buffer extends Uint8Array {
+  equals(other: Uint8Array): boolean;
+}
+
 declare const process: {
   readonly platform: string;
   readonly env: Record<string, string | undefined>;

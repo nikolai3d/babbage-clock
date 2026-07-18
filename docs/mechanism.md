@@ -73,7 +73,7 @@ interface MechanismEvent {
 | Kind     | When                                                                      |
 | -------- | ------------------------------------------------------------------------- |
 | `tick`   | `sequence` advanced by exactly 1. Escapement easing, with overshoot.      |
-| `seek`   | The readout jumped: a re-sync, a long sleep, a target change. Smooth.     |
+| `seek`   | The readout jumped: a re-sync, a long sleep, a target change.             |
 | `expire` | The target arrived. Carries the final tick's motions and stops the train. |
 
 **For the audio bead:** subscribe to these rather than running a timer of your
@@ -83,6 +83,30 @@ many rings are actually moving, and `atMs` / `durationMs` are the same numbers
 the animation is using — so a sound scheduled against them is in sync by
 construction rather than by two modules agreeing separately about timing. A
 `seek` should generally be silent: it is a correction, not a tick.
+
+### Small corrections ease; large ones spin
+
+A `seek` behaves two different ways, and the difference is deliberate.
+
+A **small** correction — a clock re-sync nudging the reading by a second, which
+happens on every tab focus — takes the short way round with a smooth ease and no
+overshoot. Spinning the drum every time an NTP offset moved would be absurd.
+
+A **large** one — a viewer applying a new target, a mode switch, a long sleep —
+turns through whole extra revolutions and settles with the escapement easing, so
+the drums travel to the new value like a cryptex being spun rather than
+teleporting to it. `spinRingThreshold` (default 3) is how many rings must change
+before this happens; `spinTurns` (2) is how far it over-rotates, and
+`spinDurationMs` (1100) is the one duration every ring in the event shares, so a
+spin is a single coordinated movement exactly as a carry cascade is.
+
+The threshold counts _rings that change_ rather than elapsed time, because the
+mechanism only ever sees digits. Extra turns follow the direction each ring was
+already going to take, so a drum never reverses mid-flight.
+
+With `motion: false` — what `?nomotion=1` and `prefers-reduced-motion` set — a
+spin collapses to a snap like everything else, rather than becoming a long
+unskippable turn.
 
 ### Sample
 

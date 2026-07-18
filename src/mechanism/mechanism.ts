@@ -111,8 +111,23 @@ export interface MechanismOptions {
   /** Added per extra step in a multi-step carry, up to `maxTickDurationMs`. */
   readonly stepDurationMs?: number;
   readonly maxTickDurationMs?: number;
-  /** Duration of a corrective move after a jump. Smooth, never overshoots. */
+  /** Duration of a small corrective move. Smooth, never overshoots. */
   readonly seekDurationMs?: number;
+  /**
+   * How many rings must change before a correction *spins* instead of easing
+   * quietly to the new value.
+   *
+   * The distinction is the whole point of the threshold. A clock re-sync nudges
+   * the reading by a second or two and must stay unobtrusive — spinning the
+   * drum every time the NTP offset moved 40 ms would be absurd. A viewer
+   * applying a new target changes most of the readout at once, and that should
+   * look like a cryptex being spun rather than digits teleporting.
+   */
+  readonly spinRingThreshold?: number;
+  /** Whole extra revolutions a spinning correction turns through. */
+  readonly spinTurns?: number;
+  /** Duration of a spinning correction. Shared by every ring in the event. */
+  readonly spinDurationMs?: number;
   /** How far a tick swings past its notch, as a fraction of one digit step. */
   readonly overshoot?: number;
   /** How long the train takes to coast to a stop once the target arrives. */
@@ -134,6 +149,9 @@ const DEFAULTS = {
   stepDurationMs: 26,
   maxTickDurationMs: 300,
   seekDurationMs: 420,
+  spinRingThreshold: 3,
+  spinTurns: 2,
+  spinDurationMs: 1100,
   windDownMs: 2600,
   balancePeriodSeconds: 0.4,
   detentLiftRadians: 0.22,
@@ -192,6 +210,9 @@ export class Mechanism {
       stepDurationMs: options.stepDurationMs ?? DEFAULTS.stepDurationMs,
       maxTickDurationMs: options.maxTickDurationMs ?? DEFAULTS.maxTickDurationMs,
       seekDurationMs: options.seekDurationMs ?? DEFAULTS.seekDurationMs,
+      spinRingThreshold: options.spinRingThreshold ?? DEFAULTS.spinRingThreshold,
+      spinTurns: options.spinTurns ?? DEFAULTS.spinTurns,
+      spinDurationMs: options.spinDurationMs ?? DEFAULTS.spinDurationMs,
       overshoot: options.overshoot ?? DEFAULT_OVERSHOOT,
       windDownMs: options.windDownMs ?? DEFAULTS.windDownMs,
       balancePeriodSeconds: options.balancePeriodSeconds ?? DEFAULTS.balancePeriodSeconds,
@@ -282,7 +303,13 @@ export class Mechanism {
     if (motions.length === 0 && !newlyExpired) return null;
 
     const durationMs = this.durationFor(natural, motions);
-    for (const motion of motions) this.startMotion(motion, nowMs, durationMs, natural);
+    // A spin settles like a tick rather than gliding to a halt: the overshoot
+    // is what makes the drum look like it dropped into its notch at the end.
+    const spinning =
+      !natural && motions.some((motion) => Math.abs(motion.deltaAngle) > Math.PI + 1e-9);
+    for (const motion of motions) {
+      this.startMotion(motion, nowMs, durationMs, natural || spinning);
+    }
     for (let i = 0; i < this.ringCount; i += 1) this.rings[i]!.digit = input.digits[i]!;
 
     if (newlyExpired) this.stopDrive(nowMs);
@@ -442,6 +469,7 @@ export class Mechanism {
     nowMs: number,
   ): RingMotion[] {
     const motions: RingMotion[] = [];
+    const spinning = this.seekShouldSpin(input, previousDigits);
 
     for (let i = 0; i < this.ringCount; i += 1) {
       const ring = this.rings[i]!;
@@ -455,15 +483,49 @@ export class Mechanism {
         fromDigit,
         toDigit,
         steps: mod(fromDigit - toDigit, this.digitsPerRing),
-        deltaAngle: delta,
+        deltaAngle: spinning ? this.spinDelta(delta) : delta,
       });
     }
     return motions;
   }
 
+  /**
+   * Whether a correction is big enough to be worth spinning.
+   *
+   * Counted in rings that actually change rather than in elapsed time, because
+   * the mechanism only ever sees digits. A re-sync that nudges the reading by a
+   * second moves one ring and stays quiet; a viewer applying a new target
+   * rewrites most of the readout and gets the spin.
+   */
+  private seekShouldSpin(input: MechanismInput, previousDigits: readonly number[]): boolean {
+    let changed = 0;
+    for (let i = 0; i < this.ringCount; i += 1) {
+      if (previousDigits[i] !== input.digits[i]) changed += 1;
+    }
+    return changed >= this.options.spinRingThreshold;
+  }
+
+  /**
+   * Adds whole revolutions so the travel reads as spinning rather than sliding.
+   *
+   * The extra turns follow the direction the ring was already going to take, so
+   * the drum never reverses mid-flight. A ring whose digit did not change still
+   * spins with its neighbours — `delta` is zero there, so it needs a direction
+   * of its own, and down matches a countdown.
+   */
+  private spinDelta(delta: number): number {
+    const direction = delta === 0 ? -1 : Math.sign(delta);
+    return delta + direction * this.options.spinTurns * TWO_PI;
+  }
+
   private durationFor(natural: boolean, motions: readonly RingMotion[]): number {
     if (!this.options.motion) return 0;
-    if (!natural) return this.options.seekDurationMs;
+    if (!natural) {
+      // One duration for every ring in the event, exactly as a carry cascade
+      // does, so a spin is one coordinated movement rather than seven races.
+      const spinning = motions.some((motion) => Math.abs(motion.deltaAngle) > Math.PI + 1e-9);
+      return spinning ? this.options.spinDurationMs : this.options.seekDurationMs;
+    }
     // One duration for the whole event: a cascade is a single release of the
     // escapement, so a five-step ring and a one-step ring start and finish
     // together. Deeper carries get a little longer so the long swing does not

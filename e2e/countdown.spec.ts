@@ -76,6 +76,33 @@ test.describe('countdown readout', () => {
       .not.toBe(initial.join(''));
   });
 
+  test('applying a new target travels rather than teleporting', async ({ page }) => {
+    // The rings should spin to a new value, not cut to it. The clock is frozen,
+    // so any difference between these frames is the rings moving, not time
+    // passing — which is also why this cannot be asserted from the digits: the
+    // logical reading updates the instant the target is applied, and the travel
+    // is entirely in the angles.
+    await gotoApp(page, {
+      mockNow: PINNED_NOW,
+      mockNowMode: 'frozen',
+      target: TICKING_TARGET,
+    });
+
+    await page.locator('#settings-toggle').click();
+    // Playwright's fill() rejects seconds on a datetime-local input.
+    await page.locator('#target-input').fill('2026-06-16T09:15');
+    await page.locator('#target-apply').click();
+
+    const during = await page.screenshot();
+    await page.waitForTimeout(2000);
+    const settled = await page.screenshot();
+    await page.waitForTimeout(400);
+    const stillSettled = await page.screenshot();
+
+    expect(during.equals(settled), 'the rings cut straight to the new value').toBe(false);
+    expect(settled.equals(stillSettled), 'the rings never came to rest').toBe(true);
+  });
+
   test('a frozen clock holds the readout still', async ({ page }) => {
     await gotoApp(page, {
       mockNow: PINNED_NOW,
