@@ -42,11 +42,18 @@ export default defineConfig({
       // container, so the observed noise floor is ~0. The slack is for CPU
       // differences between runners, not for real visual change.
       //
-      // Calibration: recolouring one material slot moves ~4% of the frame, so
-      // 0.5% keeps roughly an order of magnitude of margin below the smallest
-      // change worth catching. Raising this hides regressions — if a legitimate
-      // visual change lands, regenerate the baselines instead.
-      maxDiffPixelRatio: 0.005,
+      // Calibration, learned the hard way: the original 0.5% was derived from a
+      // material recolour (~4% of the frame) — a whole-frame change. Digit
+      // glyphs are small: changing FOUR of the seven ring digits measured just
+      // *under* 0.5%, so the suite passed against a stale baseline showing the
+      // wrong time, and --update-snapshots then left that baseline in place
+      // (Playwright only rewrites on failure). 0.15% puts a single-digit change
+      // above the line for the full-frame shots; the reading-line close-up in
+      // screenshots.spec.ts is the primary digit guard on top of that.
+      // Raising this hides regressions — if a legitimate visual change lands,
+      // regenerate the baselines instead (delete the PNGs first; a
+      // stale-but-passing baseline is never rewritten).
+      maxDiffPixelRatio: 0.0015,
       threshold: 0.2,
       animations: 'disabled',
       caret: 'hide',

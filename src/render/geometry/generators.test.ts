@@ -170,6 +170,35 @@ describe('createRingNumeralsGeometry', () => {
     geometry.dispose();
   });
 
+  it("keeps every face on the drum's curve — straight strokes must not sag", () => {
+    // The bend is exact per vertex; faces between vertices are chords. Without
+    // subdivision, a full-height straight stroke sagged ~2x the entire relief
+    // below the arc through its endpoints, sinking the middles of 1, 7 and 4
+    // into the drum. Walk every edge of the built geometry and bound the
+    // mid-edge sag to a small fraction of the relief.
+    const geometry = createRingNumeralsGeometry(config);
+    const relief = Math.max(config.radius * 0.012, 0.024); // matches the builder's default floor
+    // Extrusions are non-indexed: consecutive position triples are triangles.
+    const pos = geometry.getAttribute('position');
+
+    let worst = 0;
+    for (let i = 0; i < pos.count; i += 3) {
+      for (const [a, b] of [
+        [i, i + 1],
+        [i + 1, i + 2],
+        [i + 2, i],
+      ] as const) {
+        const ra = Math.hypot(pos.getY(a), pos.getZ(a));
+        const rb = Math.hypot(pos.getY(b), pos.getZ(b));
+        const rm = Math.hypot((pos.getY(a) + pos.getY(b)) / 2, (pos.getZ(a) + pos.getZ(b)) / 2);
+        worst = Math.max(worst, Math.min(ra, rb) - rm);
+      }
+    }
+
+    expect(worst).toBeLessThanOrEqual(relief * 0.12);
+    geometry.dispose();
+  });
+
   it('puts the first digit on the reading line', () => {
     const geometry = createRingNumeralsGeometry(config, { digits: [7] });
     const reading = readingAngleForAxis(config.axis);
