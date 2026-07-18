@@ -1,13 +1,17 @@
 import { describe, expect, it } from 'vitest';
 import {
+  MAX_DISPLAY_HOURS,
+  MAX_DISPLAY_SECONDS,
   MS_PER_DAY,
   MS_PER_HOUR,
   MS_PER_MINUTE,
   MS_PER_SECOND,
   clockDigits,
   computeCountdown,
+  computeRemaining,
   countdownDigits,
   formatCountdown,
+  formatRemaining,
 } from './countdown.js';
 import { nextNewYear, parseTargetParam, resolveCountdownTarget } from './target.js';
 
@@ -133,5 +137,91 @@ describe('countdown targets', () => {
     expect(parseTargetParam('not-a-date')).toBeNull();
     expect(resolveCountdownTarget('not-a-date', 0).source).toBe('default-new-year');
     expect(resolveCountdownTarget(null, 0).source).toBe('default-new-year');
+  });
+});
+
+describe('computeRemaining', () => {
+  const at = (hours: number, minutes: number, seconds: number): number =>
+    hours * MS_PER_HOUR + minutes * MS_PER_MINUTE + seconds * MS_PER_SECOND;
+
+  it('splits the interval into HHH:MM:SS', () => {
+    const remaining = computeRemaining(at(12, 34, 56), 0);
+
+    expect(remaining).toMatchObject({ hours: 12, minutes: 34, seconds: 56, clamped: false });
+    expect(remaining.totalSeconds).toBe(12 * 3600 + 34 * 60 + 56);
+    expect(remaining.expired).toBe(false);
+  });
+
+  it('lets hours run past 24 rather than rolling into days', () => {
+    expect(computeRemaining(at(100, 0, 0), 0).hours).toBe(100);
+  });
+
+  it('floors part-seconds, so the last second is shown for its whole duration', () => {
+    expect(computeRemaining(1_999, 0).seconds).toBe(1);
+    expect(computeRemaining(1_000, 0).seconds).toBe(1);
+    // Under a second left: the readout is zero but the target has not arrived.
+    expect(computeRemaining(999, 0).seconds).toBe(0);
+    expect(computeRemaining(999, 0).expired).toBe(false);
+  });
+
+  it('clamps at 999:59:59 and says that it is clamped', () => {
+    const remaining = computeRemaining(at(2_000, 0, 0), 0);
+
+    expect(remaining).toMatchObject({
+      hours: MAX_DISPLAY_HOURS,
+      minutes: 59,
+      seconds: 59,
+      clamped: true,
+    });
+    expect(remaining.totalSeconds).toBe(MAX_DISPLAY_SECONDS);
+    // The unclamped magnitude is still available to whoever wants it.
+    expect(remaining.rawTotalSeconds).toBe(2_000 * 3600);
+  });
+
+  it('unclamps exactly at the cap boundary', () => {
+    const atCap = computeRemaining(MAX_DISPLAY_SECONDS * MS_PER_SECOND, 0);
+    expect(atCap.clamped).toBe(false);
+    expect(atCap.hours).toBe(MAX_DISPLAY_HOURS);
+    expect(atCap.minutes).toBe(59);
+    expect(atCap.seconds).toBe(59);
+
+    const oneOver = computeRemaining((MAX_DISPLAY_SECONDS + 1) * MS_PER_SECOND, 0);
+    expect(oneOver.clamped).toBe(true);
+  });
+
+  it('expires exactly at the target instant, not a second either side', () => {
+    expect(computeRemaining(1_000, 0).expired).toBe(false);
+    expect(computeRemaining(1_000, 1_000).expired).toBe(true);
+    expect(computeRemaining(1_000, 999).expired).toBe(false);
+  });
+
+  it('zeroes every component once expired and keeps the raw value negative', () => {
+    const remaining = computeRemaining(0, at(3, 0, 0));
+
+    expect(remaining).toMatchObject({
+      totalSeconds: 0,
+      hours: 0,
+      minutes: 0,
+      seconds: 0,
+      expired: true,
+      clamped: false,
+    });
+    expect(remaining.rawTotalSeconds).toBe(-3 * 3600);
+  });
+});
+
+describe('formatRemaining', () => {
+  it('pads hours to three digits', () => {
+    expect(formatRemaining(computeRemaining(9 * MS_PER_HOUR + 5 * MS_PER_MINUTE, 0))).toBe(
+      '009:05:00',
+    );
+  });
+
+  it('marks a clamped value as a lower bound', () => {
+    expect(formatRemaining(computeRemaining(5_000 * MS_PER_HOUR, 0))).toBe('>999:59:59');
+  });
+
+  it('reads all zeroes once expired', () => {
+    expect(formatRemaining(computeRemaining(0, 1_000))).toBe('000:00:00');
   });
 });

@@ -9,6 +9,73 @@ export const MS_PER_MINUTE = 60 * MS_PER_SECOND;
 export const MS_PER_HOUR = 60 * MS_PER_MINUTE;
 export const MS_PER_DAY = 24 * MS_PER_HOUR;
 
+/** The display is `HHH:MM:SS`, so anything past this reads as the cap. */
+export const MAX_DISPLAY_HOURS = 999;
+export const MAX_DISPLAY_SECONDS = MAX_DISPLAY_HOURS * 3600 + 59 * 60 + 59;
+
+export interface RemainingTime {
+  /** Whole seconds left, clamped to the display cap and never negative. */
+  readonly totalSeconds: number;
+  /** Whole seconds left before clamping; negative once the target has passed. */
+  readonly rawTotalSeconds: number;
+  /** 0…999. */
+  readonly hours: number;
+  readonly minutes: number;
+  readonly seconds: number;
+  /** True while the real remaining time exceeds `MAX_DISPLAY_SECONDS`. */
+  readonly clamped: boolean;
+  /** True once the target instant has arrived; all components are then zero. */
+  readonly expired: boolean;
+}
+
+/**
+ * Remaining time as the rings display it: `HHH:MM:SS`, clamped at 999:59:59.
+ *
+ * Seconds are floored, so the readout shows `00:00:01` for the whole of the
+ * final second and only reaches `00:00:00` at expiry. Beyond the cap the
+ * display pins at 999:59:59 and `clamped` is set, so the UI can show a "more
+ * than" affordance instead of silently lying about the magnitude.
+ */
+export function computeRemaining(targetEpochMs: number, nowMs: number): RemainingTime {
+  const remainingMs = targetEpochMs - nowMs;
+  const rawTotalSeconds = Math.floor(remainingMs / MS_PER_SECOND);
+
+  // Expiry is decided on the millisecond, not the floored second: with 300 ms
+  // left the readout is `000:00:00` but the target has not arrived yet, and
+  // firing the expiry state early would be a visible lie.
+  if (remainingMs <= 0) {
+    return {
+      totalSeconds: 0,
+      rawTotalSeconds,
+      hours: 0,
+      minutes: 0,
+      seconds: 0,
+      clamped: false,
+      expired: true,
+    };
+  }
+
+  const clamped = rawTotalSeconds > MAX_DISPLAY_SECONDS;
+  const totalSeconds = clamped ? MAX_DISPLAY_SECONDS : Math.max(0, rawTotalSeconds);
+
+  return {
+    totalSeconds,
+    rawTotalSeconds,
+    hours: Math.floor(totalSeconds / 3600),
+    minutes: Math.floor(totalSeconds / 60) % 60,
+    seconds: totalSeconds % 60,
+    clamped,
+    expired: false,
+  };
+}
+
+/** `HHH:MM:SS` text, with a `>` prefix while the value is clamped. */
+export function formatRemaining(remaining: RemainingTime): string {
+  const pad = (value: number, width = 2): string => String(value).padStart(width, '0');
+  const body = `${pad(remaining.hours, 3)}:${pad(remaining.minutes)}:${pad(remaining.seconds)}`;
+  return remaining.clamped ? `>${body}` : body;
+}
+
 export interface CountdownParts {
   /** Signed milliseconds until the target; negative once the target has passed. */
   readonly totalMs: number;
