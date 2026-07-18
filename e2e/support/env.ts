@@ -5,7 +5,34 @@
  * different browser flags or context settings from the ones that verify it.
  */
 
-export const E2E_PORT = Number(process.env.E2E_PORT ?? 4173);
+/**
+ * The preview server's port.
+ *
+ * `E2E_PORT` wins when set. Otherwise CI takes the fixed default — one suite per
+ * job, so a stable port keeps logs and failures predictable.
+ *
+ * Outside CI the default is per-process, and that is a correctness fix rather
+ * than a convenience. `webServer.reuseExistingServer` is on outside CI, so two
+ * runs sharing a port do not collide: the second one quietly *attaches to the
+ * first one's server* and tests the first one's build. Wrong code, green result,
+ * no error anywhere. Several agents or worktrees driving this repo at once is
+ * normal here, so the port has to be theirs alone by default.
+ */
+function resolvePort(): number {
+  const explicit = process.env.E2E_PORT;
+  if (explicit) return Number(explicit);
+  if (process.env.CI) return 4173;
+  return 4174 + (process.pid % 500);
+}
+
+const port = resolvePort();
+
+// Pinned into the environment so Playwright's worker processes — which re-import
+// this module rather than inheriting its evaluated state — resolve the same port
+// as the run that started the server.
+process.env.E2E_PORT = String(port);
+
+export const E2E_PORT = port;
 
 /**
  * The preview server's bind address.
