@@ -7,7 +7,7 @@
  * numeral at once. This module does the offsetting.
  */
 
-import { signedArea, type Contour, type Outline, type Point2 } from './types.js';
+import { signedArea, type Outline, type Point2 } from './types.js';
 
 export interface StrokeOptions {
   /** Full stroke width in the same units as the path. */
@@ -175,19 +175,3 @@ export function strokeOutline(
 
   return { contour, holes: [] };
 }
-
-/** Convenience: stroke several paths and drop the ones that produce no area. */
-export function strokeOutlines(
-  paths: readonly (readonly Point2[])[],
-  options: StrokeOptions,
-): Outline[] {
-  const outlines: Outline[] = [];
-  for (const path of paths) {
-    const outline = strokeOutline(path, options);
-    if (outline) outlines.push(outline);
-  }
-  return outlines;
-}
-
-/** Re-exported for tests and callers that build contours by hand. */
-export type { Contour };

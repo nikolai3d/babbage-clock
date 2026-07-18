@@ -36,12 +36,6 @@ export function signedArea(contour: Contour): number {
   return total / 2;
 }
 
-/** True when no two consecutive points coincide and the contour has area. */
-export function isDegenerate(contour: Contour, epsilon = 1e-9): boolean {
-  if (contour.length < 3) return true;
-  return Math.abs(signedArea(contour)) <= epsilon;
-}
-
 /** Samples an axis-aligned ellipse arc; angles in radians, `a1` may be < `a0`. */
 export function ellipseArc(
   cx: number,

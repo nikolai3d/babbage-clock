@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { strokeOutline, strokeOutlines } from './strokes.js';
+import { strokeOutline } from './strokes.js';
 import { signedArea } from './types.js';
 
 const line = (length: number) => [
@@ -82,12 +82,5 @@ describe('strokeOutline', () => {
     expect(strokeOutline(line(1), { width: 0 })).toBeUndefined();
     expect(strokeOutline(line(1), { width: -1 })).toBeUndefined();
     expect(strokeOutline(line(1), { width: 0.1, closed: true })).toBeUndefined();
-  });
-});
-
-describe('strokeOutlines', () => {
-  it('skips degenerate paths rather than failing the whole glyph', () => {
-    const outlines = strokeOutlines([line(1), [{ x: 0, y: 0 }]], { width: 0.1 });
-    expect(outlines).toHaveLength(1);
   });
 });

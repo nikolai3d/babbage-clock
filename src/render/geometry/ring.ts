@@ -10,7 +10,6 @@
 import * as THREE from 'three';
 import { digitGlyph, transformGlyph, type GlyphOptions } from '../../geometry/digitGlyphs.js';
 import {
-  DIGITS_PER_RING,
   digitAngle,
   numeralLayout,
   readingAngleForAxis,
@@ -151,9 +150,6 @@ export function createRingNumeralsGeometry(
   merged.name = 'ring:numerals';
   return merged;
 }
-
-/** Convenience for callers that want the layout without building geometry. */
-export { numeralLayout, DIGITS_PER_RING };
 
 /** Rotates a Y-aligned primitive so its length runs along `axis`. */
 export function alignToAxis(geometry: THREE.BufferGeometry, axis: Axis): void {
