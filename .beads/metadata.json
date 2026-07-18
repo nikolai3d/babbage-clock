@@ -1,0 +1,7 @@
+{
+  "database": "dolt",
+  "backend": "dolt",
+  "dolt_mode": "embedded",
+  "dolt_database": "babbage_clock",
+  "project_id": "6a7985cf-99da-41ee-9154-aac7f13b3f2a"
+}
