@@ -9,6 +9,7 @@ import { qualitySettings } from '../app/quality.js';
 import { frameForAspect, ringStackRadius } from '../scene/framing.js';
 import { ringStackSpan } from '../geometry/ringLayout.js';
 import { computeCountdown, computeRemaining } from '../time/countdown.js';
+import { clockParts, formatClock } from '../time/clock.js';
 import { clockFrame, countdownFrame } from '../mechanism/index.js';
 import type { IblStatus } from './lighting.js';
 import type { QualitySettings } from '../app/quality.js';
@@ -813,9 +814,17 @@ export class ClockRenderer {
       // than once per frame.
       if (frameMs - this.lastStorePushMs >= STORE_UPDATE_INTERVAL_MS) {
         this.lastStorePushMs = frameMs;
+        const published = this.store.get();
+        const publishedMode = published.mode ?? this.view?.definition.mode ?? 'countdown';
         this.store.set({
-          countdown: computeCountdown(this.store.get().target.atMs, nowMs),
+          countdown: computeCountdown(published.target.atMs, nowMs),
           remaining,
+          clockReading:
+            publishedMode === 'clock'
+              ? formatClock(
+                  clockParts(nowMs, { zone: published.target.zone, hours12: published.hours12 }),
+                )
+              : null,
           fps: Math.round(this.fps),
         });
       }
@@ -840,9 +849,17 @@ export class ClockRenderer {
     const remaining = computeRemaining(this.store.get().target.atMs, nowMs);
     if (!view) return remaining;
 
+    // The viewer's `?mode=` override wins over the scene's own mode; a clock
+    // reads out in the target's zone (which `?tz=` sets) so "Tokyo time" is a
+    // shareable link, and in 12-hour form when the toggle says so.
+    const state = this.store.get();
+    const mode = state.mode ?? view.definition.mode;
     view.setFrame(
-      view.definition.mode === 'clock'
-        ? clockFrame(nowMs, view.ringCount)
+      mode === 'clock'
+        ? clockFrame(nowMs, view.ringCount, {
+            zone: state.target.zone,
+            hours12: state.hours12,
+          })
         : countdownFrame(remaining, view.ringCount),
       nowMs,
     );

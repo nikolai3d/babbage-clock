@@ -60,6 +60,18 @@ export class CountdownAnnouncer {
   }
 
   private render(state: AppState): void {
+    // Clock mode: announce the reading once whenever the mode or zone takes
+    // effect, then stay quiet. A clock that spoke on a countdown's thresholds
+    // would be arbitrary, and one that spoke every minute would be unbearable;
+    // the always-current figure is one Tab away on the readout itself.
+    if (state.clockReading !== null) {
+      const key = `clock:${state.target.zone}:${String(state.hours12)}`;
+      if (key === this.lastKey) return;
+      this.lastKey = key;
+      this.root.textContent = `Showing the current time in ${state.target.zone}: ${state.clockReading}.`;
+      return;
+    }
+
     // A new target restarts the narration: the next announcement names it, so
     // the change is audible rather than a silently different number.
     const targetChanged = state.target.label !== this.lastTargetLabel;

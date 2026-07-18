@@ -1,5 +1,5 @@
 import type { QualityPreference, QualityTier } from './quality.js';
-import type { BackgroundPreference } from './urlParams.js';
+import type { BackgroundPreference, ClockModePreference } from './urlParams.js';
 import type { EnvironmentPresetId } from '../scene/types.js';
 import type { CountdownParts, RemainingTime } from '../time/countdown.js';
 import type { ResolvedTarget } from '../time/target.js';
@@ -36,6 +36,17 @@ export interface AppState {
    * this viewer, not a property of the countdown being shared.
    */
   readonly largeText: boolean;
+  /** Viewer's readout-mode override; null defers to the scene. See `?mode=`. */
+  readonly mode: ClockModePreference | null;
+  /** 12-hour clock with a meridiem, for clock mode. */
+  readonly hours12: boolean;
+  /**
+   * `HH:MM:SS` (or `H:MM:SS AM`) in the reading zone while clock mode is in
+   * force; null in countdown mode. Published by whichever loop is driving time
+   * — the renderer or the fallback ticker — so the HUD never computes a time
+   * of its own.
+   */
+  readonly clockReading: string | null;
   /** Includes both-zone echoes and DST notes for the UI to surface. */
   readonly target: ResolvedTarget;
   readonly countdown: CountdownParts;

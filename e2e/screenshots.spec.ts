@@ -37,7 +37,11 @@ test.describe('screenshots', () => {
     await page.evaluate(() => document.fonts.ready);
   }
 
-  for (const scene of scenes.slice(0, 2)) {
+  // Every registered scene, not a prefix of the list: a new scene must arrive
+  // with a baseline, and registering one must never silently drop another
+  // scene's guard — which `slice(0, 2)` quietly did when a third scene landed
+  // in the middle of the registry.
+  for (const scene of scenes) {
     test(`${scene.id} renders its reference frame`, async ({ page }) => {
       await gotoApp(page, deterministicOptions({ scene: scene.id }));
       await settle(page);

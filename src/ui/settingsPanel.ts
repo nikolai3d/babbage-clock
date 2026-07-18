@@ -288,6 +288,14 @@ export class SettingsPanel {
   // -------------------------------------------------------------------------
 
   private render(state: AppState): void {
+    // Clock mode: the target form, quick targets and echo are countdown
+    // affordances and hide as a block. The reading zone still follows `?tz=`;
+    // an in-drawer zone control for clock mode is a filed follow-up rather
+    // than a reuse of the target form's picker, whose apply path is a target
+    // submission.
+    const clockMode = state.clockReading !== null;
+    this.form.hidden = clockMode;
+    this.echoEl.hidden = clockMode;
     this.root.hidden = !state.settingsOpen;
 
     // Abandoning an edit by closing the drawer discards it: reopening should

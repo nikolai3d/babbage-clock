@@ -11,6 +11,15 @@ import { parseQualityPreference } from './quality.js';
  */
 export type BackgroundPreference = 'auto' | 'panorama' | 'backdrop';
 
+/** What the rings read out; null defers to the scene's own mode. */
+export type ClockModePreference = 'countdown' | 'clock';
+
+export function parseClockMode(raw: string | null | undefined): ClockModePreference | null {
+  if (raw === null || raw === undefined) return null;
+  const value = raw.trim().toLowerCase();
+  return value === 'clock' || value === 'countdown' ? value : null;
+}
+
 /** `auto` for anything unrecognised, exactly like an unknown `?scene=`. */
 export function parseBackgroundPreference(
   raw: string | null | undefined,
@@ -31,6 +40,8 @@ export const URL_PARAM = {
   tz: 'tz',
   mood: 'mood',
   background: 'bg',
+  mode: 'mode',
+  hours12: 'h12',
   quality: 'quality',
 } as const;
 
@@ -54,6 +65,10 @@ export interface LaunchParams {
    * "automatic": the quality tier decides, which is the shipped default.
    */
   readonly background: BackgroundPreference | null;
+  /** `?mode=clock|countdown`. Null defers to the scene's own mode. */
+  readonly mode: ClockModePreference | null;
+  /** `?h12` — 12-hour form with a meridiem, for clock mode. */
+  readonly hours12: boolean;
   /**
    * Render-quality override (`?quality=low|high`). `auto` — the default and the
    * value any unrecognised input maps to — leaves the tier to the device
@@ -75,6 +90,8 @@ export function readLaunchParams(search: string): LaunchParams {
     tz: params.get(URL_PARAM.tz),
     mood: parseEnvironmentPreset(params.get(URL_PARAM.mood)),
     background: parseBackgroundPreference(params.get(URL_PARAM.background)),
+    mode: parseClockMode(params.get(URL_PARAM.mode)),
+    hours12: params.get(URL_PARAM.hours12) === '1',
     quality: parseQualityPreference(params.get(URL_PARAM.quality)),
   };
 }
@@ -85,6 +102,8 @@ export interface ShareableState {
   readonly target: ResolvedTarget;
   readonly mood: EnvironmentPresetId | null;
   readonly background: BackgroundPreference | null;
+  readonly mode: ClockModePreference | null;
+  readonly hours12: boolean;
 }
 
 /**
@@ -108,6 +127,8 @@ export function buildShareParams(state: ShareableState): URLSearchParams {
   if (state.background !== null && state.background !== 'auto') {
     params.set(URL_PARAM.background, state.background);
   }
+  if (state.mode !== null) params.set(URL_PARAM.mode, state.mode);
+  if (state.hours12) params.set(URL_PARAM.hours12, '1');
   return params;
 }
 
@@ -151,6 +172,8 @@ export function writeAppParams(state: ShareableState): void {
   if (state.background === null || state.background === 'auto') {
     url.searchParams.delete(URL_PARAM.background);
   }
+  if (state.mode === null) url.searchParams.delete(URL_PARAM.mode);
+  if (!state.hours12) url.searchParams.delete(URL_PARAM.hours12);
   url.search = readableQuery(url.searchParams);
   window.history.replaceState(null, '', url);
 }
