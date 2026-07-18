@@ -88,12 +88,12 @@ export const copperPadlockScene: SceneDefinition = {
 
   camera: {
     fov: 45,
-    position: [0, 1.2, 7.5],
-    target: [0, 0, 0],
+    position: [0, 1.6, 10.5],
+    target: [0, 0.2, 0],
     near: 0.1,
     far: 100,
-    minDistance: 3.5,
-    maxDistance: 14,
+    minDistance: 5,
+    maxDistance: 20,
     minPolarAngle: Math.PI * 0.12,
     maxPolarAngle: Math.PI * 0.86,
   },

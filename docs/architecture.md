@@ -17,6 +17,12 @@ src/
   app/
     store.ts             the observable app-state store (framework-free)
     urlParams.ts         ?scene= / ?target= reading and writing
+  geometry/              ── pure geometry maths, no three.js ──
+    types.ts             Point2/Contour/Outline plus small 2D helpers
+    strokes.ts           centre-line stroke -> filled outline
+    digitGlyphs.ts       the procedural stroke font for 0-9
+    gearProfile.ts       involute tooth profiles, spoke and crescent cutouts
+    ringLayout.ts        digit angles, ring offsets, numeral sizing
   scene/                 ── no three.js imports anywhere below this line ──
     types.ts             SceneDefinition and everything it contains
     validate.ts          structural checks for scene definitions
@@ -29,6 +35,11 @@ src/
   render/                ── the only place three.js is used ──
     renderer.ts          WebGL context, camera, OrbitControls, frame loop
     clockScene.ts        SceneDefinition -> three.js objects
+    geometry/            outlines and configs -> BufferGeometry
+      extrude.ts         Outline -> Shape -> ExtrudeGeometry, merging, bending
+      gear.ts            createGearGeometry
+      ring.ts            createRingBodyGeometry / createRingNumeralsGeometry
+      housing.ts         createHousingParts (case, bezel, studs, lid, shackle)
     materials.ts         material slot map -> three.js materials
     lighting.ts          lighting config -> three.js lights
   time/                  ── pure, no DOM, no three.js ──
@@ -41,12 +52,17 @@ src/
     hud.ts               countdown readout + scene picker
 ```
 
-Two boundaries matter and should be preserved:
+Three boundaries matter and should be preserved:
 
-1. **`scene/` and `time/` never import three.js.** That is what makes them
+1. **`geometry/` never imports three.js.** Tooth profiles, glyph outlines and
+   digit angles are plain maths over `{x, y}` points. `render/geometry/` is the
+   only place those become GPU buffers. This is the same rule as below, applied
+   to the generators: it is why the tooth profile, the digit angle mapping and
+   the numeral sizing rules are unit-tested without a WebGL context.
+2. **`scene/` and `time/` never import three.js.** That is what makes them
    unit-testable without a WebGL context, and it is why the test suite runs in a
    plain Node environment.
-2. **`ui/` never imports three.js either.** The UI reads the app store and emits
+3. **`ui/` never imports three.js either.** The UI reads the app store and emits
    intents (`onSelectScene`); `main.ts` decides what those mean. The renderer
    subscribes to the same store. If a UI bead finds itself importing `three`,
    the state it needs belongs in the store instead.
@@ -94,6 +110,30 @@ Rings are coaxial, cryptex style: `rings.count` rings laid out along
 out — `countdown` packs the remaining time least-significant-first, `clock` shows
 wall-clock `HHMMSS`.
 
+## Geometry generation
+
+Nothing in the scene graph is a fixed mesh. `ClockSceneView` assembles geometry
+that the generators compute from the same `SceneDefinition` the rest of the app
+reads:
+
+- **Gears** — `createGearGeometry` extrudes an involute profile with a solid,
+  5-spoke, 6-spoke or crescent-cutout web. Teeth are part of the profile, not
+  instanced boxes.
+- **Rings** — `createRingBodyGeometry` and `createRingNumeralsGeometry` are
+  functions of `RingConfig`. Change `rings.count` or `rings.radius` in a scene
+  file and the drums, the numerals and the case that encloses them all follow.
+  Both buffers are built once and shared by every ring in the stack.
+- **Numerals** — a procedural stroke font, extruded and bent onto the drum.
+  Digit `d` is engraved at `digitAngle(d)`, which is exactly the angle
+  `setDigits` rotates to. See `docs/assets.md` for why this rather than a
+  texture atlas.
+- **Housing** — `createHousingParts` returns the case, bezel, screw studs, open
+  lid, hinge and shackle, each tagged with the material slot it belongs to. It
+  is sized to enclose whatever the scene contains.
+
+Conventions (units, origin, axes, polygon budgets, the material-slot contract
+for authored glTF) live in **[assets.md](assets.md)**.
+
 ## How to add a new scene
 
 1. Copy `src/scene/scenes/slateOrrery.ts` to a new file and change the numbers.
@@ -106,7 +146,8 @@ limits — fails loudly and immediately rather than rendering something wrong.
 
 **Planned 6-ring clock variant:** copy a preset, set `rings.count: 6` and
 `mode: 'clock'`. No render-code changes are required; `clockDigits` already
-produces exactly six digits for that case.
+produces exactly six digits for that case, and the ring, numeral and housing
+generators are all functions of `RingConfig`.
 
 ## Extension points
 
@@ -127,9 +168,9 @@ per slot, and nothing else moves.
 
 Slot names are fixed in `MATERIAL_SLOTS`: `housing`, `bezel`, `ring`,
 `numerals`, `gearA`–`gearD`, `arbor`, `frame`. Authored texture sets should be
-keyed by these names. Not every slot is used by the placeholder geometry yet —
-they are bound in every scene so later geometry can use them without touching
-scene files again.
+keyed by these names. Every slot is now consumed by geometry: the case takes
+`housing`, the bezel and its studs take `bezel`, the lid, hinge and shackle take
+`frame`.
 
 ### Lighting / IBL (environment bead)
 
@@ -175,6 +216,11 @@ repeatedly. Any new geometry added to `ClockSceneView` must be registered with
 `this.track(...)`, and any new material must come from the `MaterialLibrary`,
 otherwise it will leak on every switch. There is a test that asserts every
 geometry and material created is disposed.
+
+Generators return geometry the caller owns; they never hold a reference of their
+own. Anything that owns a GPU resource beyond its geometry and material — an
+`InstancedMesh` and its instance-matrix buffer, which the bezel studs use — goes
+into `disposables` as well, and there is a regression test for that too.
 
 ## Renderer decisions
 

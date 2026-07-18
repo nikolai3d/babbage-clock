@@ -4,7 +4,7 @@ import { ClockSceneView } from './clockScene.js';
 import { MaterialLibrary } from './materials.js';
 import { copperPadlockScene } from '../scene/scenes/copperPadlock.js';
 import { slateOrreryScene } from '../scene/scenes/slateOrrery.js';
-import { MATERIAL_SLOTS } from '../scene/types.js';
+import { MATERIAL_SLOTS, type SceneDefinition } from '../scene/types.js';
 
 /**
  * Scene-graph construction needs no WebGL context — only WebGLRenderer does —
@@ -152,7 +152,7 @@ describe('ClockSceneView', () => {
     expect(countMeshes(view.root)).toBe(0);
   });
 
-  it('disposes instanced gear teeth, which own a GPU buffer of their own', () => {
+  it('disposes instanced meshes, which own a GPU buffer of their own', () => {
     const view = new ClockSceneView(scene, copperPadlockScene);
 
     const instanced: THREE.InstancedMesh[] = [];
@@ -160,7 +160,9 @@ describe('ClockSceneView', () => {
       // three.js types InstancedMesh generically, so narrow it explicitly.
       if (object instanceof THREE.InstancedMesh) instanced.push(object as THREE.InstancedMesh);
     });
-    expect(instanced).toHaveLength(copperPadlockScene.gears.length);
+    // The bezel screw studs. Gear teeth used to be instanced too; they are now
+    // part of the extruded gear profile, so a wheel is a single mesh.
+    expect(instanced).toHaveLength(1);
 
     // InstancedMesh.dispose() releases instanceMatrix; disposing the geometry
     // and material alone would leak it on every scene switch.
@@ -168,6 +170,98 @@ describe('ClockSceneView', () => {
     view.dispose();
 
     for (const spy of spies) expect(spy).toHaveBeenCalled();
+  });
+
+  it('gives every ring a drum and a set of numerals', () => {
+    const view = new ClockSceneView(scene, copperPadlockScene);
+
+    for (let i = 0; i < copperPadlockScene.rings.count; i += 1) {
+      const ring = view.root.getObjectByName(`ring:${i}`)!;
+      const meshes = ring.children.filter((child) => child instanceof THREE.Mesh);
+      expect(meshes).toHaveLength(2);
+    }
+    view.dispose();
+  });
+
+  it('shares one drum and one numeral buffer across the whole stack', () => {
+    const view = new ClockSceneView(scene, copperPadlockScene);
+
+    const geometries = new Set<THREE.BufferGeometry>();
+    for (let i = 0; i < copperPadlockScene.rings.count; i += 1) {
+      const ring = view.root.getObjectByName(`ring:${i}`)!;
+      for (const child of ring.children) {
+        // three.js types Mesh generically, so narrow it explicitly.
+        if (child instanceof THREE.Mesh) {
+          geometries.add((child as THREE.Mesh<THREE.BufferGeometry>).geometry);
+        }
+      }
+    }
+    // Seven rings, two buffers: the rings differ only by transform.
+    expect(geometries.size).toBe(2);
+    view.dispose();
+  });
+
+  it('builds the case and consumes the frame and bezel slots', () => {
+    const view = new ClockSceneView(scene, copperPadlockScene);
+    const housing = view.root.getObjectByName('housing')!;
+
+    expect(housing).toBeDefined();
+    const names = housing.children.map((child) => child.name);
+    expect(names).toContain('housing:case');
+    expect(names).toContain('housing:bezel');
+    expect(names).toContain('housing:lid');
+    expect(names).toContain('housing:shackle');
+
+    const used = new Set<string>();
+    housing.traverse((object) => {
+      if (object instanceof THREE.Mesh && object.material instanceof THREE.Material) {
+        used.add(object.material.name);
+      }
+    });
+    expect(used).toContain('slot:frame');
+    expect(used).toContain('slot:bezel');
+    view.dispose();
+  });
+
+  it('sizes the case around everything the scene contains', () => {
+    const view = new ClockSceneView(scene, copperPadlockScene);
+    const shell = view.root.getObjectByName('housing:case') as THREE.Mesh;
+    shell.geometry.computeBoundingSphere();
+
+    const furthestGear = Math.max(
+      ...copperPadlockScene.gears.map(
+        (gear) => Math.hypot(gear.position[0], gear.position[1]) + gear.radius,
+      ),
+    );
+    expect(shell.geometry.boundingSphere!.radius).toBeGreaterThan(furthestGear);
+    view.dispose();
+  });
+
+  /**
+   * The property this geometry work exists to protect: a variant that changes
+   * only scene data must render without a single code change here.
+   */
+  it('builds a six-ring clock variant from scene data alone', () => {
+    const sixRing: SceneDefinition = {
+      ...copperPadlockScene,
+      id: 'six-ring',
+      mode: 'clock',
+      rings: { ...copperPadlockScene.rings, count: 6, radius: 0.8, thickness: 0.3, spacing: 0.4 },
+    };
+
+    const view = new ClockSceneView(scene, sixRing);
+    view.setDigits([1, 2, 3, 4, 5, 6]);
+    view.update(0.1);
+
+    expect(view.ringCount).toBe(6);
+    expect(view.root.children.filter((child) => child.name.startsWith('ring:'))).toHaveLength(6);
+
+    const drum = view.root.getObjectByName('ring:0')!.children[0] as THREE.Mesh;
+    drum.geometry.computeBoundingBox();
+    // Sized from the new config, not from the preset it was copied from.
+    expect(drum.geometry.boundingBox!.max.y).toBeCloseTo(0.8, 6);
+
+    view.dispose();
   });
 
   it('survives repeated build/dispose cycles, as scene switching requires', () => {
