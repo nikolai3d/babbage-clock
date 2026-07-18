@@ -17,6 +17,13 @@ export interface ClockRendererOptions {
   readonly canvas: HTMLCanvasElement;
   readonly store: AppStore;
   readonly timeSource: TimeSource;
+  /**
+   * When false, every time-varying flourish is switched off: OrbitControls
+   * damping, gear rotation and ring easing. Frames then depend only on the
+   * clock reading, which is what makes screenshots reproducible. Defaults to
+   * true, so normal application behaviour is unchanged.
+   */
+  readonly motion?: boolean;
 }
 
 /**
@@ -36,12 +43,18 @@ export class ClockRenderer {
   private readonly camera: THREE.PerspectiveCamera;
   private readonly controls: OrbitControls;
 
+  private readonly motionEnabled: boolean;
+
   private view: ClockSceneView | null = null;
   private frameHandle: number | null = null;
   private lastFrameMs = 0;
   private lastStorePushMs = 0;
   private fps = 0;
   private disposed = false;
+
+  /** Last digits handed to the scene; read by the `?testApi` observation surface. */
+  private lastDigits: readonly number[] = [];
+  private frameCount = 0;
 
   private readonly resizeObserver: ResizeObserver;
   private readonly onVisibilityChange = (): void => {
@@ -51,10 +64,11 @@ export class ClockRenderer {
     else this.resume();
   };
 
-  constructor({ canvas, store, timeSource }: ClockRendererOptions) {
+  constructor({ canvas, store, timeSource, motion = true }: ClockRendererOptions) {
     this.canvas = canvas;
     this.store = store;
     this.timeSource = timeSource;
+    this.motionEnabled = motion;
 
     this.renderer = new THREE.WebGLRenderer({
       canvas,
@@ -73,7 +87,10 @@ export class ClockRenderer {
     this.camera = new THREE.PerspectiveCamera(45, 1, 0.1, 100);
 
     this.controls = new OrbitControls(this.camera, canvas);
-    this.controls.enableDamping = true;
+    // Damping is inertia: the camera keeps gliding for a few frames after an
+    // orbit ends. Deterministic captures need the camera to be a pure function
+    // of the input it has received, so it is off with `?nomotion`.
+    this.controls.enableDamping = this.motionEnabled;
     this.controls.dampingFactor = 0.08;
     this.controls.enablePan = false;
 
@@ -94,9 +111,45 @@ export class ClockRenderer {
    */
   setScene(definition: SceneDefinition): void {
     this.view?.dispose();
-    this.view = new ClockSceneView(this.scene, definition);
+    this.view = new ClockSceneView(this.scene, definition, { motion: this.motionEnabled });
+    this.lastDigits = [];
     this.applyCameraConfig(definition);
     this.renderer.toneMappingExposure = definition.lighting.exposure ?? 1;
+  }
+
+  /** The digits currently shown on the rings. See `app/testHooks.ts`. */
+  getDigits(): readonly number[] {
+    return this.lastDigits;
+  }
+
+  /** Renderer diagnostics for the `?testApi` observation surface. */
+  getRenderState(): {
+    webgl2: boolean;
+    frames: number;
+    fps: number;
+    running: boolean;
+    drawCalls: number;
+    triangles: number;
+    width: number;
+    height: number;
+    pixelRatio: number;
+    motion: boolean;
+    sceneId: string | null;
+  } {
+    const size = this.renderer.getSize(new THREE.Vector2());
+    return {
+      webgl2: this.renderer.capabilities.isWebGL2,
+      frames: this.frameCount,
+      fps: Math.round(this.fps),
+      running: this.frameHandle !== null,
+      drawCalls: this.renderer.info.render.calls,
+      triangles: this.renderer.info.render.triangles,
+      width: size.x,
+      height: size.y,
+      pixelRatio: this.renderer.getPixelRatio(),
+      motion: this.motionEnabled,
+      sceneId: this.view?.definition.id ?? null,
+    };
   }
 
   start(): void {
@@ -162,6 +215,7 @@ export class ClockRenderer {
 
   private readonly frame = (frameMs: number): void => {
     this.frameHandle = requestAnimationFrame(this.frame);
+    this.frameCount += 1;
 
     const dt = Math.min((frameMs - this.lastFrameMs) / 1000, MAX_FRAME_DELTA_SECONDS);
     this.lastFrameMs = frameMs;
@@ -174,11 +228,12 @@ export class ClockRenderer {
       const countdown = computeCountdown(target.atMs, nowMs);
       const definition = view.definition;
 
-      view.setDigits(
+      const digits =
         definition.mode === 'clock'
           ? clockDigits(new Date(nowMs), view.ringCount)
-          : countdownDigits(countdown, view.ringCount),
-      );
+          : countdownDigits(countdown, view.ringCount);
+      this.lastDigits = digits;
+      view.setDigits(digits);
       view.update(dt);
 
       // The store drives DOM updates, so push at a human-readable rate rather

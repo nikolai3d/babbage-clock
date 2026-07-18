@@ -5,7 +5,17 @@ import prettier from 'eslint-config-prettier';
 
 export default tseslint.config(
   {
-    ignores: ['dist/**', 'node_modules/**', 'coverage/**', '.beads/**'],
+    ignores: [
+      'dist/**',
+      'node_modules/**',
+      'coverage/**',
+      '.beads/**',
+      // Playwright output: baselines, videos, traces and diffs.
+      'e2e/__screenshots__/**',
+      'test-results/**',
+      'playwright-report/**',
+      'artifacts/**',
+    ],
   },
   js.configs.recommended,
   ...tseslint.configs.recommendedTypeChecked,
@@ -41,11 +51,27 @@ export default tseslint.config(
     },
   },
   {
-    files: ['vite.config.ts'],
+    // Everything that runs in Node rather than the browser: the build config
+    // and the Playwright layer. Specs are Node code, but the bodies passed to
+    // `page.evaluate()` are browser code, so both global sets apply.
+    files: ['vite.config.ts', 'e2e/**/*.ts', 'capture/**/*.ts', 'playwright*.config.ts'],
     languageOptions: {
+      parserOptions: {
+        // These files live in tsconfig.node.json, which the project service
+        // would not find on its own — it only looks for `tsconfig.json`.
+        projectService: false,
+        project: ['./tsconfig.node.json'],
+        tsconfigRootDir: import.meta.dirname,
+      },
       globals: {
         ...globals.node,
+        ...globals.browser,
       },
+    },
+    rules: {
+      // Specs legitimately log which GL backend served the run and where the
+      // demo video landed; that output is the point of running them.
+      'no-console': 'off',
     },
   },
   {

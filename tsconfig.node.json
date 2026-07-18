@@ -1,0 +1,20 @@
+{
+  // The Node-side of the repo: build config and the Playwright test layer.
+  //
+  // Split from tsconfig.json so this layer can be checked separately from the
+  // browser bundle. The Node globals it needs are declared in
+  // `e2e/support/node-env.d.ts` rather than pulled from `@types/node`; that
+  // file explains why.
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    // Specs drive a browser via `page.evaluate()`, so DOM lib stays available.
+    "lib": ["ES2022", "DOM", "DOM.Iterable"]
+  },
+  "include": [
+    "e2e",
+    "capture",
+    "vite.config.ts",
+    "playwright.config.ts",
+    "playwright.capture.config.ts"
+  ]
+}

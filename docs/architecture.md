@@ -266,11 +266,26 @@ and the clock-skew warning for the UI to surface.
 
 ### E2E / screenshots
 
-Not present. A later bead adds Playwright, screenshots, video and CI artifacts.
-The current test suite deliberately runs in a Node environment with no DOM, and
-covers time maths, the registry, the store, and scene-graph construction —
-`ClockSceneView` is testable headlessly because building a three.js scene graph
-does not require a GL context.
+Present. Playwright drives the built app in headless Chromium over ANGLE's
+SwiftShader backend, covering boot, WebGL2 acquisition, the advancing readout,
+`?scene=` switching and fallback, plus committed screenshot baselines. See
+**[docs/testing.md](testing.md)** for how to run, debug and regenerate each
+layer — in particular the Docker recipe for regenerating baselines, which you
+will need after any deliberate visual change.
+
+The unit suite still runs in a Node environment with no DOM, covering time
+maths, the registry, the store, and scene-graph construction; `ClockSceneView`
+is testable headlessly because building a three.js scene graph does not require
+a GL context.
+
+**Test hooks.** `src/app/testHooks.ts` adds a small, query-parameter-gated
+surface used only by the e2e and capture layers: `?mockNow=` pins the clock
+(through an adapter satisfying `TimeSource`, so `src/time/` is untouched),
+`?nomotion=1` disables drift, gear rotation and easing, and `?testApi=1`
+installs `window.__clock` for state assertions. **Every hook is inert without
+its parameter** — production behaviour is unchanged, and unit tests assert it.
+The renderer is consumed through a structural `RendererProbe` interface, so
+nothing in `src/render/` imports test-only code.
 
 ## Resource ownership
 

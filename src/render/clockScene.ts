@@ -27,6 +27,14 @@ interface RingView {
   targetAngle: number;
 }
 
+export interface ClockSceneViewOptions {
+  /**
+   * When false, rings snap straight to their digit and gears stop turning, so
+   * the frame is a pure function of the current digits. Defaults to true.
+   */
+  readonly motion?: boolean;
+}
+
 /**
  * The renderable form of a `SceneDefinition`.
  *
@@ -52,8 +60,15 @@ export class ClockSceneView {
   private readonly rings: RingView[] = [];
   private readonly gears: { spinner: THREE.Object3D; spec: GearSpec }[] = [];
 
-  constructor(scene: THREE.Scene, definition: SceneDefinition) {
+  private readonly motion: boolean;
+
+  constructor(
+    scene: THREE.Scene,
+    definition: SceneDefinition,
+    options: ClockSceneViewOptions = {},
+  ) {
     this.definition = definition;
+    this.motion = options.motion ?? true;
     this.root.name = `scene:${definition.id}`;
 
     this.materials = new MaterialLibrary(definition.materials);
@@ -83,7 +98,10 @@ export class ClockSceneView {
 
   /** Advances animation. `dt` is seconds since the previous frame. */
   update(dt: number): void {
-    const settle = Math.min(1, dt * RING_SETTLE_RATE);
+    // Settling fully in one step is what removes the frame-rate dependence:
+    // with motion off, the ring angle depends only on the digit, never on how
+    // many frames have elapsed since it changed.
+    const settle = this.motion ? Math.min(1, dt * RING_SETTLE_RATE) : 1;
     const axis = this.definition.rings.axis;
 
     for (const ring of this.rings) {
@@ -91,6 +109,8 @@ export class ClockSceneView {
       ring.currentAngle += delta * settle;
       ring.group.rotation[axis] = ring.currentAngle;
     }
+
+    if (!this.motion) return;
 
     for (const { spinner, spec } of this.gears) {
       // Wrapped rather than accumulated: a tab left open for days would

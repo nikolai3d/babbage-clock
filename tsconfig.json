@@ -4,6 +4,11 @@
     "lib": ["ES2022", "DOM", "DOM.Iterable"],
     "module": "ESNext",
     "moduleResolution": "bundler",
+    // Browser types only. Node types are deliberately absent: with them in
+    // scope, `setTimeout` resolves to Node's overload returning `Timeout`
+    // rather than the DOM's `number`, which silently changes what application
+    // code type-checks against. The Playwright layer gets them from
+    // tsconfig.node.json instead.
     "types": ["vite/client"],
 
     "strict": true,
@@ -22,5 +27,5 @@
     "forceConsistentCasingInFileNames": true,
     "noEmit": true
   },
-  "include": ["src", "vite.config.ts"]
+  "include": ["src"]
 }

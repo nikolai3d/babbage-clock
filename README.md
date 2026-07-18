@@ -12,15 +12,20 @@ npm run dev      # http://localhost:5173
 
 ## Scripts
 
-| Script              | What it does                                   |
-| ------------------- | ---------------------------------------------- |
-| `npm run dev`       | Vite dev server with HMR                       |
-| `npm run build`     | Production build into `dist/`                  |
-| `npm run preview`   | Serve the production build locally             |
-| `npm run lint`      | ESLint + Prettier check                        |
-| `npm run typecheck` | `tsc --noEmit`                                 |
-| `npm run test`      | Vitest, single run                             |
-| `npm run ci`        | typecheck → lint → test → build (what CI runs) |
+| Script                 | What it does                                   |
+| ---------------------- | ---------------------------------------------- |
+| `npm run dev`          | Vite dev server with HMR                       |
+| `npm run build`        | Production build into `dist/`                  |
+| `npm run preview`      | Serve the production build locally             |
+| `npm run lint`         | ESLint + Prettier check                        |
+| `npm run typecheck`    | `tsc --noEmit`                                 |
+| `npm run test`         | Vitest, single run                             |
+| `npm run ci`           | typecheck → lint → test → build (what CI runs) |
+| `npm run test:e2e`     | Playwright end-to-end + screenshot tests       |
+| `npm run capture:demo` | Record a demo video tour into `artifacts/`     |
+
+Screenshot baselines are Linux/SwiftShader images regenerated with
+`npm run test:e2e:docker:update`. See [docs/testing.md](docs/testing.md).
 
 ## URL parameters
 
@@ -37,6 +42,10 @@ countdown is therefore a shareable link.
 
 An unknown `scene` or an unparseable `target` falls back to the default rather
 than erroring.
+
+There are also test-only parameters — `mockNow`, `mockNowMode`, `nomotion` and
+`testApi` — used by the e2e suite and the demo capture. Each is inert unless
+explicitly set; see [docs/testing.md](docs/testing.md#determinism-hooks).
 
 ## Architecture
 
