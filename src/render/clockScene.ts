@@ -186,27 +186,41 @@ export class ClockSceneView {
    */
   private buildHousing(definition: SceneDefinition): void {
     const { rings } = definition;
-    const [uAxis, vAxis] = ringPlaneAxes(rings.axis);
     const span = ringStackSpan(rings);
 
-    let clearance = Math.max(rings.radius * 1.5, span * 0.62);
+    // Clearance is measured in the plane of the case mouth, which is the plane
+    // perpendicular to the *case* axis — not the ring axis. For the usual
+    // horizontal cryptex those are different planes, and using the wrong one
+    // sizes the case so the gears poke through its wall.
+    const caseAxis = caseAxisFor(rings.axis);
+    const [uAxis, vAxis] = ringPlaneAxes(caseAxis);
+
+    // The ring stack presents its corner to that plane: half the stack along
+    // the ring axis, the drum radius across it.
+    const stackAlong = rings.axis === caseAxis ? rings.radius : span / 2;
+    const stackAcross = rings.radius;
+    let clearance = Math.hypot(stackAlong, stackAcross) * 1.08;
+    let halfDepth = rings.radius * 1.1;
+
     for (const gear of definition.gears) {
       const u = gear.position[axisIndex(uAxis)];
       const v = gear.position[axisIndex(vAxis)];
       clearance = Math.max(clearance, Math.hypot(u, v) + gear.radius * 1.12);
+      const depthReach = Math.abs(gear.position[axisIndex(caseAxis)]) + gear.thickness;
+      halfDepth = Math.max(halfDepth, depthReach * 1.1);
     }
 
     const parts = createHousingParts({
       innerRadius: clearance,
-      depth: Math.max(rings.radius * 2.2, span * 0.5),
+      depth: halfDepth * 2,
       radialSegments: Math.max(24, rings.radialSegments),
     });
 
     const group = new THREE.Group();
     group.name = 'housing';
-    // The case opens along +Z; rotate it only when the rings are stacked along
-    // that same axis, which would otherwise point the mouth at the stack.
-    if (rings.axis === 'z') group.rotation.x = -Math.PI / 2;
+    // The generator builds the case opening along +Z; turn it if this scene
+    // needs the mouth on a different axis.
+    if (caseAxis === 'y') group.rotation.x = -Math.PI / 2;
 
     for (const part of parts) {
       const geometry = this.track(part.geometry);
@@ -267,6 +281,14 @@ export class ClockSceneView {
     this.root.add(group);
     this.gears.push({ spinner, spec });
   }
+}
+
+/**
+ * Which way the case faces: across the ring stack, so the rings are seen from
+ * the side. Only a stack that already runs along Z pushes the mouth elsewhere.
+ */
+function caseAxisFor(ringAxis: Axis): Axis {
+  return ringAxis === 'z' ? 'y' : 'z';
 }
 
 /** Index of an axis within a `Vec3` tuple. */
