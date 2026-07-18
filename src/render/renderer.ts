@@ -1,6 +1,8 @@
 import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { ClockSceneView } from './clockScene.js';
+import { createEnvironmentLibrary } from './ibl/library.js';
+import { EnvironmentController } from './lighting.js';
 import { computeCountdown, computeRemaining } from '../time/countdown.js';
 import { clockFrame, countdownFrame } from '../mechanism/index.js';
 import type { AppStore } from '../app/store.js';
@@ -45,6 +47,8 @@ export class ClockRenderer {
   private readonly scene = new THREE.Scene();
   private readonly camera: THREE.PerspectiveCamera;
   private readonly controls: OrbitControls;
+  /** Owns the IBL environment, the mood light rig and the tone-mapping grade. */
+  private readonly environment: EnvironmentController;
 
   private readonly motionEnabled: boolean;
 
@@ -87,6 +91,11 @@ export class ClockRenderer {
     }
 
     this.camera = new THREE.PerspectiveCamera(45, 1, 0.1, 100);
+    this.environment = new EnvironmentController({
+      renderer: this.renderer,
+      scene: this.scene,
+      library: createEnvironmentLibrary(this.renderer),
+    });
 
     this.controls = new OrbitControls(this.camera, canvas);
     // Damping is inertia: the camera keeps gliding for a few frames after an
@@ -115,7 +124,10 @@ export class ClockRenderer {
     this.view?.dispose();
     this.view = new ClockSceneView(this.scene, definition, { motion: this.motionEnabled });
     this.applyCameraConfig(definition);
-    this.renderer.toneMappingExposure = definition.lighting.exposure ?? 1;
+    // The lighting mood owns the environment, the rig and the grade — including
+    // exposure — and re-asserts itself over the scene that was just rebuilt.
+    // A mood that is not resident yet is committed later, all at once.
+    this.environment.apply(definition, this.view.lighting);
     // Put the new mechanism on the clock immediately, so a scene switched to
     // while the tab is hidden is already reading the right time when it shows.
     this.syncMechanism(this.timeSource.now());
@@ -177,6 +189,8 @@ export class ClockRenderer {
     document.removeEventListener('visibilitychange', this.onVisibilityChange);
     this.resizeObserver.disconnect();
     this.controls.dispose();
+    // Before the view: the controller detaches its rig from the same scene.
+    this.environment.dispose();
     this.view?.dispose();
     this.view = null;
     this.renderer.dispose();

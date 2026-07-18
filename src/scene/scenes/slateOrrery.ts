@@ -84,7 +84,10 @@ export const slateOrreryScene: SceneDefinition = {
       { color: 0xffffff, intensity: 2.0, position: [-4, 6, 5] },
       { color: 0xbcd4ff, intensity: 1.2, position: [5, 1, -3] },
     ],
-    environment: { preset: 'none' },
+    // The counterpart to copper-padlock's setting: a cool scene that defaults
+    // to a cool mood and *does* show its panorama, so both background
+    // treatments are exercised by shipped data rather than only by tests.
+    environment: { preset: 'day', showAsBackground: true },
     exposure: 1.0,
   },
 

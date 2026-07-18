@@ -1,0 +1,59 @@
+{
+  "id": "day",
+  "name": "Overcast day",
+  "description": "Neutral overcast daylight: soft, even, cool-neutral white balance.",
+  "environment": {
+    "file": "kloofendal_overcast_puresky_1k.hdr",
+    "format": "rgbe",
+    "intensity": 0.85,
+    "rotation": 0.2
+  },
+  "background": {
+    "mode": "environment",
+    "blurriness": 0.15,
+    "intensity": 0.95,
+    "fallback": {
+      "kind": "gradient",
+      "top": "#b9c6d4",
+      "bottom": "#5d6a76",
+      "power": 1.3
+    }
+  },
+  "grade": {
+    "exposure": 1,
+    "toneMapping": "aces"
+  },
+  "sceneLightScale": 0,
+  "lights": [
+    {
+      "type": "directional",
+      "name": "key",
+      "color": "#eef3fb",
+      "intensity": 1.1,
+      "position": [4, 6, 7]
+    },
+    {
+      "type": "directional",
+      "name": "fill",
+      "color": "#cfd9e6",
+      "intensity": 0.35,
+      "position": [-5, 2, -4]
+    },
+    {
+      "type": "hemisphere",
+      "name": "sky-bounce",
+      "color": "#dce8f5",
+      "groundColor": "#4a4640",
+      "intensity": 0.35
+    }
+  ],
+  "source": {
+    "title": "Kloofendal Overcast (Pure Sky)",
+    "authors": ["Greg Zaal"],
+    "provider": "Poly Haven",
+    "url": "https://polyhaven.com/a/kloofendal_overcast_puresky",
+    "licence": "CC0-1.0",
+    "resolution": "1k",
+    "notes": "Measured mean radiance 0.90, R/B 0.81, peak/mean 7 — no sun disc, hence the soft even key."
+  }
+}

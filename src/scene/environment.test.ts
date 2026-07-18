@@ -26,10 +26,22 @@ describe('parseEnvironmentPreset', () => {
 
 describe('withEnvironmentPreset', () => {
   it('overrides the scene preset', () => {
-    const moody = withEnvironmentPreset(scene, 'steampunk-workshop');
-    expect(sceneEnvironmentPreset(moody)).toBe('steampunk-workshop');
+    const original = sceneEnvironmentPreset(scene);
+    const moody = withEnvironmentPreset(scene, 'busy-street');
+
+    expect(original).not.toBe('busy-street');
+    expect(sceneEnvironmentPreset(moody)).toBe('busy-street');
     // The registry's own definition must not be mutated: it is shared.
-    expect(sceneEnvironmentPreset(scene)).toBe('none');
+    expect(sceneEnvironmentPreset(scene)).toBe(original);
+  });
+
+  it('starts the shipped scenes on a real mood, not on "none"', () => {
+    // The default look is the steampunk workshop; a scene that declared "none"
+    // would render the analytic fallback and quietly lose its IBL.
+    expect(sceneEnvironmentPreset(scene)).toBe('steampunk-workshop');
+    for (const definition of sceneRegistry.list()) {
+      expect(sceneEnvironmentPreset(definition)).not.toBe('none');
+    }
   });
 
   it('leaves everything else alone', () => {

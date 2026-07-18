@@ -1,0 +1,70 @@
+{
+  "id": "night",
+  "name": "Night",
+  "description": "Dark ambient with sparse artificial sources; metals read by rim speculars.",
+  "environment": {
+    "file": "dikhololo_night_1k.hdr",
+    "format": "rgbe",
+    "intensity": 2.2,
+    "rotation": 0.9
+  },
+  "background": {
+    "mode": "environment",
+    "blurriness": 0.3,
+    "intensity": 1.2,
+    "fallback": {
+      "kind": "gradient",
+      "top": "#0b1220",
+      "bottom": "#04060a",
+      "power": 1.7
+    }
+  },
+  "grade": {
+    "exposure": 1.55,
+    "toneMapping": "aces"
+  },
+  "sceneLightScale": 0,
+  "lights": [
+    {
+      "type": "directional",
+      "name": "moon-key",
+      "color": "#a8bcd8",
+      "intensity": 1,
+      "position": [-4, 6, 3]
+    },
+    {
+      "type": "directional",
+      "name": "reading-key",
+      "color": "#b9c9e0",
+      "intensity": 1.4,
+      "position": [2, 3, 8]
+    },
+    {
+      "type": "point",
+      "name": "cool-rim",
+      "color": "#cfe1ff",
+      "intensity": 18,
+      "position": [-3, 2, -5],
+      "distance": 20,
+      "decay": 2
+    },
+    {
+      "type": "point",
+      "name": "lamp-accent",
+      "color": "#ffb066",
+      "intensity": 8,
+      "position": [2.2, -1.2, 3.2],
+      "distance": 12,
+      "decay": 2
+    }
+  ],
+  "source": {
+    "title": "Dikhololo Night",
+    "authors": ["Greg Zaal"],
+    "provider": "Poly Haven",
+    "url": "https://polyhaven.com/a/dikhololo_night",
+    "licence": "CC0-1.0",
+    "resolution": "1k",
+    "notes": "Measured mean radiance 0.085 — genuinely dark, so environmentIntensity is 2.2 and exposure 1.55. `reading-key` exists solely to keep the numerals legible at the reading line."
+  }
+}

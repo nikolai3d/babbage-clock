@@ -23,6 +23,12 @@ const base = process.env.VITE_BASE_PATH ?? './';
 
 export default defineConfig({
   base,
+  // HDR panoramas are not in Vite's default asset list. Declaring them here is
+  // what lets `assets/ibl/*/…` be imported for its URL, emitted with a content
+  // hash under `base`, and — crucially — left alone rather than parsed as text.
+  // The moods reach them through `import.meta.glob(..., { query: '?url' })`,
+  // which Vite rewrites, so they are base-path correct on a project page.
+  assetsInclude: ['**/*.hdr', '**/*.exr', '**/*.ktx2'],
   server: {
     port: 5173,
   },
