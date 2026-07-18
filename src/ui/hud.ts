@@ -199,15 +199,22 @@ export class Hud {
   // -------------------------------------------------------------------------
 
   private render(state: AppState): void {
-    const countdown = formatCountdown(state.countdown);
+    // Clock mode replaces the readout wholesale: the big figures become the
+    // current time in the reading zone, the target line names the zone, and
+    // the countdown-only affordances (cap note, expiry) do not apply.
+    const clock = state.clockReading;
+    const countdown = clock ?? formatCountdown(state.countdown);
     if (countdown !== this.lastCountdown) {
       this.lastCountdown = countdown;
       this.countdownEl.textContent = countdown;
     }
 
-    const label = state.countdown.elapsed
-      ? `since ${state.target.label}`
-      : `until ${state.target.label}`;
+    const label =
+      clock !== null
+        ? `${state.target.zone} time`
+        : state.countdown.elapsed
+          ? `since ${state.target.label}`
+          : `until ${state.target.label}`;
     if (label !== this.lastLabel) {
       this.lastLabel = label;
       this.labelEl.textContent = label;
@@ -218,7 +225,8 @@ export class Hud {
       this.root.classList.toggle('hud--expired', state.countdown.elapsed);
     }
 
-    const stateText = readoutStateText(state.countdown, state.remaining);
+    const stateText =
+      state.clockReading !== null ? '' : readoutStateText(state.countdown, state.remaining);
     if (stateText !== this.lastStateText) {
       this.lastStateText = stateText;
       this.stateEl.hidden = stateText === '';

@@ -16,6 +16,7 @@
  */
 
 import { computeCountdown, computeRemaining } from '../time/countdown.js';
+import { clockParts, formatClock } from '../time/clock.js';
 import type { CountdownParts, RemainingTime } from '../time/countdown.js';
 import type { TimeSource } from '../time/target.js';
 
@@ -27,8 +28,16 @@ export const TICK_INTERVAL_MS = 250;
  * exercised without building a whole `AppState`; `AppStore` satisfies it.
  */
 export interface CountdownStore {
-  get(): { readonly target: { readonly atMs: number } };
-  set(patch: { readonly countdown: CountdownParts; readonly remaining: RemainingTime }): void;
+  get(): {
+    readonly target: { readonly atMs: number; readonly zone: string };
+    readonly mode: 'countdown' | 'clock' | null;
+    readonly hours12: boolean;
+  };
+  set(patch: {
+    readonly countdown: CountdownParts;
+    readonly remaining: RemainingTime;
+    readonly clockReading: string | null;
+  }): void;
 }
 
 export interface CountdownTickerOptions {
@@ -74,9 +83,14 @@ export class CountdownTicker {
   readonly tick = (): void => {
     const nowMs = this.timeSource.now();
     const targetMs = this.store.get().target.atMs;
+    const state = this.store.get();
     this.store.set({
       countdown: computeCountdown(targetMs, nowMs),
       remaining: computeRemaining(targetMs, nowMs),
+      clockReading:
+        state.mode === 'clock'
+          ? formatClock(clockParts(nowMs, { zone: state.target.zone, hours12: state.hours12 }))
+          : null,
     });
   };
 }

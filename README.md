@@ -44,6 +44,8 @@ Screenshot baselines are Linux/SwiftShader images regenerated with
 | `tz`      | `?tz=Europe/Paris`            | the viewer's own timezone          |
 | `mood`    | `?mood=night`                 | the scene's own lighting           |
 | `bg`      | `?bg=backdrop`                | automatic (quality tier decides)   |
+| `mode`    | `?mode=clock`                 | the scene's own readout            |
+| `h12`     | `?h12=1`                      | 24-hour clock                      |
 
 `target` is a wall clock read in `tz` (an IANA id, a fixed offset like `+05:30`,
 or the viewer's zone if omitted), or a full ISO 8601 instant carrying its own

@@ -17,6 +17,7 @@ import {
 import {
   buildShareUrl,
   parseBackgroundPreference,
+  parseClockMode,
   readLaunchParams,
   writeAppParams,
 } from './app/urlParams.js';
@@ -123,6 +124,9 @@ async function bootstrap(): Promise<void> {
     materialLook: null,
     background: params.background,
     largeText: storedLargeText,
+    mode: params.mode,
+    hours12: params.hours12,
+    clockReading: null,
     quality: params.quality,
     qualityTier,
     target,
@@ -278,6 +282,8 @@ async function bootstrap(): Promise<void> {
       target: state.target,
       mood: state.mood,
       background: state.background,
+      mode: state.mode,
+      hours12: state.hours12,
     };
   };
 
@@ -358,6 +364,35 @@ async function bootstrap(): Promise<void> {
         if (mood === store.get().mood) return;
         store.set({ mood });
         applyScene();
+        writeAppParams(shareState());
+      },
+    }),
+    defineSelect({
+      id: 'mode-select',
+      label: 'Readout',
+      hint: 'What the rings display: a countdown to the target, or the current time.',
+      options: [
+        { value: '', label: 'Scene default' },
+        { value: 'countdown', label: 'Countdown' },
+        { value: 'clock', label: 'Clock', hint: 'Current time in the target zone (?tz=).' },
+      ],
+      read: (state) => state.mode ?? '',
+      apply: (value) => {
+        const mode = parseClockMode(value);
+        if (mode === store.get().mode) return;
+        store.set({ mode });
+        writeAppParams(shareState());
+      },
+    }),
+    defineToggle({
+      id: 'hours12-toggle',
+      label: '12-hour clock',
+      hint: 'Clock mode only: 1-12 with AM/PM instead of 0-23.',
+      read: (state) => state.hours12,
+      apply: (value) => {
+        const hours12 = value === true;
+        if (hours12 === store.get().hours12) return;
+        store.set({ hours12 });
         writeAppParams(shareState());
       },
     }),

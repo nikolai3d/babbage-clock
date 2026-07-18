@@ -71,6 +71,12 @@ export interface AppOptions {
   readonly mockSync?: boolean;
   /** Lighting mood for `?mood=`. Omit for the scene's own. */
   readonly mood?: string;
+  /** Readout override for `?mode=`. */
+  readonly mode?: 'clock' | 'countdown';
+  /** Zone for `?tz=` — the target's zone, and the clock's reading zone. */
+  readonly tz?: string;
+  /** Sets `?h12=1` — the 12-hour clock form. */
+  readonly h12?: boolean;
   /** Viewer backdrop override for `?bg=`. */
   readonly background?: 'panorama' | 'backdrop';
   /**
@@ -108,6 +114,9 @@ export function appUrl(options: AppOptions = {}): string {
   const params = new URLSearchParams();
   if (options.scene !== undefined) params.set('scene', options.scene);
   if (options.mood !== undefined) params.set('mood', options.mood);
+  if (options.mode !== undefined) params.set('mode', options.mode);
+  if (options.tz !== undefined) params.set('tz', options.tz);
+  if (options.h12) params.set('h12', '1');
   if (options.target !== undefined) params.set('target', options.target);
   if (options.mockNow !== undefined) params.set('mockNow', String(options.mockNow));
   if (options.mockNowMode !== undefined) params.set('mockNowMode', options.mockNowMode);

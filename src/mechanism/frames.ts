@@ -7,7 +7,8 @@
  * the state machine be tested against raw digit arrays.
  */
 
-import { clockDigits, remainingDigits, type RemainingTime } from '../time/countdown.js';
+import { clockDigitsZoned, type ClockOptions } from '../time/clock.js';
+import { remainingDigits, type RemainingTime } from '../time/countdown.js';
 import type { MechanismInput } from './mechanism.js';
 
 /**
@@ -35,9 +36,13 @@ export function countdownFrame(remaining: RemainingTime, ringCount: number): Mec
  * rather than from the time of day so that midnight is an ordinary tick and not
  * a jump.
  */
-export function clockFrame(nowMs: number, ringCount: number): MechanismInput {
+export function clockFrame(
+  nowMs: number,
+  ringCount: number,
+  options: ClockOptions = {},
+): MechanismInput {
   return {
-    digits: clockDigits(new Date(nowMs), ringCount),
+    digits: clockDigitsZoned(nowMs, ringCount, options),
     sequence: Math.floor(nowMs / 1000),
     expired: false,
     direction: 'up',

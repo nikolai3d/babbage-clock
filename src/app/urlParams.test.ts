@@ -16,6 +16,8 @@ function shareState(value: string, zone: string, overrides: Partial<ShareableSta
     sceneId: 'copper-padlock',
     mood: null,
     background: null,
+    mode: null,
+    hours12: false,
     target: resolveTarget({ value, zone, nowMs: NOW, viewerZone: 'America/New_York' }),
     ...overrides,
   } satisfies ShareableState;
@@ -51,7 +53,7 @@ function roundTrip(state: ShareableState): number {
 describe('readLaunchParams', () => {
   it('reads every parameter', () => {
     const params = readLaunchParams(
-      '?scene=slate-orrery&target=2026-12-31T23:59:59&tz=Europe/Paris&mood=night&bg=backdrop&quality=low',
+      '?scene=slate-orrery&target=2026-12-31T23:59:59&tz=Europe/Paris&mood=night&bg=backdrop&mode=clock&h12=1&quality=low',
     );
     expect(params).toEqual({
       sceneId: 'slate-orrery',
@@ -59,6 +61,8 @@ describe('readLaunchParams', () => {
       tz: 'Europe/Paris',
       mood: 'night',
       background: 'backdrop',
+      mode: 'clock',
+      hours12: true,
       quality: 'low',
     });
   });

@@ -88,6 +88,8 @@ describe('readLaunchParams', () => {
       tz: null,
       mood: null,
       background: null,
+      mode: null,
+      hours12: false,
       quality: 'auto',
     });
   });
@@ -99,6 +101,8 @@ describe('readLaunchParams', () => {
       tz: 'Europe/Paris',
       mood: null,
       background: null,
+      mode: null,
+      hours12: false,
       quality: 'auto',
     });
   });
@@ -110,6 +114,8 @@ describe('readLaunchParams', () => {
       tz: null,
       mood: null,
       background: null,
+      mode: null,
+      hours12: false,
       quality: 'auto',
     });
   });

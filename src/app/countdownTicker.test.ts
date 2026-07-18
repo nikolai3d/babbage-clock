@@ -9,7 +9,7 @@ function fakeStore(): CountdownStore & { patches: { remaining: RemainingTime }[]
   const patches: { countdown: CountdownParts; remaining: RemainingTime }[] = [];
   return {
     patches,
-    get: () => ({ target: { atMs: TARGET_MS } }),
+    get: () => ({ target: { atMs: TARGET_MS, zone: 'UTC' }, mode: null, hours12: false }),
     set: (patch) => {
       patches.push(patch);
     },
