@@ -30,6 +30,12 @@ export interface AppState {
    * 'auto' both mean "the quality tier decides"; see `app/urlParams.ts`.
    */
   readonly background: BackgroundPreference | null;
+  /**
+   * The large-text countdown, chosen in settings. Persisted per browser in
+   * localStorage rather than in share links: it is a reading preference of
+   * this viewer, not a property of the countdown being shared.
+   */
+  readonly largeText: boolean;
   /** Includes both-zone echoes and DST notes for the UI to surface. */
   readonly target: ResolvedTarget;
   readonly countdown: CountdownParts;

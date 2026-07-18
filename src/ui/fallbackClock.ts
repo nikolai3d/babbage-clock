@@ -29,7 +29,9 @@ export type FallbackReason =
   /** The context was lost and the browser may still restore it. */
   | 'context-lost'
   /** The context was lost and did not come back. */
-  | 'context-lost-permanent';
+  | 'context-lost-permanent'
+  /** Not a failure: the viewer chose the large-text countdown in settings. */
+  | 'viewer-choice';
 
 const NOTES: Record<FallbackReason, string> = {
   'no-webgl':
@@ -41,6 +43,9 @@ const NOTES: Record<FallbackReason, string> = {
   'context-lost-permanent':
     'The graphics context was lost and could not be restored. ' +
     'Reload the page to bring the mechanism back — the countdown keeps running either way.',
+  'viewer-choice':
+    'Large text mode. The mechanism is paused while this is on — ' +
+    'turn it off in settings to bring the clockwork back.',
 };
 
 export interface FallbackClockOptions {
