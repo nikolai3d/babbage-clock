@@ -1,5 +1,6 @@
 import type { CountdownParts } from '../time/countdown.js';
-import type { CountdownTarget } from '../time/target.js';
+import type { ResolvedTarget } from '../time/target.js';
+import type { TrueTimeStatus } from '../time/trueTime.js';
 
 /**
  * The single source of truth shared by the renderer and the UI.
@@ -10,8 +11,15 @@ import type { CountdownTarget } from '../time/target.js';
  */
 export interface AppState {
   readonly sceneId: string;
-  readonly target: CountdownTarget;
+  /** Includes both-zone echoes and DST notes for the UI to surface. */
+  readonly target: ResolvedTarget;
   readonly countdown: CountdownParts;
+  /**
+   * Accuracy of the clock the countdown is running on. The UI shows the tier
+   * and the skew warning; it starts as `device-clock` and improves once the
+   * first network sync lands.
+   */
+  readonly timeStatus: TrueTimeStatus;
   /** True while the render loop is idle because the tab is hidden. */
   readonly hidden: boolean;
   /** Frames per second, smoothed; surfaced for the diagnostics overlay. */

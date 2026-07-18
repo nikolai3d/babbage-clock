@@ -28,6 +28,12 @@ npm run dev      # http://localhost:5173
 | --------- | ----------------------------- | ---------------------------------- |
 | `scene`   | `?scene=slate-orrery`         | `copper-padlock`                   |
 | `target`  | `?target=2030-01-01T00:00:00` | next New Year in the viewer's zone |
+| `tz`      | `?tz=Europe/Paris`            | the viewer's own timezone          |
+
+`target` is a wall clock read in `tz` (an IANA id, a fixed offset like `+05:30`,
+or the viewer's zone if omitted), or a full ISO 8601 instant carrying its own
+offset — `?target=2026-12-31T23:59:59Z` means the same instant everywhere. Any
+countdown is therefore a shareable link.
 
 An unknown `scene` or an unparseable `target` falls back to the default rather
 than erroring.
@@ -37,8 +43,12 @@ than erroring.
 Everything about how a clock looks — ring count and layout, materials, lighting,
 camera framing — is data in a `SceneDefinition`, registered in a scene registry
 and switchable at runtime. See [docs/architecture.md](docs/architecture.md) for
-the module layout, the extension points for materials / IBL / NTP, and how to
-add a new scene.
+the module layout, the extension points for materials and IBL, and how to add a
+new scene.
+
+The countdown runs on a network-corrected clock rather than the device clock,
+and targets resolve through the real IANA timezone database. See
+[docs/timing.md](docs/timing.md).
 
 ## Task tracking
 

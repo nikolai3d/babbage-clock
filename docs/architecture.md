@@ -32,8 +32,11 @@ src/
     materials.ts         material slot map -> three.js materials
     lighting.ts          lighting config -> three.js lights
   time/                  ── pure, no DOM, no three.js ──
-    countdown.ts         countdown maths and digit packing
-    target.ts            TimeSource + countdown target resolution
+    index.ts             the module's public surface (see docs/timing.md)
+    countdown.ts         countdown maths, digit packing, HHH:MM:SS clamp
+    target.ts            TimeSource + timezone-aware target resolution
+    trueTime.ts          network-corrected, monotonic in-session clock
+    providers.ts         the time-source fallback chain
   ui/
     hud.ts               countdown readout + scene picker
 ```
@@ -137,15 +140,21 @@ an `intensity` and a `showAsBackground` flag. `SceneLighting` in
 loads the environment map there and sets `scene.environment` (plus
 `scene.background` when requested). Analytic lights stay as the fallback.
 
-### Time (timezone / NTP bead)
+### Time (implemented)
 
-`TimeSource` in `src/time/target.ts` is a one-method interface (`now(): number`).
-The scaffold uses the system clock; the NTP bead supplies a skew-corrected
-implementation and `main.ts` passes it instead. Nothing else reads `Date.now()`.
+`TimeSource` in `src/time/target.ts` is still the one-method seam
+(`now(): number`), and `main.ts` now injects `trueTimeSource` — a clock that is
+monotonic within the session and corrected against the network. Nothing else
+reads `Date.now()`.
 
-Target resolution is `resolveCountdownTarget(param, nowMs)`. With no `?target=`
-it returns the next 1 January 00:00 in the viewer's local timezone, so the
-landing page always shows a live countdown.
+Targets resolve through the real IANA tz database (Temporal), accept
+`?target=…&tz=…`, and report DST gap/overlap adjustments instead of hiding
+them. With no `?target=` the countdown is the next 1 January 00:00 in the
+viewer's timezone, so the landing page always shows a live countdown.
+
+See **[docs/timing.md](timing.md)** for the API reference, the time-source
+fallback chain and the accuracy tiers. `AppState.timeStatus` carries the tier
+and the clock-skew warning for the UI to surface.
 
 ### E2E / screenshots
 
