@@ -108,7 +108,28 @@ describe('remainingDigits', () => {
     // hours out put a `4` on the leading ring and the readout was a lie.
     const farOut = computeRemaining(5000 * MS_PER_HOUR, 0);
     expect(farOut.clamped).toBe(true);
-    expect(remainingDigits(farOut, 7)).toEqual([9, 9, 9, 5, 9, 5, 9]);
+    // Only the hours are pinned; 5000 hours is a whole number of hours, so the
+    // minute and second rings sit on zero rather than on the old frozen 59:59.
+    expect(remainingDigits(farOut, 7)).toEqual([9, 9, 9, 0, 0, 0, 0]);
+  });
+
+  it('keeps the minute and second rings moving past the cap', () => {
+    // The reason the clamp only pins hours: the default target is thousands of
+    // hours out, and pinning the whole value left every ring motionless — a
+    // countdown clock that never moved on the landing view.
+    const far = 5000 * MS_PER_HOUR;
+    const a = computeRemaining(far, 0);
+    const b = computeRemaining(far, 1_000);
+    const c = computeRemaining(far, 61_000);
+
+    expect([a.clamped, b.clamped, c.clamped]).toEqual([true, true, true]);
+    expect(a.hours).toBe(MAX_DISPLAY_HOURS);
+    expect(b.hours).toBe(MAX_DISPLAY_HOURS);
+    // A second later the seconds ring has moved; a minute later so has the
+    // minutes ring.
+    expect(remainingDigits(b, 7)).not.toEqual(remainingDigits(a, 7));
+    expect(b.seconds).not.toBe(a.seconds);
+    expect(c.minutes).not.toBe(a.minutes);
   });
 
   it('keeps the least significant digits when rings are scarce', () => {
@@ -209,16 +230,16 @@ describe('computeRemaining', () => {
     expect(computeRemaining(999, 0).expired).toBe(false);
   });
 
-  it('clamps at 999:59:59 and says that it is clamped', () => {
+  it('pins the hours at the cap and says that it is clamped', () => {
     const remaining = computeRemaining(at(2_000, 0, 0), 0);
 
     expect(remaining).toMatchObject({
       hours: MAX_DISPLAY_HOURS,
-      minutes: 59,
-      seconds: 59,
+      // Real minutes and seconds, not the cap's: 2,000 hours exactly.
+      minutes: 0,
+      seconds: 0,
       clamped: true,
     });
-    expect(remaining.totalSeconds).toBe(MAX_DISPLAY_SECONDS);
     // The unclamped magnitude is still available to whoever wants it.
     expect(remaining.rawTotalSeconds).toBe(2_000 * 3600);
   });
@@ -263,7 +284,9 @@ describe('formatRemaining', () => {
   });
 
   it('marks a clamped value as a lower bound', () => {
-    expect(formatRemaining(computeRemaining(5_000 * MS_PER_HOUR, 0))).toBe('>999:59:59');
+    // 5,000 hours exactly, so the live minute and second rings read zero and
+    // only the hours are pinned. The `>` is what says the real value is larger.
+    expect(formatRemaining(computeRemaining(5_000 * MS_PER_HOUR, 0))).toBe('>999:00:00');
   });
 
   it('reads all zeroes once expired', () => {
