@@ -32,25 +32,12 @@ describe('readLaunchParams', () => {
       target: '2026-12-31T23:59:59',
       tz: 'Europe/Paris',
       mood: 'night',
-      motion: true,
     });
   });
 
   it('treats an unknown mood as absent rather than as an error', () => {
     expect(readLaunchParams('?mood=disco').mood).toBeNull();
     expect(readLaunchParams('').mood).toBeNull();
-  });
-
-  it('reads ?nomotion in each spelling a test harness might use', () => {
-    for (const search of ['?nomotion=1', '?nomotion', '?nomotion=true', '?nomotion=TRUE']) {
-      expect(readLaunchParams(search).motion).toBe(false);
-    }
-  });
-
-  it('leaves motion on for anything else', () => {
-    for (const search of ['', '?nomotion=0', '?nomotion=false', '?scene=slate-orrery']) {
-      expect(readLaunchParams(search).motion).toBe(true);
-    }
   });
 });
 

@@ -29,21 +29,16 @@ Screenshot baselines are Linux/SwiftShader images regenerated with
 
 ## URL parameters
 
-| Parameter  | Example                       | Default                            |
-| ---------- | ----------------------------- | ---------------------------------- |
-| `scene`    | `?scene=slate-orrery`         | `copper-padlock`                   |
-| `target`   | `?target=2030-01-01T00:00:00` | next New Year in the viewer's zone |
-| `tz`       | `?tz=Europe/Paris`            | the viewer's own timezone          |
-| `nomotion` | `?nomotion=1`                 | motion on                          |
+| Parameter | Example                       | Default                            |
+| --------- | ----------------------------- | ---------------------------------- |
+| `scene`   | `?scene=slate-orrery`         | `copper-padlock`                   |
+| `target`  | `?target=2030-01-01T00:00:00` | next New Year in the viewer's zone |
+| `tz`      | `?tz=Europe/Paris`            | the viewer's own timezone          |
 
 `target` is a wall clock read in `tz` (an IANA id, a fixed offset like `+05:30`,
 or the viewer's zone if omitted), or a full ISO 8601 instant carrying its own
 offset — `?target=2026-12-31T23:59:59Z` means the same instant everywhere. Any
 countdown is therefore a shareable link.
-
-`?nomotion=1` freezes every moving part — ticks, gear train, balance wheel —
-without changing what the rings read. It exists so a screenshot of a given
-instant is reproducible.
 
 An unknown `scene` or an unparseable `target` falls back to the default rather
 than erroring.
@@ -51,6 +46,8 @@ than erroring.
 There are also test-only parameters — `mockNow`, `mockNowMode`, `nomotion` and
 `testApi` — used by the e2e suite and the demo capture. Each is inert unless
 explicitly set; see [docs/testing.md](docs/testing.md#determinism-hooks).
+`?nomotion` freezes every moving part — the tick easing, the gear train, the
+balance wheel and the detents — without changing what the rings read.
 
 ## Architecture
 

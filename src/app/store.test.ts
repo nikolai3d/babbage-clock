@@ -100,11 +100,6 @@ describe('readLaunchParams', () => {
   });
 
   it('returns nulls when parameters are absent', () => {
-    expect(readLaunchParams('')).toEqual({
-      sceneId: null,
-      target: null,
-      tz: null,
-      mood: null,
-    });
+    expect(readLaunchParams('')).toEqual({ sceneId: null, target: null, tz: null, mood: null });
   });
 });

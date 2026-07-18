@@ -144,8 +144,12 @@ whatever the wind-down managed and starts running again from there.
 `motion: false` gives every animation a duration of 0 and freezes the drive
 phase, the balance and the detents. The readout is still correct — only the
 motion between readings is suppressed — so a screenshot taken at a given instant
-is reproducible. `main.ts` reads it from the URL; `ClockSceneView` and
-`ClockRenderer` both take it as an option.
+is reproducible.
+
+The flag comes from `?nomotion`, which is read by `app/testHooks.ts` along with
+the rest of the determinism hooks; `main.ts` passes it to `ClockRenderer`, which
+passes it to `ClockSceneView` and on to the mechanism. See
+[testing.md](testing.md#determinism-hooks).
 
 ## Where the numbers live
 
