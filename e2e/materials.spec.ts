@@ -43,7 +43,11 @@ async function settleMaterials(page: Page): Promise<void> {
       timeout: 15_000,
     })
     .toBe(0);
-  await waitForFrames(page, 2);
+  // One frame, not several: `renderer.info.memory.textures` only counts a
+  // texture once it has been uploaded, which happens on the next render. More
+  // frames than that buys nothing and costs real time under software
+  // rendering, where this helper is called nine times in one test.
+  await waitForFrames(page, 1);
 }
 
 /** Switches the look picker in the settings drawer. */
@@ -105,6 +109,12 @@ test('a look swap rebinds every slot without reloading', async ({ page }) => {
 });
 
 test('swapping looks back and forth leaks no textures', async ({ page }) => {
+  // Nine look swaps, each waiting on texture decode and a frame. Under
+  // SwiftShader with CI's two workers competing for the same cores that does
+  // not fit the default budget — and the answer is more time, not fewer round
+  // trips: one round trip can hide a leak that a repeat cannot.
+  test.slow();
+
   await gotoApp(page, deterministicOptions());
   await settleMaterials(page);
 
