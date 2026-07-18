@@ -1,4 +1,5 @@
 import { expect } from '@playwright/test';
+import { E2E_BASE_URL } from './env.js';
 import type { ConsoleMessage, Page } from '@playwright/test';
 import type { RendererState } from '../../src/app/testHooks.js';
 
@@ -25,6 +26,12 @@ export interface AppOptions {
   readonly mockNowMode?: 'frozen' | 'advance';
   /** Sets `?nomotion`. */
   readonly noMotion?: boolean;
+  /**
+   * Sets `?nosync`, skipping the network clock correction. **On by default**,
+   * which is what keeps the suite hermetic and fast; pass `false` to exercise
+   * the real sync path.
+   */
+  readonly noSync?: boolean;
   /** Installs `window.__clock`. On by default; pass false to test the gate. */
   readonly testApi?: boolean;
 }
@@ -37,6 +44,7 @@ export function appUrl(options: AppOptions = {}): string {
   if (options.mockNow !== undefined) params.set('mockNow', String(options.mockNow));
   if (options.mockNowMode !== undefined) params.set('mockNowMode', options.mockNowMode);
   if (options.noMotion) params.set('nomotion', '1');
+  if (options.noSync !== false) params.set('nosync', '1');
   if (options.testApi !== false) params.set('testApi', '1');
 
   const query = params.toString();
@@ -58,6 +66,59 @@ export function deterministicOptions(overrides: AppOptions = {}): AppOptions {
 }
 
 /**
+ * Cuts the page off from every clock-synchronisation source.
+ *
+ * On boot the app corrects its clock against a provider chain
+ * (`src/time/providers.ts`): two external services, then — as a last resort —
+ * a `HEAD` against its *own* origin, reading the `Date` response header.
+ *
+ * Both halves have to go:
+ *
+ * - The external calls make the suite depend on the public internet, so CI
+ *   would go red for reasons unrelated to the change under test.
+ * - The same-origin `HEAD` probe is worse in practice. It is issued repeatedly
+ *   for sampling, and against a single local preview server with parallel
+ *   workers it can exhaust Chromium's per-host connection pool — starving the
+ *   page's own module requests, so the app never finishes booting. That
+ *   presents as an inexplicable 45-second timeout.
+ *
+ * `HEAD` is a safe discriminator: the app issues one for nothing else, and the
+ * browser never does for ordinary assets. Everything else on the app's origin
+ * is passed straight through.
+ *
+ * **Use this only in specs that deliberately leave the sync enabled.**
+ * Everywhere else `?nosync` stops the traffic at source, and route
+ * interception is then pure cost: it proxies every request — including the
+ * ~600 kB module bundle — through the driver process, which under parallel
+ * workers is enough to make a page load time out.
+ *
+ * Returns the array of blocked URLs, which fills in as the page runs.
+ */
+export async function blockExternalRequests(page: Page): Promise<string[]> {
+  const blocked: string[] = [];
+  const origin = new URL(E2E_BASE_URL).origin;
+
+  await page.route('**/*', async (route) => {
+    const request = route.request();
+    const url = request.url();
+
+    const isOwnOrigin =
+      url.startsWith(origin) || url.startsWith('data:') || url.startsWith('blob:');
+    const isTimeProbe = request.method() === 'HEAD';
+
+    if (isOwnOrigin && !isTimeProbe) {
+      await route.continue();
+      return;
+    }
+
+    blocked.push(`${request.method()} ${url}`);
+    await route.abort();
+  });
+
+  return blocked;
+}
+
+/**
  * Navigates to the app and waits until it has actually drawn.
  *
  * Waiting on `drawCalls > 0` rather than on load is the point: it is the single
@@ -65,6 +126,9 @@ export function deterministicOptions(overrides: AppOptions = {}): AppOptions {
  * context, which would otherwise surface as a mysteriously blank screenshot.
  */
 export async function gotoApp(page: Page, options: AppOptions = {}): Promise<void> {
+  // No request interception here on purpose: `appUrl` sets `?nosync`, so the
+  // page requests nothing but its own assets, and routing them through the
+  // driver would only add latency.
   await page.goto(appUrl(options));
   await page.waitForFunction(() => window.__clock !== undefined);
   await expect
@@ -113,22 +177,45 @@ export async function waitForFrames(page: Page, count: number): Promise<void> {
 }
 
 export interface ConsoleWatcher {
-  /** `console.error` output plus uncaught page exceptions. */
+  /**
+   * Application-level errors: `console.error` from our own code plus uncaught
+   * exceptions. Browser resource-load messages are excluded — see
+   * {@link failedRequests}.
+   */
   readonly errors: string[];
   /** Every console message, for assertions about specific warnings. */
   readonly messages: string[];
-  /** URLs that returned 4xx/5xx, recorded so a failure names the asset. */
+  /**
+   * Own-origin requests that failed or returned 4xx/5xx, with their URLs.
+   *
+   * This is the precise version of "did every asset load": Chromium's console
+   * text for a failed request is just "Failed to load resource: 404" with no
+   * URL, which is close to useless when a test fails in CI.
+   */
   readonly failedRequests: string[];
 }
+
+/** Chromium's console text for any failed subresource load. */
+const RESOURCE_ERROR = /^Failed to load resource/;
 
 /**
  * Records console errors and uncaught exceptions from the moment it is called.
  *
  * Must be installed before `goto`, or start-up failures are missed entirely.
  *
- * Failed responses are tracked separately because Chromium's console message
- * for a bad response is just "Failed to load resource: 404" with no URL, which
- * is close to useless when a test fails in CI.
+ * The two error channels are deliberately split:
+ *
+ * - `errors` answers "did the application misbehave" — exceptions and our own
+ *   `console.error` calls.
+ * - `failedRequests` answers "did every asset load", scoped to the app's own
+ *   origin.
+ *
+ * Resource-load messages are kept out of `errors` because
+ * {@link blockExternalRequests} aborts the cross-origin time-sync calls on
+ * purpose, and Chromium logs an un-attributable `net::ERR_FAILED` for each.
+ * Folding those into `errors` would force the assertion to be loosened to the
+ * point of catching nothing. Nothing is lost: a genuine own-origin failure
+ * still fails via `failedRequests`, with the URL attached.
  */
 export function watchConsole(page: Page): ConsoleWatcher {
   const errors: string[] = [];
@@ -138,18 +225,35 @@ export function watchConsole(page: Page): ConsoleWatcher {
   page.on('console', (message: ConsoleMessage) => {
     const text = `${message.type()}: ${message.text()}`;
     messages.push(text);
-    if (message.type() === 'error') errors.push(text);
+    if (message.type() === 'error' && !RESOURCE_ERROR.test(message.text())) {
+      errors.push(text);
+    }
   });
   page.on('pageerror', (error: Error) => {
     errors.push(`pageerror: ${error.message}`);
   });
+  // Scoped to the app's own origin: cross-origin time-sync calls are aborted
+  // on purpose by `blockExternalRequests`, and counting those as failures
+  // would make the assertion meaningless.
+  const origin = new URL(E2E_BASE_URL).origin;
+  const isOwnOrigin = (url: string): boolean => url.startsWith(origin);
+
   page.on('response', (response) => {
-    if (response.status() >= 400) {
+    if (response.status() >= 400 && isOwnOrigin(response.url())) {
       failedRequests.push(`${response.status()} ${response.url()}`);
     }
   });
   page.on('requestfailed', (request) => {
-    failedRequests.push(`failed ${request.url()}: ${request.failure()?.errorText ?? 'unknown'}`);
+    if (!isOwnOrigin(request.url())) return;
+
+    const reason = request.failure()?.errorText ?? 'unknown';
+    // `ERR_ABORTED` means the client withdrew the request, not that the server
+    // failed to serve it. The time module's `http-date` provider probes the
+    // app's own origin and cancels it once a better source answers, and any
+    // navigation aborts requests still in flight. Neither is a broken asset.
+    if (reason.includes('ERR_ABORTED')) return;
+
+    failedRequests.push(`failed ${request.url()}: ${reason}`);
   });
 
   return { errors, messages, failedRequests };

@@ -12,7 +12,7 @@
     "lint:fix": "eslint . --fix && prettier --write .",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
-    "typecheck": "tsc --noEmit",
+    "typecheck": "tsc --noEmit && tsc --noEmit -p tsconfig.node.json",
     "test": "vitest --run",
     "test:watch": "vitest",
     "test:e2e": "playwright test --reporter=line",
@@ -30,7 +30,6 @@
   "devDependencies": {
     "@eslint/js": "^9.39.1",
     "@playwright/test": "^1.61.1",
-    "@types/node": "^24.13.3",
     "@types/three": "^0.182.0",
     "eslint": "^9.39.1",
     "eslint-config-prettier": "^10.1.8",

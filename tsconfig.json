@@ -4,10 +4,12 @@
     "lib": ["ES2022", "DOM", "DOM.Iterable"],
     "module": "ESNext",
     "moduleResolution": "bundler",
-    // `node` is here for the Playwright configs and specs, which run outside
-    // the browser. Application code under `src/` must not use Node globals;
-    // ESLint enforces that by giving those files browser globals only.
-    "types": ["vite/client", "node"],
+    // Browser types only. Node types are deliberately absent: with them in
+    // scope, `setTimeout` resolves to Node's overload returning `Timeout`
+    // rather than the DOM's `number`, which silently changes what application
+    // code type-checks against. The Playwright layer gets them from
+    // tsconfig.node.json instead.
+    "types": ["vite/client"],
 
     "strict": true,
     "noUnusedLocals": true,
@@ -25,12 +27,5 @@
     "forceConsistentCasingInFileNames": true,
     "noEmit": true
   },
-  "include": [
-    "src",
-    "e2e",
-    "capture",
-    "vite.config.ts",
-    "playwright.config.ts",
-    "playwright.capture.config.ts"
-  ]
+  "include": ["src"]
 }

@@ -111,7 +111,21 @@ is off unless its parameter is present**, so production behaviour is unchanged;
 | `?mockNowMode=frozen`   | Default. `now()` never moves — every frame is identical.                 |
 | `?mockNowMode=advance`  | Starts pinned, then advances with real monotonic time (genuine ticking). |
 | `?nomotion=1`           | Disables camera damping, gear rotation and ring easing.                  |
+| `?nosync=1`             | Skips the network clock correction, for hermetic runs.                   |
 | `?testApi=1`            | Installs `window.__clock`.                                               |
+
+The hooks are orthogonal: setting one never implies another, and a unit test
+asserts it.
+
+`?nosync` matters more than it looks. On boot the app corrects its clock against
+external time services, and its last-resort provider probes the app's own origin
+several times. Left on, that makes every spec depend on the public internet, and
+under parallel workers the repeated same-origin probes can exhaust Chromium's
+per-host connection pool and starve the page's own module loads — which shows up
+as a page that never finishes booting. `gotoApp()` therefore sets `?nosync` by
+default. One spec (`degrades quietly when the time-sync services are
+unreachable`) deliberately opts back in with `noSync: false` to cover the real
+path.
 
 `mockNow` is an adapter satisfying the existing `TimeSource` interface from
 `src/time/target.ts`, so it composes with whatever that module becomes.

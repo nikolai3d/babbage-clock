@@ -26,6 +26,8 @@ export const TEST_URL_PARAM = {
   mockNowMode: 'mockNowMode',
   /** Disables idle drift, gear rotation and easing. */
   noMotion: 'nomotion',
+  /** Skips the network clock correction. */
+  noSync: 'nosync',
   /** Installs `window.__clock`. */
   testApi: 'testApi',
 } as const;
@@ -47,6 +49,16 @@ export interface TestHooks {
   readonly mockNowMode: MockNowMode;
   /** `false` only when `?nomotion` is set. Motion is on by default. */
   readonly motion: boolean;
+  /**
+   * `false` only when `?nosync` is set. Network clock correction is on by
+   * default.
+   *
+   * Tests turn it off so the suite is hermetic: the correction fires several
+   * probe requests per page load, which is both an external dependency and,
+   * against a single local preview server under parallel workers, enough
+   * contention to starve the page's own module loads.
+   */
+  readonly timeSync: boolean;
   /** Whether `window.__clock` should be installed. */
   readonly testApi: boolean;
 }
@@ -55,6 +67,7 @@ export const DEFAULT_TEST_HOOKS: TestHooks = {
   mockNowMs: null,
   mockNowMode: 'frozen',
   motion: true,
+  timeSync: true,
   testApi: false,
 };
 
@@ -108,6 +121,7 @@ export function readTestHooks(search: string): TestHooks {
     mockNowMs,
     mockNowMode: parseMockNowMode(params.get(TEST_URL_PARAM.mockNowMode)),
     motion: !readFlag(params, TEST_URL_PARAM.noMotion),
+    timeSync: !readFlag(params, TEST_URL_PARAM.noSync),
     testApi: readFlag(params, TEST_URL_PARAM.testApi),
   };
 }

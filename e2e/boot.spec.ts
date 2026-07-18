@@ -1,5 +1,12 @@
 import { expect, test } from '@playwright/test';
-import { appUrl, gotoApp, readRendererState, waitForFrames, watchConsole } from './support/app.js';
+import {
+  appUrl,
+  blockExternalRequests,
+  gotoApp,
+  readRendererState,
+  waitForFrames,
+  watchConsole,
+} from './support/app.js';
 
 /**
  * Start-up and the WebGL2 contract.
@@ -13,7 +20,10 @@ test.describe('boot', () => {
   test('renders a sized canvas with no console errors', async ({ page }) => {
     const console_ = watchConsole(page);
 
-    await page.goto('/');
+    // `?nosync` only: no test API, no pinned clock, no motion changes — as
+    // close to a plain production load as a hermetic run allows. The real
+    // sync path has its own test below.
+    await page.goto(appUrl({ testApi: false }));
 
     const canvas = page.locator('#scene-canvas');
     await expect(canvas).toBeVisible();
@@ -34,7 +44,7 @@ test.describe('boot', () => {
   test('acquires a real WebGL2 context', async ({ page }) => {
     const console_ = watchConsole(page);
 
-    await page.goto('/');
+    await page.goto(appUrl({ testApi: false }));
 
     // three.js has already created the context; `getContext` hands back the
     // same one rather than making a second.
@@ -79,11 +89,41 @@ test.describe('boot', () => {
 
     await waitForFrames(page, 5);
   });
+
+  /**
+   * The app corrects its clock against a chain of time services on boot. That
+   * network call must never be load-bearing: an offline viewer, a blocked
+   * request or a dead provider has to degrade to the device clock silently.
+   *
+   * This is the only spec that leaves the sync enabled — the rest set
+   * `?nosync` to stay hermetic — so it is also the only one that needs request
+   * interception.
+   */
+  test('degrades quietly when the time-sync services are unreachable', async ({ page }) => {
+    const console_ = watchConsole(page);
+    const blocked = await blockExternalRequests(page);
+
+    // The one test that lets the real sync run, with every external provider
+    // refused. The rest of the suite sets `?nosync` for hermeticity.
+    await page.goto(appUrl({ noSync: false }));
+    await page.waitForFunction(() => window.__clock !== undefined);
+    await waitForFrames(page, 5);
+
+    // It did reach out, and was refused.
+    await expect
+      .poll(() => blocked.length, { message: 'the app never attempted a time sync' })
+      .toBeGreaterThan(0);
+
+    // And carried on: no exceptions, a live clock, a rendering scene.
+    expect(console_.errors).toEqual([]);
+    expect(await page.evaluate(() => window.__clock?.now() ?? 0)).toBeGreaterThan(0);
+    expect((await readRendererState(page)).drawCalls).toBeGreaterThan(0);
+  });
 });
 
 test.describe('test-hook gating', () => {
   test('installs no test API without ?testApi', async ({ page }) => {
-    await page.goto('/');
+    await page.goto(appUrl({ testApi: false }));
     await expect(page.locator('.hud__countdown')).not.toBeEmpty();
 
     expect(await page.evaluate(() => window.__clock === undefined)).toBe(true);

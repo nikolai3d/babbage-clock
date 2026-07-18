@@ -51,18 +51,18 @@ export default tseslint.config(
     },
   },
   {
-    files: ['vite.config.ts'],
+    // Everything that runs in Node rather than the browser: the build config
+    // and the Playwright layer. Specs are Node code, but the bodies passed to
+    // `page.evaluate()` are browser code, so both global sets apply.
+    files: ['vite.config.ts', 'e2e/**/*.ts', 'capture/**/*.ts', 'playwright*.config.ts'],
     languageOptions: {
-      globals: {
-        ...globals.node,
+      parserOptions: {
+        // These files live in tsconfig.node.json, which the project service
+        // would not find on its own — it only looks for `tsconfig.json`.
+        projectService: false,
+        project: ['./tsconfig.node.json'],
+        tsconfigRootDir: import.meta.dirname,
       },
-    },
-  },
-  {
-    // Playwright specs and configs run in Node, but the code inside
-    // `page.evaluate()` is browser code, so both global sets apply.
-    files: ['e2e/**/*.ts', 'capture/**/*.ts', 'playwright*.config.ts'],
-    languageOptions: {
       globals: {
         ...globals.node,
         ...globals.browser,

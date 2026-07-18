@@ -1,5 +1,3 @@
-import { mkdir } from 'node:fs/promises';
-import { dirname, resolve } from 'node:path';
 import { expect, test } from '@playwright/test';
 import { appUrl, waitForFrames } from '../e2e/support/app.js';
 import { sceneRegistry } from '../src/scene/scenes/index.js';
@@ -15,7 +13,8 @@ import { sceneRegistry } from '../src/scene/scenes/index.js';
  * stays on — this is the one place the flourishes are the point.
  */
 
-const DEMO_VIDEO = resolve(process.cwd(), 'artifacts/babbage-clock-demo.webm');
+/** Relative to the repo root; `saveAs` creates the directory if it is missing. */
+const DEMO_VIDEO = 'artifacts/babbage-clock-demo.webm';
 
 /** Start ~12 days out, so the day, hour, minute and second rings all read. */
 const DEMO_TARGET = '2027-01-01T00:00:00Z';
@@ -74,7 +73,6 @@ test('demo tour', async ({ page }) => {
   const video = page.video();
   await page.close();
   if (video) {
-    await mkdir(dirname(DEMO_VIDEO), { recursive: true });
     await video.saveAs(DEMO_VIDEO);
     console.info(`[capture] demo video written to ${DEMO_VIDEO}`);
   }

@@ -44,8 +44,19 @@ describe('readTestHooks', () => {
     expect(readTestHooks('?nomotion=true').motion).toBe(false);
     expect(readTestHooks('?nomotion=0').motion).toBe(true);
     expect(readTestHooks('?nomotion=false').motion).toBe(true);
+    expect(readTestHooks('?nosync').timeSync).toBe(false);
+    expect(readTestHooks('?nosync=1').timeSync).toBe(false);
+    expect(readTestHooks('?nosync=0').timeSync).toBe(true);
     expect(readTestHooks('?testApi=1').testApi).toBe(true);
     expect(readTestHooks('?testApi=0').testApi).toBe(false);
+  });
+
+  it('leaves every other hook alone when one is set', () => {
+    // Regression guard: the hooks must stay orthogonal, so a spec can opt into
+    // exactly one behaviour without silently getting the others.
+    expect(readTestHooks('?nosync=1')).toEqual({ ...DEFAULT_TEST_HOOKS, timeSync: false });
+    expect(readTestHooks('?nomotion=1')).toEqual({ ...DEFAULT_TEST_HOOKS, motion: false });
+    expect(readTestHooks('?testApi=1')).toEqual({ ...DEFAULT_TEST_HOOKS, testApi: true });
   });
 });
 
