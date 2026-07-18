@@ -342,11 +342,29 @@ describe('retargetZone', () => {
   });
 
   it('recomputes expiry against the given now', () => {
-    const past = resolveTarget({ value: '2026-01-01T00:00:00Z', nowMs: NOW, viewerZone: 'UTC' });
-    const moved = retargetZone(past, 'Asia/Tokyo', NOW, 'UTC');
+    const future = resolveTarget({ value: '2026-08-01T00:00:00Z', nowMs: NOW, viewerZone: 'UTC' });
+    expect(future.expired).toBe(false);
+
+    // Retargeted with a later now, the same instant has meanwhile passed —
+    // proving expiry is recomputed rather than copied from the input.
+    const moved = retargetZone(future, 'Asia/Tokyo', Date.UTC(2026, 8, 1), 'UTC');
 
     expect(moved.expired).toBe(true);
     expect(moved.notes).toContain('This target is in the past.');
+  });
+
+  it('preserves sub-second milliseconds exactly', () => {
+    const fractional = resolveTarget({
+      value: '2026-12-31T23:59:59.500Z',
+      nowMs: NOW,
+      viewerZone: 'UTC',
+    });
+    expect(fractional.atMs % 1000).toBe(500);
+
+    // Guards the deliberate default-precision toString in retargetZone: a
+    // seconds-precision serialization would silently drop the fraction.
+    const moved = retargetZone(fractional, 'Asia/Tokyo', NOW, 'UTC');
+    expect(moved.atMs).toBe(fractional.atMs);
   });
 
   it('keeps how the target was chosen but regenerates the label', () => {
@@ -360,6 +378,13 @@ describe('retargetZone', () => {
 
   it('rejects an unusable zone with a TargetError', () => {
     expect(() => retargetZone(base, 'Not/AZone', NOW, 'UTC')).toThrow(TargetError);
+
+    try {
+      retargetZone(base, 'Not/AZone', NOW, 'UTC');
+      expect.unreachable('should have thrown');
+    } catch (error) {
+      expect((error as TargetError).code).toBe('invalid-zone');
+    }
   });
 });
 

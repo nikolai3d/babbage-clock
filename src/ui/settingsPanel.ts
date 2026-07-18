@@ -28,6 +28,7 @@
 import { summarizeTarget, toDateTimeLocalValue } from './targetSummary.js';
 import { TimeZonePicker } from './timeZonePicker.js';
 import { loadTargetHistory, pushTargetHistory } from './targetHistory.js';
+import { isClockMode } from '../app/store.js';
 import type { TargetHistoryEntry } from './targetHistory.js';
 import type { AppState, AppStore } from '../app/store.js';
 import type { ResolvedTarget } from '../time/target.js';
@@ -65,6 +66,13 @@ export interface SettingsPanelOptions {
    * read the current time in changes.
    */
   readonly onSubmitClockZone: (zone: string) => TargetResult;
+  /**
+   * The app's corrected clock, injected like every other time read
+   * (`docs/architecture.md`: nothing outside `src/time/` reads `Date.now()`).
+   * Labels the clock-zone listbox offsets, so a pinned `?mockNow=` session
+   * shows offsets coherent with the app's own now.
+   */
+  readonly nowMs: () => number;
   /**
    * One-tap targets, computed at click time so "in 1 hour" is measured from
    * the click, not from when the drawer was built. `zone` is the picker's
@@ -244,9 +252,8 @@ export class SettingsPanel {
       inputId: 'clock-zone-input',
       initialZone: state.target.zone || options.viewerZone,
       // Offsets in the list are labelled against the current moment — this is
-      // a clock, not a countdown. The device clock is fine for display: skew
-      // is milliseconds and cannot move a zone's offset.
-      referenceMs: () => Date.now(),
+      // a clock, not a countdown — read from the app's own time source.
+      referenceMs: () => options.nowMs(),
       onChange: (zone) => {
         this.applyClockZone(zone);
       },
@@ -327,7 +334,7 @@ export class SettingsPanel {
   focusFirstField(): void {
     // In clock mode the target form is hidden and unfocusable; the zone picker
     // is the first control there is.
-    if (this.options.store.get().clockReading !== null) {
+    if (isClockMode(this.options.store.get())) {
       this.clockZonePicker.input.focus();
     } else {
       this.targetInput.focus();
@@ -356,7 +363,7 @@ export class SettingsPanel {
     // affordances and hide as a block. The reading zone still follows `?tz=`;
     // the dedicated zone field — whose apply path keeps the countdown instant
     // rather than submitting a new target — swaps in where the form was.
-    const clockMode = state.clockReading !== null;
+    const clockMode = isClockMode(state);
     this.form.hidden = clockMode;
     this.echoEl.hidden = clockMode;
     this.clockZoneField.hidden = !clockMode;

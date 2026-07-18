@@ -542,6 +542,7 @@ async function bootstrap(): Promise<void> {
         return { ok: false, message };
       }
     },
+    nowMs: () => timeSource.now(),
     onSubmitClockZone: (zone) => {
       try {
         // The instant is deliberately preserved: in clock mode the viewer is

@@ -153,6 +153,18 @@ describe('share round-trip', () => {
   it('reproduces an ambiguous fall-back target', () => {
     const state = shareState('2026-11-01T01:30:00', 'America/New_York');
     expect(state.target.disambiguation).toBe('ambiguous-earlier');
+    // The earlier side re-resolves to itself, so the readable form suffices.
+    expect(buildShareParams(state).get('target')).toBe('2026-11-01T01:30:00');
+    expect(roundTrip(state)).toBe(state.target.atMs);
+  });
+
+  it('reproduces the later side of a fall-back overlap with an absolute target', () => {
+    // 06:30Z is the *second* 01:30 in New York. A bare wall clock would
+    // re-resolve to the earlier instant, an hour off — this is the state the
+    // clock-mode zone control can pin via retargetZone — so the link carries
+    // the offset and stays exact.
+    const state = shareState('2026-11-01T06:30:00Z', 'America/New_York');
+    expect(buildShareParams(state).get('target')).toBe('2026-11-01T01:30:00-05:00');
     expect(roundTrip(state)).toBe(state.target.atMs);
   });
 

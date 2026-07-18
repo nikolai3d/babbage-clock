@@ -284,6 +284,8 @@ p#canvas-help.sr-only
                               .tzpicker > input#tz-input[role=combobox] + ul#tz-input-listbox[role=listbox]
                               p#target-error[role=alert]
                               button#target-apply, button#target-reset
+      .field#clock-zone-field .tzpicker > input#clock-zone-input[role=combobox] + ul[role=listbox]
+                              (clock mode only — swaps in for the target form)
       .echo#target-echo       dl.echo__rows, p.echo__adjustment, ul.echo__notes, p.echo__origin
       .panel__group           one .field per SettingControl descriptor
       .field--share           input#share-url[readonly], button#share-button

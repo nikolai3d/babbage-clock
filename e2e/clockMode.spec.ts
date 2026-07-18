@@ -76,7 +76,7 @@ test('the drawer offers a zone control in clock mode, and it moves the reading',
 
   await openSettings(page);
   // The zone control stands in for the hidden target form.
-  await expect(page.locator('#target-form')).toBeHidden();
+  await expect(page.locator(SELECTOR.targetForm)).toBeHidden();
   const zone = page.locator(SELECTOR.clockZoneInput);
   await expect(zone).toBeVisible();
 
@@ -88,10 +88,18 @@ test('the drawer offers a zone control in clock mode, and it moves the reading',
 
   // The rings and the HUD follow within a tick: 12:00 UTC is 21:00 in Tokyo.
   await expect.poll(async () => (await readDigits(page)).join('')).toBe('210000');
-  await expect(page.locator('#target-label')).toHaveText('Asia/Tokyo time');
+  await expect(page.locator(SELECTOR.targetLabel)).toHaveText('Asia/Tokyo time');
 
   // The change is shareable — `?tz=` carries the zone — and the countdown
   // target kept its instant: midnight UTC re-anchored as 09:00 Tokyo.
   expect(page.url()).toContain('tz=Asia/Tokyo');
   expect(page.url()).toContain('target=2027-01-01T09:00:00');
+});
+
+test('the zone control stays out of the countdown drawer', async ({ page }) => {
+  await gotoApp(page, deterministicOptions());
+  await openSettings(page);
+
+  await expect(page.locator(SELECTOR.targetForm)).toBeVisible();
+  await expect(page.locator(SELECTOR.clockZoneField)).toBeHidden();
 });

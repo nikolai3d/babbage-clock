@@ -40,6 +40,7 @@ export interface HudOptions extends Pick<
   SettingsPanelOptions,
   | 'onSubmitTarget'
   | 'onSubmitClockZone'
+  | 'nowMs'
   | 'onResetTarget'
   | 'shareUrl'
   | 'onCopyLink'
@@ -143,6 +144,7 @@ export class Hud {
       viewerZone: options.viewerZone,
       onSubmitTarget: options.onSubmitTarget,
       onSubmitClockZone: options.onSubmitClockZone,
+      nowMs: options.nowMs,
       quickTargets: options.quickTargets,
       onResetTarget: options.onResetTarget,
       shareUrl: options.shareUrl,
