@@ -63,6 +63,27 @@ npm run test:e2e -- --trace on            # force a trace for every test
 The config starts its own server (`npm run build && npm run preview`) on port
 4173, so you do not need a dev server running. Set `E2E_PORT` to change it.
 
+### Running the specs against a deployed site
+
+`npm run test:e2e:live` runs `boot.spec.ts` against an already-running site
+instead of a local preview server — no `webServer`, no screenshots. This is the
+post-deploy smoke check; the deploy workflow runs it against the published URL.
+
+```bash
+E2E_BASE_URL=https://nikolai3d.github.io/babbage-clock/ npm run test:e2e:live
+```
+
+Two details make the same specs work against both targets, and both are easy to
+undo by accident:
+
+- `E2E_BASE_URL` is normalised to end in `/`. Playwright resolves a spec's path
+  against it with `new URL()`, which drops a trailing segment that has no slash.
+- `appUrl()` returns `./?…`, not `/?…`. A leading slash resolves to the domain
+  root, which throws away the `/babbage-clock/` project-page base path and makes
+  every request 404.
+
+See [deploy.md](deploy.md) for the base-path rules this exists to police.
+
 ### Debugging a failure
 
 Failures leave everything you need under `test-results/<test-name>/`:

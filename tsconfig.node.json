@@ -15,6 +15,7 @@
     "capture",
     "vite.config.ts",
     "playwright.config.ts",
-    "playwright.capture.config.ts"
+    "playwright.capture.config.ts",
+    "playwright.smoke.config.ts"
   ]
 }

@@ -3,6 +3,7 @@ import {
   CHROMIUM_GPU_ARGS,
   DETERMINISTIC_CONTEXT,
   E2E_BASE_URL,
+  E2E_LOCAL_BASE_URL,
   E2E_SERVER_COMMAND,
 } from './e2e/support/env';
 
@@ -82,7 +83,7 @@ export default defineConfig({
     // The production bundle is what ships, so that is what is tested. Building
     // here keeps `dist/` from going stale between runs.
     command: E2E_SERVER_COMMAND,
-    url: E2E_BASE_URL,
+    url: E2E_LOCAL_BASE_URL,
     reuseExistingServer: !process.env.CI,
     timeout: 120_000,
     stdout: 'ignore',

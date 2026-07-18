@@ -62,7 +62,15 @@ export interface AppOptions {
   readonly testApi?: boolean;
 }
 
-/** Builds an app URL from options, omitting every parameter not asked for. */
+/**
+ * Builds an app URL from options, omitting every parameter not asked for.
+ *
+ * The result is `./`-relative, never root-absolute. Playwright resolves it
+ * against `baseURL`, and the deployed site is a GitHub Pages *project* page
+ * served from `/babbage-clock/` — a leading `/` would resolve to the domain
+ * root and every request in the live smoke run would 404. `./` keeps the base
+ * path, and collapses to the root when there is none.
+ */
 export function appUrl(options: AppOptions = {}): string {
   const params = new URLSearchParams();
   if (options.scene !== undefined) params.set('scene', options.scene);
@@ -74,7 +82,7 @@ export function appUrl(options: AppOptions = {}): string {
   if (options.testApi !== false) params.set('testApi', '1');
 
   const query = params.toString();
-  return query === '' ? '/' : `/?${query}`;
+  return query === '' ? './' : `./?${query}`;
 }
 
 /**

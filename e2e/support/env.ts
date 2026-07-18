@@ -16,7 +16,29 @@ export const E2E_PORT = Number(process.env.E2E_PORT ?? 4173);
  * host explicitly on both sides removes the ambiguity.
  */
 export const E2E_HOST = '127.0.0.1';
-export const E2E_BASE_URL = `http://${E2E_HOST}:${E2E_PORT}`;
+
+/** The local preview server the hermetic suite drives. */
+export const E2E_LOCAL_BASE_URL = `http://${E2E_HOST}:${E2E_PORT}/`;
+
+/**
+ * The origin (and base path) under test.
+ *
+ * Defaults to the local preview server. `E2E_BASE_URL` overrides it so the
+ * same specs can be pointed at a deployed site — that is how the post-deploy
+ * smoke job proves the published bundle boots. See `playwright.smoke.config.ts`.
+ *
+ * The trailing slash is not cosmetic. Playwright resolves a spec's path against
+ * this with `new URL()`, and the deployed site lives under a base path
+ * (`https://nikolai3d.github.io/babbage-clock/`). Without the slash the last
+ * segment is treated as a file name and dropped, so every request would land on
+ * the wrong path. {@link appUrl} pairs with this by emitting `./`-relative
+ * paths rather than root-absolute ones.
+ */
+export const E2E_BASE_URL = withTrailingSlash(process.env.E2E_BASE_URL ?? E2E_LOCAL_BASE_URL);
+
+function withTrailingSlash(url: string): string {
+  return url.endsWith('/') ? url : `${url}/`;
+}
 
 /** The command both configs use to serve the production bundle under test. */
 export const E2E_SERVER_COMMAND = `npm run build && npm run preview -- --port ${E2E_PORT} --strictPort --host ${E2E_HOST}`;
