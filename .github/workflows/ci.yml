@@ -36,6 +36,15 @@ jobs:
     name: e2e (Playwright, SwiftShader)
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    # Two shards because the suite outgrew one runner: at 67 tests with
+    # image-based lighting costing ~3x per frame under SwiftShader, a single
+    # 2-core runner crossed the 15-minute job timeout — which surfaces as
+    # `cancelled`, not `failed`, and is easy to misread as a flake. Halving the
+    # wall time also keeps the whole pipeline inside the deploy job's wait.
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2]
 
     # Running inside the official Playwright image is what makes the screenshot
     # baselines reproducible: it pins the browser build, the system fonts and
@@ -79,13 +88,13 @@ jobs:
         # `--reporter=line` (set by the script) is mandatory: the default html
         # reporter starts a server on failure and the job would hang until it
         # hit the job timeout.
-        run: npm run test:e2e
+        run: npm run test:e2e -- --shard=${{ matrix.shard }}/2
 
       - name: Upload failure artifacts
         if: failure()
         uses: actions/upload-artifact@v4
         with:
-          name: e2e-artifacts
+          name: e2e-artifacts-shard-${{ matrix.shard }}
           # Screenshot actuals and diffs, videos and traces all land here.
           # Inspect a trace with `npx playwright show-trace <file>.zip`.
           path: test-results/
