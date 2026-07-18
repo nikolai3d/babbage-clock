@@ -196,12 +196,16 @@ const materials = {
         const base = tint(0xb87333, 0.78 + 0.34 * h);
         return [base[0], base[1] * (1 - 0.06 * patina), base[2] * (1 - 0.1 * patina)];
       },
-      'normal.png': normalFromHeight(hammered, 14),
+      'normal.png': normalFromHeight(hammered, 7),
       'orm.png': (u, v) => {
         const h = hammered(u, v);
         // R: occlusion — dishes hold shadow. G: roughness — struck faces are
         // duller than the flats. B: metallic — copper is metal everywhere.
-        return [(0.72 + 0.28 * h) * 255, (0.28 + 0.34 * (1 - h)) * 255, 252];
+        //
+        // Kept well off zero: a fully metallic surface at low roughness is a
+        // mirror, and a mirror under a bright IBL mood is a white blob rather
+        // than copper. Planished copper is satin, not chrome.
+        return [(0.72 + 0.28 * h) * 255, (0.52 + 0.3 * (1 - h)) * 255, 252];
       },
     },
   },
@@ -240,7 +244,7 @@ const materials = {
       },
       'normal.png': normalFromHeight(brushed, 12),
       'roughness.png': (u, v) => {
-        const value = (0.22 + 0.3 * (1 - brushed(u, v))) * 255;
+        const value = (0.34 + 0.3 * (1 - brushed(u, v))) * 255;
         return [value, value, value];
       },
       'metallic.png': (u, v) => {

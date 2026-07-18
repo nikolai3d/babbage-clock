@@ -131,7 +131,6 @@ test('scene switching reuses the material cache and releases the old scene', asy
   await settleMaterials(page);
 
   const copper = await readMaterials(page);
-  const copperTextures = (await readRendererState(page)).textures;
 
   await openSettings(page);
   await page.selectOption('#scene-select', 'slate-orrery');
@@ -149,5 +148,15 @@ test('scene switching reuses the material cache and releases the old scene', asy
   expect(back.slots).toEqual(copper.slots);
   // Nothing was re-downloaded: the registry outlives any one scene.
   expect(back.sources).toBe(copper.sources);
-  expect((await readRendererState(page)).textures).toBe(copperTextures);
+  // And nothing was double-held: the outgoing scene's library gave back every
+  // reference before the incoming one took its own.
+  expect(back.textures).toBe(copper.textures);
+
+  // Measured on the registry's own accounting rather than on
+  // `renderer.info.memory.textures`, which counts the whole renderer. A scene
+  // switch also changes the lighting mood, and the IBL bead deliberately keeps
+  // its environment maps cached across one — so the GPU total legitimately
+  // grows here and asserting on it would be asserting about somebody else's
+  // subsystem. The look-swap test above leaves lighting alone, which is what
+  // makes the strict GPU-level check meaningful there.
 });

@@ -157,17 +157,27 @@ class SlotMaterial {
       this.material.roughness = binding.roughness ?? 0.5;
     }
 
-    this.inFlight = this.load(binding, generation).catch((error: unknown) => {
-      if (generation !== this.generation) return;
-      if (!this.warned) {
-        this.warned = true;
-        console.warn(
-          `[materials] could not load material "${binding.textureSet}" for ` +
-            `${this.material.name}; showing a neutral surface`,
-          error,
-        );
-      }
-    });
+    // Cleared when this particular apply settles, whether it succeeded or not.
+    // Clearing it unconditionally inside `load` would let a superseded apply
+    // report the slot as settled while a newer one was still in flight; leaving
+    // it set after a failure would make `ready()` spin on an already-resolved
+    // promise.
+    const settling: Promise<void> = this.load(binding, generation)
+      .catch((error: unknown) => {
+        if (generation !== this.generation) return;
+        if (!this.warned) {
+          this.warned = true;
+          console.warn(
+            `[materials] could not load material "${binding.textureSet}" for ` +
+              `${this.material.name}; showing a neutral surface`,
+            error,
+          );
+        }
+      })
+      .finally(() => {
+        if (this.inFlight === settling) this.inFlight = null;
+      });
+    this.inFlight = settling;
   }
 
   /** The in-flight apply, or null when this slot is settled. */
@@ -207,8 +217,6 @@ class SlotMaterial {
     this.keys = acquired.map((entry) => entry.key);
     this.commit({ manifest, textures }, binding);
     for (const key of previous) this.registry.release(key);
-
-    this.inFlight = null;
   }
 
   private releaseAll(): void {
