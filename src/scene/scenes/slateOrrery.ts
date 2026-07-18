@@ -75,12 +75,12 @@ export const slateOrreryScene: SceneDefinition = {
 
   camera: {
     fov: 50,
-    position: [0.5, 2.0, 8.0],
-    target: [0, -0.2, 0],
+    position: [0.5, 2.4, 11.5],
+    target: [0, 0.1, 0],
     near: 0.1,
     far: 100,
-    minDistance: 4,
-    maxDistance: 16,
+    minDistance: 5.5,
+    maxDistance: 22,
     minPolarAngle: Math.PI * 0.1,
     maxPolarAngle: Math.PI * 0.8,
   },

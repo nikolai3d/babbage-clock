@@ -152,7 +152,7 @@ describe('ClockSceneView', () => {
     expect(countMeshes(view.root)).toBe(0);
   });
 
-  it('disposes instanced gear teeth, which own a GPU buffer of their own', () => {
+  it('disposes instanced meshes, which own a GPU buffer of their own', () => {
     const view = new ClockSceneView(scene, copperPadlockScene);
 
     const instanced: THREE.InstancedMesh[] = [];
@@ -160,7 +160,9 @@ describe('ClockSceneView', () => {
       // three.js types InstancedMesh generically, so narrow it explicitly.
       if (object instanceof THREE.InstancedMesh) instanced.push(object as THREE.InstancedMesh);
     });
-    expect(instanced).toHaveLength(copperPadlockScene.gears.length);
+    // The bezel screw studs. Gear teeth used to be instanced too; they are now
+    // part of the extruded gear profile, so a wheel is a single mesh.
+    expect(instanced).toHaveLength(1);
 
     // InstancedMesh.dispose() releases instanceMatrix; disposing the geometry
     // and material alone would leak it on every scene switch.
@@ -168,6 +170,71 @@ describe('ClockSceneView', () => {
     view.dispose();
 
     for (const spy of spies) expect(spy).toHaveBeenCalled();
+  });
+
+  it('gives every ring a drum and a set of numerals', () => {
+    const view = new ClockSceneView(scene, copperPadlockScene);
+
+    for (let i = 0; i < copperPadlockScene.rings.count; i += 1) {
+      const ring = view.root.getObjectByName(`ring:${i}`)!;
+      const meshes = ring.children.filter((child) => child instanceof THREE.Mesh);
+      expect(meshes).toHaveLength(2);
+    }
+    view.dispose();
+  });
+
+  it('shares one drum and one numeral buffer across the whole stack', () => {
+    const view = new ClockSceneView(scene, copperPadlockScene);
+
+    const geometries = new Set<THREE.BufferGeometry>();
+    for (let i = 0; i < copperPadlockScene.rings.count; i += 1) {
+      const ring = view.root.getObjectByName(`ring:${i}`)!;
+      for (const child of ring.children) {
+        // three.js types Mesh generically, so narrow it explicitly.
+        if (child instanceof THREE.Mesh) {
+          geometries.add((child as THREE.Mesh<THREE.BufferGeometry>).geometry);
+        }
+      }
+    }
+    // Seven rings, two buffers: the rings differ only by transform.
+    expect(geometries.size).toBe(2);
+    view.dispose();
+  });
+
+  it('builds the case and consumes the frame and bezel slots', () => {
+    const view = new ClockSceneView(scene, copperPadlockScene);
+    const housing = view.root.getObjectByName('housing')!;
+
+    expect(housing).toBeDefined();
+    const names = housing.children.map((child) => child.name);
+    expect(names).toContain('housing:case');
+    expect(names).toContain('housing:bezel');
+    expect(names).toContain('housing:lid');
+    expect(names).toContain('housing:shackle');
+
+    const used = new Set<string>();
+    housing.traverse((object) => {
+      if (object instanceof THREE.Mesh && object.material instanceof THREE.Material) {
+        used.add(object.material.name);
+      }
+    });
+    expect(used).toContain('slot:frame');
+    expect(used).toContain('slot:bezel');
+    view.dispose();
+  });
+
+  it('sizes the case around everything the scene contains', () => {
+    const view = new ClockSceneView(scene, copperPadlockScene);
+    const shell = view.root.getObjectByName('housing:case') as THREE.Mesh;
+    shell.geometry.computeBoundingSphere();
+
+    const furthestGear = Math.max(
+      ...copperPadlockScene.gears.map(
+        (gear) => Math.hypot(gear.position[0], gear.position[1]) + gear.radius,
+      ),
+    );
+    expect(shell.geometry.boundingSphere!.radius).toBeGreaterThan(furthestGear);
+    view.dispose();
   });
 
   it('survives repeated build/dispose cycles, as scene switching requires', () => {
