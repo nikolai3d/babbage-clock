@@ -1,6 +1,7 @@
 import { expect, test } from '@playwright/test';
 import {
   SELECTOR,
+  deterministicOptions,
   gotoApp,
   openSettings,
   readDigits,
@@ -96,5 +97,21 @@ test.describe('scene selection', () => {
       .toBe(second.rings.count);
 
     expect(console_.errors).toEqual([]);
+  });
+});
+
+test.describe('background preference', () => {
+  test('?bg=backdrop swaps the panorama for the authored gradient', async ({ page }) => {
+    await gotoApp(page, deterministicOptions({ background: 'backdrop' }));
+    const state = await readRendererState(page);
+    expect(state.panoramaBackground).toBe(false);
+  });
+
+  test('the deterministic default shows the panorama', async ({ page }) => {
+    // High tier, no override: the HDR environment is the backdrop. This is the
+    // other half of the assertion above — proof the override changed something.
+    await gotoApp(page, deterministicOptions({}));
+    const state = await readRendererState(page);
+    expect(state.panoramaBackground).toBe(true);
   });
 });

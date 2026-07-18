@@ -1,4 +1,24 @@
 import { parseQualityPreference } from './quality.js';
+
+/**
+ * How the viewer wants the scene's backdrop drawn.
+ *
+ * `auto` defers to the quality tier (panorama on high, the mood's authored
+ * gradient on low); the other two override the tier in either direction. The
+ * gradient override is always safe; forcing the panorama on a low-tier device
+ * spends exactly the cost the tier tried to save, and that is the viewer's
+ * call to make — the tier is a default, not a policy.
+ */
+export type BackgroundPreference = 'auto' | 'panorama' | 'backdrop';
+
+/** `auto` for anything unrecognised, exactly like an unknown `?scene=`. */
+export function parseBackgroundPreference(
+  raw: string | null | undefined,
+): BackgroundPreference | null {
+  if (raw === null || raw === undefined) return null;
+  const value = raw.trim().toLowerCase();
+  return value === 'panorama' || value === 'backdrop' ? value : null;
+}
 import { parseEnvironmentPreset } from '../scene/environment.js';
 import type { QualityPreference } from './quality.js';
 import type { EnvironmentPresetId } from '../scene/types.js';
@@ -10,6 +30,7 @@ export const URL_PARAM = {
   target: 'target',
   tz: 'tz',
   mood: 'mood',
+  background: 'bg',
   quality: 'quality',
 } as const;
 
@@ -28,6 +49,11 @@ export interface LaunchParams {
    * rather than as an error, exactly like an unknown `?scene=`.
    */
   readonly mood: EnvironmentPresetId | null;
+  /**
+   * Background override (`?bg=panorama` or `?bg=backdrop`). Null means
+   * "automatic": the quality tier decides, which is the shipped default.
+   */
+  readonly background: BackgroundPreference | null;
   /**
    * Render-quality override (`?quality=low|high`). `auto` — the default and the
    * value any unrecognised input maps to — leaves the tier to the device
@@ -48,6 +74,7 @@ export function readLaunchParams(search: string): LaunchParams {
     target: params.get(URL_PARAM.target),
     tz: params.get(URL_PARAM.tz),
     mood: parseEnvironmentPreset(params.get(URL_PARAM.mood)),
+    background: parseBackgroundPreference(params.get(URL_PARAM.background)),
     quality: parseQualityPreference(params.get(URL_PARAM.quality)),
   };
 }
@@ -57,6 +84,7 @@ export interface ShareableState {
   readonly sceneId: string;
   readonly target: ResolvedTarget;
   readonly mood: EnvironmentPresetId | null;
+  readonly background: BackgroundPreference | null;
 }
 
 /**
@@ -77,6 +105,9 @@ export function buildShareParams(state: ShareableState): URLSearchParams {
   params.set(URL_PARAM.tz, state.target.zone);
   params.set(URL_PARAM.scene, state.sceneId);
   if (state.mood !== null) params.set(URL_PARAM.mood, state.mood);
+  if (state.background !== null && state.background !== 'auto') {
+    params.set(URL_PARAM.background, state.background);
+  }
   return params;
 }
 
@@ -117,6 +148,9 @@ export function writeAppParams(state: ShareableState): void {
   const url = new URL(window.location.href);
   for (const [key, value] of buildShareParams(state)) url.searchParams.set(key, value);
   if (state.mood === null) url.searchParams.delete(URL_PARAM.mood);
+  if (state.background === null || state.background === 'auto') {
+    url.searchParams.delete(URL_PARAM.background);
+  }
   url.search = readableQuery(url.searchParams);
   window.history.replaceState(null, '', url);
 }

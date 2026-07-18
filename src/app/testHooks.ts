@@ -256,6 +256,8 @@ export interface RendererState {
    * ratio forced a crop to the digit rings. See `scene/framing.ts`.
    */
   readonly framingFit: 'whole' | 'rings';
+  /** Whether the mood's HDR panorama is the backdrop, after every override. */
+  readonly panoramaBackground: boolean;
   /**
    * On-screen width of the ring stack's bounding extent, in CSS pixels.
    *

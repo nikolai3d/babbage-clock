@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import { buildShareParams, buildShareUrl, readLaunchParams } from './urlParams.js';
+import {
+  buildShareParams,
+  buildShareUrl,
+  parseBackgroundPreference,
+  readLaunchParams,
+} from './urlParams.js';
 import { resolveTarget, resolveTargetFromParams } from '../time/target.js';
 import type { ShareableState } from './urlParams.js';
 
@@ -10,10 +15,31 @@ function shareState(value: string, zone: string, overrides: Partial<ShareableSta
   return {
     sceneId: 'copper-padlock',
     mood: null,
+    background: null,
     target: resolveTarget({ value, zone, nowMs: NOW, viewerZone: 'America/New_York' }),
     ...overrides,
   } satisfies ShareableState;
 }
+
+describe('background preference', () => {
+  it('round-trips through a share link', () => {
+    const state = shareState('2026-12-31T23:59:59', 'America/New_York', { background: 'backdrop' });
+    const params = readLaunchParams(new URL(buildShareUrl(BASE, state)).search);
+    expect(params.background).toBe('backdrop');
+  });
+
+  it('stays out of the link when automatic', () => {
+    // Auto is the shipped default; writing it would only make links longer.
+    const state = shareState('2026-12-31T23:59:59', 'America/New_York');
+    expect(buildShareUrl(BASE, state)).not.toContain('bg=');
+  });
+
+  it('treats junk as automatic, like an unknown scene', () => {
+    expect(parseBackgroundPreference('sparkles')).toBeNull();
+    expect(parseBackgroundPreference(null)).toBeNull();
+    expect(parseBackgroundPreference('PANORAMA')).toBe('panorama');
+  });
+});
 
 /** The whole point of the share button: what goes out must come back the same. */
 function roundTrip(state: ShareableState): number {
@@ -25,13 +51,14 @@ function roundTrip(state: ShareableState): number {
 describe('readLaunchParams', () => {
   it('reads every parameter', () => {
     const params = readLaunchParams(
-      '?scene=slate-orrery&target=2026-12-31T23:59:59&tz=Europe/Paris&mood=night&quality=low',
+      '?scene=slate-orrery&target=2026-12-31T23:59:59&tz=Europe/Paris&mood=night&bg=backdrop&quality=low',
     );
     expect(params).toEqual({
       sceneId: 'slate-orrery',
       target: '2026-12-31T23:59:59',
       tz: 'Europe/Paris',
       mood: 'night',
+      background: 'backdrop',
       quality: 'low',
     });
   });

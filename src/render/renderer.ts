@@ -12,6 +12,7 @@ import { computeCountdown, computeRemaining } from '../time/countdown.js';
 import { clockFrame, countdownFrame } from '../mechanism/index.js';
 import type { IblStatus } from './lighting.js';
 import type { QualitySettings } from '../app/quality.js';
+import type { BackgroundPreference } from '../app/urlParams.js';
 import type { AppStore } from '../app/store.js';
 import { MATERIAL_SLOTS } from '../scene/types.js';
 import type { ContentExtent } from '../scene/framing.js';
@@ -96,6 +97,7 @@ export class ClockRenderer {
   private materialLook: string | null = null;
 
   private quality: QualitySettings;
+  private backgroundPreference: BackgroundPreference | null = null;
   /**
    * What the active scene needs to keep in frame. Measured from the built scene
    * graph rather than declared, so a scene that grows a part reframes itself.
@@ -313,6 +315,18 @@ export class ClockRenderer {
     this.applyQuality();
   }
 
+  /**
+   * The viewer's backdrop choice, layered over the tier's default.
+   *
+   * Goes through `applyQuality` so it lands with the same atomic re-commit the
+   * tier change uses — the environment controller swaps backdrop, blurriness
+   * and intensity in one synchronous pass either way.
+   */
+  setBackgroundPreference(preference: BackgroundPreference | null): void {
+    this.backgroundPreference = preference;
+    this.applyQuality();
+  }
+
   /** The tier currently in force. */
   get qualityTier(): QualitySettings['tier'] {
     return this.quality.tier;
@@ -370,6 +384,8 @@ export class ClockRenderer {
     maxFps: number | null;
     framingFit: 'whole' | 'rings';
     ringExtentPx: number;
+    /** Whether the mood's HDR panorama is the backdrop, after every override. */
+    panoramaBackground: boolean;
   } {
     const size = this.renderer.getSize(new THREE.Vector2());
     return {
@@ -395,6 +411,12 @@ export class ClockRenderer {
       maxFps: this.quality.maxFps,
       framingFit: this.framingFit,
       ringExtentPx: this.measureRingExtentPx(),
+      panoramaBackground:
+        this.backgroundPreference === 'panorama'
+          ? true
+          : this.backgroundPreference === 'backdrop'
+            ? false
+            : this.quality.panoramaBackground,
     };
   }
 
@@ -582,7 +604,17 @@ export class ClockRenderer {
   /** Applies everything the current tier controls to the live renderer. */
   private applyQuality(): void {
     this.renderer.setPixelRatio(this.pixelRatio());
-    this.environment.setPanoramaBackground(this.quality.panoramaBackground);
+    // The viewer's explicit choice wins in either direction; 'auto' (and null)
+    // defers to the tier. Forcing the panorama on a low-tier device spends the
+    // cost the tier tried to save — the tier is a default, not a policy.
+    const preference = this.backgroundPreference;
+    const panorama =
+      preference === 'panorama'
+        ? true
+        : preference === 'backdrop'
+          ? false
+          : this.quality.panoramaBackground;
+    this.environment.setPanoramaBackground(panorama);
   }
 
   private resize(): void {

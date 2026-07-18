@@ -163,6 +163,7 @@ describe('installTestApi', () => {
     maxFps: null,
     framingFit: 'whole',
     ringExtentPx: 420,
+    panoramaBackground: true,
   };
 
   const materialState: MaterialState = {
