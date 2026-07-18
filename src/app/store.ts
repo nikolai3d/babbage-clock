@@ -47,6 +47,12 @@ export interface AppState {
    * of its own.
    */
   readonly clockReading: string | null;
+  /**
+   * Whether the mechanical soundscape is on. Off by default and never armed
+   * without a viewer action or a remembered one — the AudioContext is created
+   * in the toggle's own click, which is the autoplay unlock.
+   */
+  readonly sound: boolean;
   /** Includes both-zone echoes and DST notes for the UI to surface. */
   readonly target: ResolvedTarget;
   readonly countdown: CountdownParts;

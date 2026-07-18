@@ -11,6 +11,7 @@ import { ringStackSpan } from '../geometry/ringLayout.js';
 import { computeCountdown, computeRemaining } from '../time/countdown.js';
 import { clockParts, formatClock } from '../time/clock.js';
 import { clockFrame, countdownFrame } from '../mechanism/index.js';
+import type { MechanismEvent } from '../mechanism/index.js';
 import type { IblStatus } from './lighting.js';
 import type { QualitySettings } from '../app/quality.js';
 import type { BackgroundPreference } from '../app/urlParams.js';
@@ -100,6 +101,7 @@ export class ClockRenderer {
   private quality: QualitySettings;
   private suspended = false;
   private backgroundPreference: BackgroundPreference | null = null;
+  private readonly mechanismListeners = new Set<(event: MechanismEvent) => void>();
   /**
    * What the active scene needs to keep in frame. Measured from the built scene
    * graph rather than declared, so a scene that grows a part reframes itself.
@@ -238,6 +240,12 @@ export class ClockRenderer {
       materials: this.materials,
       textureSize: this.quality.textureSize,
     });
+    // Re-attach the outside listeners to the new scene's mechanism. The set
+    // outlives every scene switch, so a subscriber (the audio engine) never
+    // knows scenes were swapped under it.
+    this.view.mechanism.subscribe((event) => {
+      for (const listener of [...this.mechanismListeners]) listener(event);
+    });
     if (this.materialLook !== null) this.applyLook(definition);
     this.extent = this.measureExtent(definition);
     this.applyCameraConfig(definition);
@@ -324,6 +332,17 @@ export class ClockRenderer {
    * tier change uses — the environment controller swaps backdrop, blurriness
    * and intensity in one synchronous pass either way.
    */
+  /**
+   * Subscribes to the mechanism's tick / seek / expire events, across scene
+   * switches. The events are the same objects the animation runs on — see
+   * docs/mechanism.md — which is what keeps a sound sample-accurate with the
+   * rings by construction.
+   */
+  onMechanismEvent(listener: (event: MechanismEvent) => void): () => void {
+    this.mechanismListeners.add(listener);
+    return () => this.mechanismListeners.delete(listener);
+  }
+
   setBackgroundPreference(preference: BackgroundPreference | null): void {
     this.backgroundPreference = preference;
     this.applyQuality();
