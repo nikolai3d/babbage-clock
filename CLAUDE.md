@@ -60,18 +60,33 @@ This protocol applies when ending a Beads implementation workflow. It is subordi
 
 ## Build & Test
 
-_Add your build and test commands here_
-
 ```bash
-# Example:
-# npm install
-# npm test
+npm install
+npm run dev        # Vite dev server on http://localhost:5173
+npm run ci         # typecheck -> lint -> test -> build; run this before opening a PR
 ```
+
+Individual gates: `npm run typecheck`, `npm run lint`, `npm run test` (Vitest,
+single run — never use watch mode in an agent session), `npm run build`.
 
 ## Architecture Overview
 
-_Add a brief overview of your project architecture_
+Vanilla TypeScript + three.js (WebGL2), no UI framework. How a clock looks —
+ring count and layout, materials, lighting, camera framing — is data in a
+`SceneDefinition` held in a scene registry, switchable at runtime and via
+`?scene=`. Read **[docs/architecture.md](docs/architecture.md)** before changing
+rendering, scenes, materials or lighting; it documents the module layout and the
+typed extension points for PBR materials, IBL presets and NTP time.
 
 ## Conventions & Patterns
 
-_Add your project-specific conventions here_
+- `src/scene/` and `src/time/` must not import three.js — that is what keeps
+  them unit-testable without a WebGL context.
+- `src/ui/` must not import three.js either. UI reads the app store and emits
+  intents; `main.ts` wires them to the renderer.
+- Anything `ClockSceneView` creates must be disposed: register geometries with
+  `this.track(...)` and take materials from the `MaterialLibrary`. Scenes are
+  swapped repeatedly at runtime, so leaks compound.
+- Prefer typed extension points over `TODO` comments.
+- WebGL2 via the classic `WebGLRenderer`. WebGPU is deferred — do not introduce
+  `WebGPURenderer`.
