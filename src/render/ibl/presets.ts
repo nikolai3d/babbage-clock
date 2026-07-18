@@ -14,16 +14,27 @@
 import { parseIblManifest } from './manifest.js';
 import type { IblManifest } from './manifest.js';
 
-const manifestLoaders = import.meta.glob('/assets/ibl/*/preset.json', {
+/**
+ * Patterns are *relative*, not root-absolute (`/assets/…`).
+ *
+ * Both forms resolve to the same files, but the glob keys are emitted into the
+ * bundle verbatim, and a root-absolute key is a URL that 404s on a GitHub Pages
+ * project page. `scripts/check-base-path.mjs` fails the build on exactly that,
+ * and it is right to: nothing in a bundle should look like a site-root URL.
+ * See docs/deploy.md.
+ */
+const PRESET_ROOT = '../../../assets/ibl';
+
+const manifestLoaders = import.meta.glob('../../../assets/ibl/*/preset.json', {
   import: 'default',
 }) as Record<string, () => Promise<unknown>>;
 
-const panoramaLoaders = import.meta.glob('/assets/ibl/*/*.{hdr,exr,ktx2}', {
+const panoramaLoaders = import.meta.glob('../../../assets/ibl/*/*.{hdr,exr,ktx2}', {
   query: '?url',
   import: 'default',
 }) as Record<string, () => Promise<string>>;
 
-/** `/assets/ibl/night/preset.json` -> `night`. */
+/** `…/assets/ibl/night/preset.json` -> `night`. */
 function folderOf(path: string): string {
   return path.split('/').slice(-2, -1)[0] ?? '';
 }
@@ -67,14 +78,14 @@ for (const [path, load] of Object.entries(manifestLoaders)) {
       return manifest;
     },
     loadPanoramaUrl(file: string): Promise<string> {
-      const key = `/assets/ibl/${id}/${file}`;
+      const key = `${PRESET_ROOT}/${id}/${file}`;
       const loader = panoramaLoaders[key];
       if (!loader) {
         return Promise.reject(
           new Error(
             `IBL preset "${id}" names "${file}", which is not in its folder. ` +
               `Known files: ${Object.keys(panoramaLoaders)
-                .filter((candidate) => candidate.startsWith(`/assets/ibl/${id}/`))
+                .filter((candidate) => candidate.startsWith(`${PRESET_ROOT}/${id}/`))
                 .join(', ')}`,
           ),
         );
