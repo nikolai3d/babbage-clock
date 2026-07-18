@@ -25,13 +25,23 @@ describe('readoutStateText', () => {
     // 199 days is what the readout shows; the rings stop at 999 hours.
     const { countdown, remaining } = at(199 * 24 * HOUR + 12 * HOUR);
     expect(remaining.clamped).toBe(true);
-    expect(readoutStateText(countdown, remaining)).toBe('rings hold at 999:59:59');
+    expect(readoutStateText(countdown, remaining)).toBe('hours hold at 999');
   });
 
-  it('states the cap without the "greater than" prefix', () => {
-    // The rings sit exactly on the cap, so the sentence must not read `>999`.
+  it('names the cap without a "greater than" prefix', () => {
+    // The hours sit exactly on the cap, so the sentence must not read `>999`.
     const { countdown, remaining } = at(2000 * HOUR);
     expect(readoutStateText(countdown, remaining)).not.toContain('>');
+  });
+
+  it('says the same thing as the minutes and seconds keep running', () => {
+    // The note describes the pinned hours, so it must not churn every second
+    // now that the lower rings move while clamped.
+    const a = at(2000 * HOUR);
+    const b = at(2000 * HOUR + 37_000);
+    expect(readoutStateText(b.countdown, b.remaining)).toBe(
+      readoutStateText(a.countdown, a.remaining),
+    );
   });
 
   it('stops explaining the cap the moment it stops applying', () => {

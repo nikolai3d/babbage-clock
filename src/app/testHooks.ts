@@ -15,7 +15,7 @@
  *    `src/render/` do not import this module.
  */
 
-import type { CountdownParts } from '../time/countdown.js';
+import type { CountdownParts, RemainingTime } from '../time/countdown.js';
 import type { CountdownTarget, TimeSource } from '../time/target.js';
 
 /** Canonical test-hook query-parameter names, kept beside the app's own. */
@@ -235,6 +235,7 @@ export interface StoreProbe {
     readonly sceneId: string;
     readonly target: CountdownTarget;
     readonly countdown: CountdownParts;
+    readonly remaining: RemainingTime;
     readonly hidden: boolean;
     readonly fps: number;
   };
@@ -253,6 +254,8 @@ export interface ClockTestApi {
   digits(): readonly number[];
   sceneId(): string;
   countdown(): CountdownParts;
+  /** What the rings actually display, including whether the hours are pinned. */
+  remaining(): RemainingTime;
   target(): CountdownTarget;
   renderer(): RendererState;
   /** The hooks in force, echoed back for diagnostics. */
@@ -293,6 +296,7 @@ export function installTestApi(
     digits: () => renderer.getDigits(),
     sceneId: () => store.get().sceneId,
     countdown: () => store.get().countdown,
+    remaining: () => store.get().remaining,
     target: () => store.get().target,
     renderer: () => renderer.getRenderState(),
     hooks: () => hooks,

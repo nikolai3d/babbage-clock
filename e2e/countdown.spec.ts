@@ -38,8 +38,9 @@ test.describe('countdown readout', () => {
   });
 
   test('advances the digits handed to the rings', async ({ page }) => {
-    // A target under the 999-hour cap: beyond it the rings correctly pin at
-    // 999:59:59 and hold still, which would make "did it move" unanswerable.
+    // A target under the 999-hour cap. Past the cap the hours pin at 999 while
+    // the lower rings keep running — see the default-target test below, which
+    // is the case that actually ships.
     await gotoApp(page, { mockNow: PINNED_NOW, mockNowMode: 'advance', target: TICKING_TARGET });
 
     const initial = await readDigits(page);
@@ -50,6 +51,26 @@ test.describe('countdown readout', () => {
     await expect
       .poll(async () => (await readDigits(page)).join(''), {
         message: 'ring digits never changed — the render loop may be stalled',
+        timeout: 15_000,
+      })
+      .not.toBe(initial.join(''));
+  });
+
+  test('advances on the default target, with no ?target= supplied', async ({ page }) => {
+    // The case every other tick test missed. The default target is the next New
+    // Year — thousands of hours out, so it is always clamped — and clamping used
+    // to pin the whole value, not just the hours. The landing view was therefore
+    // a countdown clock whose rings never moved, and no test could see it
+    // because they all pin a target inside the cap first.
+    await gotoApp(page, { mockNow: PINNED_NOW, mockNowMode: 'advance' });
+
+    const remaining = await page.evaluate(() => window.__clock?.remaining());
+    expect(remaining?.clamped, 'the default target should exercise the clamp').toBe(true);
+
+    const initial = await readDigits(page);
+    await expect
+      .poll(async () => (await readDigits(page)).join(''), {
+        message: 'the default view never moved — the clamp has frozen the rings again',
         timeout: 15_000,
       })
       .not.toBe(initial.join(''));
