@@ -31,6 +31,11 @@ export class ClockSceneView {
   private readonly materials: MaterialLibrary;
   private readonly lighting: SceneLighting;
   private readonly geometries: THREE.BufferGeometry[] = [];
+  /**
+   * Objects that hold GPU resources of their own beyond their geometry and
+   * material — InstancedMesh owns its instance-matrix buffer, for example.
+   */
+  private readonly disposables: { dispose(): void }[] = [];
   private readonly rings: RingView[] = [];
   private readonly gears: { spinner: THREE.Object3D; spec: GearSpec }[] = [];
 
@@ -84,6 +89,9 @@ export class ClockSceneView {
   dispose(): void {
     this.root.removeFromParent();
     this.root.clear();
+
+    for (const disposable of this.disposables) disposable.dispose();
+    this.disposables.length = 0;
 
     for (const geometry of this.geometries) geometry.dispose();
     this.geometries.length = 0;
@@ -194,6 +202,7 @@ export class ClockSceneView {
       teeth.setMatrixAt(i, matrix.compose(position, quaternion, scale));
     }
     teeth.instanceMatrix.needsUpdate = true;
+    this.disposables.push(teeth);
     spinner.add(teeth);
 
     this.root.add(group);

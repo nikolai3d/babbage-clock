@@ -137,6 +137,11 @@ export class ClockRenderer {
     const width = this.canvas.clientWidth || window.innerWidth;
     const height = this.canvas.clientHeight || window.innerHeight;
 
+    // A ResizeObserver can fire with a zero-sized box while the canvas is
+    // laid out or hidden; a zero height would poison the projection matrix
+    // with Infinity and the scene would never come back.
+    if (width <= 0 || height <= 0) return;
+
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, MAX_PIXEL_RATIO));
     this.renderer.setSize(width, height, false);
     this.camera.aspect = width / height;

@@ -152,6 +152,24 @@ describe('ClockSceneView', () => {
     expect(countMeshes(view.root)).toBe(0);
   });
 
+  it('disposes instanced gear teeth, which own a GPU buffer of their own', () => {
+    const view = new ClockSceneView(scene, copperPadlockScene);
+
+    const instanced: THREE.InstancedMesh[] = [];
+    view.root.traverse((object) => {
+      // three.js types InstancedMesh generically, so narrow it explicitly.
+      if (object instanceof THREE.InstancedMesh) instanced.push(object as THREE.InstancedMesh);
+    });
+    expect(instanced).toHaveLength(copperPadlockScene.gears.length);
+
+    // InstancedMesh.dispose() releases instanceMatrix; disposing the geometry
+    // and material alone would leak it on every scene switch.
+    const spies = instanced.map((mesh) => vi.spyOn(mesh, 'dispose'));
+    view.dispose();
+
+    for (const spy of spies) expect(spy).toHaveBeenCalled();
+  });
+
   it('survives repeated build/dispose cycles, as scene switching requires', () => {
     for (let i = 0; i < 5; i += 1) {
       const view = new ClockSceneView(scene, i % 2 === 0 ? copperPadlockScene : slateOrreryScene);
