@@ -193,8 +193,9 @@ export class Hud {
     }
 
     const status = describeTimeStatus(state.timeStatus, { syncPending: state.syncPending });
-    if (status.text !== this.lastStatusText) {
-      this.lastStatusText = status.text;
+    const statusKey = `${status.level}|${status.text}|${status.detail}`;
+    if (statusKey !== this.lastStatusText) {
+      this.lastStatusText = statusKey;
       this.statusText.textContent = status.text;
       this.statusEl.title = status.detail;
       this.statusEl.dataset['level'] = status.level;

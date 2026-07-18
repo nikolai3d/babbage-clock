@@ -136,7 +136,7 @@ export class SettingsPanel {
     this.picker = new TimeZonePicker({
       inputId: 'tz-input',
       initialZone: state.target.zone || options.viewerZone,
-      referenceMs: state.target.atMs,
+      referenceMs: () => this.lastTarget?.atMs ?? store.get().target.atMs,
       onChange: () => {
         this.dirty = true;
       },

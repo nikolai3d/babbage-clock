@@ -19,8 +19,12 @@ import type { TimeZoneOption } from './timeZones.js';
 export interface TimeZonePickerOptions {
   readonly inputId: string;
   readonly initialZone: string;
-  /** Instant used to label each zone with the offset in effect then. */
-  readonly referenceMs: number;
+  /**
+   * The instant to label each zone against, read afresh on every search: the
+   * offset shown must be the one in force at the *target*, and that moves when
+   * the viewer changes it (and across a DST boundary, changes sign of season).
+   */
+  readonly referenceMs: () => number;
   /** Called on every committed change, never on intermediate typing. */
   readonly onChange?: (zone: string) => void;
 }
@@ -34,7 +38,6 @@ export class TimeZonePicker {
 
   private readonly list: HTMLUListElement;
   private readonly listboxId: string;
-  private readonly referenceMs: number;
   private readonly zones: readonly TimeZoneOption[];
   private results: readonly TimeZoneOption[] = [];
   private activeIndex = -1;
@@ -43,7 +46,6 @@ export class TimeZonePicker {
 
   constructor(private readonly options: TimeZonePickerOptions) {
     this.zones = listTimeZones();
-    this.referenceMs = options.referenceMs;
     this.committed = options.initialZone;
     this.listboxId = `${options.inputId}-listbox`;
 
@@ -221,7 +223,7 @@ export class TimeZonePicker {
 
     const offset = document.createElement('span');
     offset.className = 'tzpicker__option-offset';
-    offset.textContent = zoneOffset(zone.id, this.referenceMs) ?? '';
+    offset.textContent = zoneOffset(zone.id, this.options.referenceMs()) ?? '';
 
     item.append(name, region, offset);
     return item;
