@@ -1,5 +1,12 @@
 import { expect, test } from '@playwright/test';
-import { PINNED_NOW, PINNED_TARGET, gotoApp, readDigits, waitForFrames } from './support/app.js';
+import {
+  PINNED_NOW,
+  PINNED_TARGET,
+  SELECTOR,
+  gotoApp,
+  readDigits,
+  waitForFrames,
+} from './support/app.js';
 
 /**
  * The countdown readout.
@@ -13,7 +20,7 @@ test.describe('countdown readout', () => {
   test('displays a readout and advances over time', async ({ page }) => {
     await gotoApp(page, { mockNow: PINNED_NOW, mockNowMode: 'advance', target: PINNED_TARGET });
 
-    const readout = page.locator('.hud__countdown');
+    const readout = page.locator(SELECTOR.countdown);
     await expect(readout).toBeVisible();
 
     const initial = (await readout.textContent())?.trim() ?? '';
@@ -54,14 +61,14 @@ test.describe('countdown readout', () => {
     });
 
     const before = await readDigits(page);
-    const textBefore = await page.locator('.hud__countdown').textContent();
+    const textBefore = await page.locator(SELECTOR.countdown).textContent();
 
     // Frames keep being drawn; only the clock is pinned. This is what makes
     // screenshots reproducible without stopping the renderer.
     await waitForFrames(page, 30);
 
     expect(await readDigits(page)).toEqual(before);
-    expect(await page.locator('.hud__countdown').textContent()).toBe(textBefore);
+    expect(await page.locator(SELECTOR.countdown).textContent()).toBe(textBefore);
   });
 
   test('honours an explicit ?target', async ({ page }) => {

@@ -31,6 +31,8 @@ test.describe('screenshots', () => {
 
   /** Waits until the pinned frame has settled, then removes font flicker. */
   async function settle(page: Page): Promise<void> {
+    // `gotoApp` already waits out the loading screen; this covers the frames
+    // and font loading that follow it.
     await waitForFrames(page, 5);
     await page.evaluate(() => document.fonts.ready);
   }

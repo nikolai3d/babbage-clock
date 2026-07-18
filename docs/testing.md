@@ -97,6 +97,20 @@ screenshot pass for the wrong reason.
 Time assertions are deliberately **loose** — "the readout changed", never an
 exact string — so the suite does not encode the countdown's current formatting.
 
+### If you rename something in the UI
+
+Every DOM selector the suite uses is declared once, in `SELECTOR` in
+`e2e/support/app.js`. A class or id rename is a one-line fix there rather than a
+hunt through four spec files.
+
+Two helpers exist because the UI needs driving before it can be asserted on:
+
+- `waitForLoadingScreen(page)` — the loading screen is authored in `index.html`
+  so it paints before any JavaScript, and covers the canvas until boot
+  finishes. `gotoApp()` already waits it out.
+- `openSettings(page)` — the scene picker lives in the settings drawer, which is
+  collapsed by default. Its controls cannot be clicked until this runs.
+
 ---
 
 ## Determinism hooks

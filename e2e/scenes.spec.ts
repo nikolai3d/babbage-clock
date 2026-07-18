@@ -1,6 +1,8 @@
 import { expect, test } from '@playwright/test';
 import {
+  SELECTOR,
   gotoApp,
+  openSettings,
   readDigits,
   readRendererState,
   readSceneId,
@@ -43,8 +45,10 @@ test.describe('scene selection', () => {
       // Ring count is scene data, and the digit packing must follow it.
       expect(await readDigits(page)).toHaveLength(scene.rings.count);
 
-      // The picker reflects the URL.
-      await expect(page.locator('#scene-select')).toHaveValue(scene.id);
+      // The picker reflects the URL. It lives in the settings drawer, which is
+      // collapsed until asked for.
+      await openSettings(page);
+      await expect(page.locator(SELECTOR.sceneSelect)).toHaveValue(scene.id);
 
       expect(console_.errors).toEqual([]);
     });
@@ -72,7 +76,8 @@ test.describe('scene selection', () => {
     const console_ = watchConsole(page);
     await gotoApp(page, { scene: first.id });
 
-    await page.locator('#scene-select').selectOption(second.id);
+    await openSettings(page);
+    await page.locator(SELECTOR.sceneSelect).selectOption(second.id);
 
     await expect.poll(async () => readSceneId(page)).toBe(second.id);
     await expect.poll(async () => (await readRendererState(page)).sceneId).toBe(second.id);

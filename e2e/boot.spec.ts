@@ -2,6 +2,7 @@ import { expect, test } from '@playwright/test';
 import {
   appUrl,
   blockExternalRequests,
+  SELECTOR,
   gotoApp,
   readRendererState,
   waitForFrames,
@@ -25,7 +26,7 @@ test.describe('boot', () => {
     // sync path has its own test below.
     await page.goto(appUrl({ testApi: false }));
 
-    const canvas = page.locator('#scene-canvas');
+    const canvas = page.locator(SELECTOR.canvas);
     await expect(canvas).toBeVisible();
 
     const box = await canvas.boundingBox();
@@ -33,7 +34,7 @@ test.describe('boot', () => {
     expect(box?.height ?? 0).toBeGreaterThan(0);
 
     // The HUD proves main.ts got all the way through bootstrap().
-    await expect(page.locator('.hud__countdown')).not.toBeEmpty();
+    await expect(page.locator(SELECTOR.countdown)).not.toBeEmpty();
 
     // Every asset the page asks for must exist — including the favicon the
     // browser requests on its own. A tolerated 404 hides the next real one.
@@ -48,8 +49,10 @@ test.describe('boot', () => {
 
     // three.js has already created the context; `getContext` hands back the
     // same one rather than making a second.
-    const gl = await page.evaluate(() => {
-      const canvas = document.querySelector<HTMLCanvasElement>('#scene-canvas');
+    // The selector is passed in: this callback is serialised and runs in the
+    // browser, where the module-scope `SELECTOR` does not exist.
+    const gl = await page.evaluate((canvasSelector) => {
+      const canvas = document.querySelector<HTMLCanvasElement>(canvasSelector);
       const context = canvas?.getContext('webgl2');
       if (!context) return null;
 
@@ -61,7 +64,7 @@ test.describe('boot', () => {
           : (context.getParameter(context.RENDERER) as string),
         maxTextureSize: context.getParameter(context.MAX_TEXTURE_SIZE) as number,
       };
-    });
+    }, SELECTOR.canvas);
 
     expect(gl, 'no WebGL2 context — check the SwiftShader launch flags').not.toBeNull();
     expect(gl?.version).toContain('WebGL 2.0');
@@ -124,7 +127,7 @@ test.describe('boot', () => {
 test.describe('test-hook gating', () => {
   test('installs no test API without ?testApi', async ({ page }) => {
     await page.goto(appUrl({ testApi: false }));
-    await expect(page.locator('.hud__countdown')).not.toBeEmpty();
+    await expect(page.locator(SELECTOR.countdown)).not.toBeEmpty();
 
     expect(await page.evaluate(() => window.__clock === undefined)).toBe(true);
   });

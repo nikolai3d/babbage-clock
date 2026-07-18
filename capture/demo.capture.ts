@@ -1,5 +1,11 @@
 import { expect, test } from '@playwright/test';
-import { appUrl, waitForFrames } from '../e2e/support/app.js';
+import {
+  SELECTOR,
+  appUrl,
+  openSettings,
+  waitForFrames,
+  waitForLoadingScreen,
+} from '../e2e/support/app.js';
 import { sceneRegistry } from '../src/scene/scenes/index.js';
 
 /**
@@ -39,15 +45,16 @@ test('demo tour', async ({ page }) => {
     }),
   );
   await page.waitForFunction(() => window.__clock !== undefined);
+  await waitForLoadingScreen(page);
   await waitForFrames(page, 10);
-  await expect(page.locator('.hud__countdown')).not.toBeEmpty();
+  await expect(page.locator(SELECTOR.countdown)).not.toBeEmpty();
 
   // 2. Several live ticks.
   await page.waitForTimeout(TICK_WATCH_MS);
 
   // 3. An orbit: drag across the canvas and back, so the mechanism is seen
   //    from more than one angle.
-  const canvas = page.locator('#scene-canvas');
+  const canvas = page.locator(SELECTOR.canvas);
   const box = await canvas.boundingBox();
   if (!box) throw new Error('canvas has no layout box');
 
@@ -65,7 +72,8 @@ test('demo tour', async ({ page }) => {
   await page.waitForTimeout(1_000);
 
   // 4. A scene switch.
-  await page.locator('#scene-select').selectOption(second.id);
+  await openSettings(page);
+  await page.locator(SELECTOR.sceneSelect).selectOption(second.id);
   await expect.poll(async () => page.evaluate(() => window.__clock?.sceneId())).toBe(second.id);
   await page.waitForTimeout(TICK_WATCH_MS);
 

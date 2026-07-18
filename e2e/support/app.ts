@@ -11,6 +11,22 @@ import type { RendererState } from '../../src/app/testHooks.js';
  * they do not need a screenshot baseline to be meaningful.
  */
 
+/**
+ * Every DOM selector the suite depends on, in one place.
+ *
+ * The UI is expected to keep changing. Keeping the selectors here means a
+ * rename costs one line rather than a hunt through four spec files — and makes
+ * it obvious exactly how much of the DOM the tests are coupled to.
+ */
+export const SELECTOR = {
+  canvas: '#scene-canvas',
+  countdown: '.readout__countdown',
+  loadingScreen: '#loading-screen',
+  settingsToggle: '#settings-toggle',
+  settingsPanel: '#settings-panel',
+  sceneSelect: '#scene-select',
+} as const;
+
 /** A time far enough from any real "now" that a stale pin is obvious. */
 export const PINNED_NOW = Date.UTC(2026, 5, 15, 12, 0, 0);
 /** Roughly 200 days after {@link PINNED_NOW}, so every ring has a digit on it. */
@@ -131,6 +147,9 @@ export async function gotoApp(page: Page, options: AppOptions = {}): Promise<voi
   // driver would only add latency.
   await page.goto(appUrl(options));
   await page.waitForFunction(() => window.__clock !== undefined);
+  // The loading screen covers the canvas until boot completes; anything that
+  // clicks, or photographs, the UI has to wait it out.
+  await waitForLoadingScreen(page);
   await expect
     .poll(async () => (await readRendererState(page)).drawCalls, {
       message: 'renderer never issued a draw call — is WebGL2/SwiftShader working?',
@@ -163,6 +182,31 @@ export async function readSceneId(page: Page): Promise<string> {
     if (!api) throw new Error('window.__clock is not installed — is ?testApi set?');
     return api.sceneId();
   });
+}
+
+/**
+ * Waits for the loading screen to go away.
+ *
+ * It is authored directly in `index.html` so it paints before any JavaScript
+ * runs, and `ui/loadingScreen.ts` removes it once boot finishes. Screenshots
+ * taken before then are pictures of the loader.
+ */
+export async function waitForLoadingScreen(page: Page): Promise<void> {
+  await expect(page.locator(SELECTOR.loadingScreen)).toHaveCount(0, { timeout: 20_000 });
+}
+
+/**
+ * Opens the settings drawer, where the scene picker lives.
+ *
+ * The panel is collapsed by default — the clock is the hero — and its contents
+ * are `hidden` until then, so its controls cannot be driven without this.
+ */
+export async function openSettings(page: Page): Promise<void> {
+  const panel = page.locator(SELECTOR.settingsPanel);
+  if (await panel.isVisible()) return;
+
+  await page.locator(SELECTOR.settingsToggle).click();
+  await expect(panel).toBeVisible();
 }
 
 /** Waits until `count` further frames have been drawn since now. */
