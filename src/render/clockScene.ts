@@ -155,6 +155,21 @@ export class ClockSceneView {
     definition.gears.forEach((gear, index) => this.buildGear(gear, index));
     this.buildEscapement();
 
+    // Everything both casts and receives: the shadows worth having here are
+    // the mechanism shadowing *itself* — rings onto the case interior, the lid
+    // and shackle onto the shell, numerals onto their own drum — and any split
+    // (say, the case receiving but not casting) invents a physically impossible
+    // frame that reads as a lighting bug. Whether any shadow is drawn at all is
+    // the lighting mood's decision: only a mood whose key light carries a
+    // `shadow` block casts (see `render/ibl/rig.ts`), so scenes under every
+    // other mood pay nothing for these flags.
+    this.root.traverse((object) => {
+      if ((object as THREE.Mesh).isMesh) {
+        object.castShadow = true;
+        object.receiveShadow = true;
+      }
+    });
+
     scene.add(this.root);
   }
 

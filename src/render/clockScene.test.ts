@@ -83,6 +83,23 @@ describe('ClockSceneView', () => {
     view.dispose();
   });
 
+  it('marks every mesh as a shadow caster and receiver', () => {
+    // The flags are free until a lighting mood's key light actually casts
+    // (see render/ibl/rig.ts); what this protects is completeness — a new part
+    // added without them would float, shadowless, under sunny-day.
+    const view = new ClockSceneView(scene, copperPadlockScene);
+
+    let meshes = 0;
+    view.root.traverse((object) => {
+      if (!(object as THREE.Mesh).isMesh) return;
+      meshes += 1;
+      expect(object.castShadow, `${object.name || object.parent?.name} casts`).toBe(true);
+      expect(object.receiveShadow, `${object.name || object.parent?.name} receives`).toBe(true);
+    });
+    expect(meshes).toBeGreaterThan(0);
+    view.dispose();
+  });
+
   it('takes ring count and spacing from the definition, not from code', () => {
     const copper = new ClockSceneView(scene, copperPadlockScene);
     const slate = new ClockSceneView(new THREE.Scene(), slateOrreryScene);

@@ -170,6 +170,14 @@ export class ClockRenderer {
     this.renderer.setPixelRatio(this.pixelRatio());
     this.renderer.outputColorSpace = THREE.SRGBColorSpace;
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
+    // Enabled unconditionally, but only a lighting mood whose manifest gives
+    // its key light a `shadow` block ever casts (see `render/ibl/rig.ts`), and
+    // with no casting light three.js schedules no shadow pass and compiles no
+    // shadow sampling into the materials — moods without one render exactly as
+    // before, at no cost. Soft PCF because a hard-edged 1024px map on the low
+    // tier would read as stair-steps across the drums.
+    this.renderer.shadowMap.enabled = true;
+    this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 
     if (!this.renderer.capabilities.isWebGL2) {
       // WebGPU is explicitly deferred; WebGL1 is not a supported target either.
@@ -186,6 +194,7 @@ export class ClockRenderer {
       scene: this.scene,
       library: createEnvironmentLibrary(this.renderer),
       panoramaBackground: quality.panoramaBackground,
+      shadowMapSize: quality.shadowMapSize,
     });
 
     this.controls = new OrbitControls(this.camera, canvas);
@@ -656,6 +665,9 @@ export class ClockRenderer {
           ? false
           : this.quality.panoramaBackground;
     this.environment.setPanoramaBackground(panorama);
+    // A tier change re-sizes the mood's shadow map with everything else it
+    // re-derives; the controller rebuilds its rig only when the size changed.
+    this.environment.setShadowMapSize(this.quality.shadowMapSize);
   }
 
   private resize(): void {

@@ -72,12 +72,38 @@ interface IblLightBase {
   readonly intensity: number;
 }
 
+/**
+ * Shadow casting for a mood's key light.
+ *
+ * Authored per light because only a mood with a *real* key — a sun, a lamp —
+ * has a shadow worth paying for; an omnidirectional fill casting would cost a
+ * render pass to say nothing. The frustum is authored here too: the manifest
+ * knows where its light sits and how much scene it must cover, and a frustum
+ * derived at runtime would re-fit (and so re-alias) every time a scene grew a
+ * part. Resolution is deliberately absent — that is the quality tier's knob,
+ * threaded in by the renderer (see `app/quality.ts`).
+ */
+export interface IblShadowSpec {
+  /** Half-extent of the orthographic shadow frustum, in scene units. */
+  readonly radius: number;
+  /** Near plane of the shadow camera, from the light along its direction. */
+  readonly near: number;
+  /** Far plane; must reach past the far side of the mechanism. */
+  readonly far: number;
+  /** Depth-test offset countering acne on parallel surfaces. */
+  readonly bias: number;
+  /** Offset along the surface normal countering acne on curved drums. */
+  readonly normalBias: number;
+}
+
 export type IblLightSpec =
   | (IblLightBase & { readonly type: 'ambient' })
   | (IblLightBase & { readonly type: 'hemisphere'; readonly groundColor: number })
   | (IblLightBase & {
       readonly type: 'directional';
       readonly position: readonly [number, number, number];
+      /** Present only on a light that casts; parsed and defaulted below. */
+      readonly shadow?: IblShadowSpec;
     })
   | (IblLightBase & {
       readonly type: 'point';
@@ -317,9 +343,18 @@ function parseLights(raw: unknown, problems: string[]): IblLightSpec[] {
           groundColor: requireColor(node, 'groundColor', problems, at),
         });
         return;
-      case 'directional':
-        lights.push({ ...base, type: 'directional', position: requireVec3(node, at, problems) });
+      case 'directional': {
+        const shadow = parseShadow(node['shadow'], at, problems);
+        lights.push({
+          ...base,
+          type: 'directional',
+          position: requireVec3(node, at, problems),
+          // `exactOptionalPropertyTypes`: a light that does not cast has no
+          // `shadow` key at all, not an explicit undefined.
+          ...(shadow === null ? {} : { shadow }),
+        });
         return;
+      }
       case 'point':
         lights.push({
           ...base,
@@ -351,6 +386,38 @@ function parseLights(raw: unknown, problems: string[]): IblLightSpec[] {
   });
 
   return lights;
+}
+
+/**
+ * Optional per-light shadow block. `radius` is required — a guessed frustum is
+ * either clipped or blocky, both worse than no shadow — and the fiddly acne
+ * counters get defaults tuned for this project's roughly camera-sized scenes.
+ */
+function parseShadow(raw: unknown, at: string, problems: string[]): IblShadowSpec | null {
+  if (raw === undefined || raw === null) return null;
+  const node = asRecord(raw);
+  if (!node) {
+    problems.push(`${at}shadow: not an object`);
+    return null;
+  }
+
+  const prefix = `${at}shadow.`;
+  const radius = optionalNumber(node, 'radius', problems, prefix);
+  if (radius === undefined || radius <= 0) {
+    problems.push(`${prefix}radius: missing or not a positive number`);
+  }
+  const near = optionalNumber(node, 'near', problems, prefix) ?? 0.5;
+  const far = optionalNumber(node, 'far', problems, prefix) ?? 50;
+  if (near <= 0) problems.push(`${prefix}near must be > 0`);
+  if (far <= near) problems.push(`${prefix}far (${far}) must exceed near (${near})`);
+
+  return {
+    radius: radius !== undefined && radius > 0 ? radius : 1,
+    near,
+    far,
+    bias: optionalNumber(node, 'bias', problems, prefix) ?? -0.0002,
+    normalBias: optionalNumber(node, 'normalBias', problems, prefix) ?? 0.02,
+  };
 }
 
 function parseSource(raw: unknown, problems: string[]): IblSourceSpec {

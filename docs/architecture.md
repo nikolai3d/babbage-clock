@@ -177,7 +177,9 @@ memory — onto `high` or `low`. Every phone lands on `low`; so does a machine w
 four cores or less, one that reports 4 GB or less, and a large scaled display
 without the cores to feed it. The tier sets the pixel-ratio cap (2 or 1.5), a
 frame ceiling (none or 30 fps), whether a lighting mood may draw its HDR panorama
-as the background, and the texture size the material pipeline should prefer.
+as the background, the texture size the material pipeline should prefer, and the
+resolution of the shadow map a mood's casting key light renders into (2048 or
+1024 — see [lighting.md](lighting.md)).
 
 The viewer always wins: `?quality=` pins it and the drawer's Render quality
 control changes it live, because everything a tier controls is re-derivable.
