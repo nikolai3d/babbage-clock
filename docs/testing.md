@@ -1,12 +1,13 @@
 # Testing
 
-Three layers, each answering a different question.
+Four layers, each answering a different question.
 
-| Layer          | Question                                    | Command            | Where                     |
-| -------------- | ------------------------------------------- | ------------------ | ------------------------- |
-| **Unit**       | Is the maths and the data right?            | `npm run test`     | `src/**/*.test.ts`        |
-| **E2E**        | Does the real app boot, render and respond? | `npm run test:e2e` | `e2e/*.spec.ts`           |
-| **Screenshot** | Does it still _look_ right?                 | `npm run test:e2e` | `e2e/screenshots.spec.ts` |
+| Layer          | Question                                      | Command            | Where                                      |
+| -------------- | --------------------------------------------- | ------------------ | ------------------------------------------ |
+| **Unit**       | Is the maths and the data right?              | `npm run test`     | `src/**/*.test.ts`                         |
+| **E2E**        | Does the real app boot, render and respond?   | `npm run test:e2e` | `e2e/*.spec.ts`                            |
+| **Screenshot** | Does it still _look_ right?                   | `npm run test:e2e` | `e2e/screenshots.spec.ts`                  |
+| **a11y**       | Is it usable without sight, a mouse or a GPU? | `npm run test:e2e` | `e2e/a11y.spec.ts`, `e2e/fallback.spec.ts` |
 
 Plus an on-demand **demo capture** (`npm run capture:demo`) that records a video
 tour to `artifacts/`. It is not part of CI.
@@ -292,6 +293,31 @@ The passing run prints the backend, e.g.:
 If e2e goes red with a blank canvas, check that line first.
 
 ---
+
+## Accessibility and fallback specs
+
+`e2e/a11y.spec.ts` runs axe-core against the app in each of its states (drawer
+closed and open, timezone listbox open, a toast showing, the loading screen, and
+at a 200%-zoom viewport), checks the live-region cadence against a real ticking
+clock, and walks the entire settings flow with nothing but the keyboard.
+
+`e2e/fallback.spec.ts` forces the two ways the picture can fail:
+
+- **No WebGL** — `disableWebGL(page)` (in `e2e/support/app.ts`) patches
+  `HTMLCanvasElement.prototype.getContext` to return null for any `webgl*`
+  context before any script runs, which is the real failure: `WebGLRenderer`
+  throws out of its constructor. Note that three.js logs a `console.error` on
+  that path, so these specs do not assert an empty console.
+- **Context loss** — `WEBGL_lose_context` on the app's own context, which fires
+  the browser's real `webglcontextlost`. **Keep the extension handle**: once the
+  context is lost, `getExtension` on it returns null, so `restoreContext` can
+  never be found by a second lookup.
+
+Reduced motion is exercised with `page.emulateMedia({ reducedMotion: 'reduce' })`
+both before navigation and mid-session. `renderer().motion` is the _effective_
+setting and `hooks().motion` is the URL parameter, so comparing them proves the
+media query reached the renderer rather than the query string. See
+**[accessibility.md](accessibility.md)**.
 
 ## Demo capture
 

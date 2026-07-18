@@ -74,6 +74,12 @@ The rings tick like an escapement rather than sliding, and a carry cascade —
 event. That state machine is three.js-free and unit-tested on its own; see
 [docs/mechanism.md](docs/mechanism.md).
 
+The countdown is readable without sight, without a mouse and without a GPU: a
+throttled live region mirrors it as words, `prefers-reduced-motion` and
+`?nomotion=1` share one switch, and a failed or lost WebGL context falls back to
+a text clock driven by the same timing module. See
+[docs/accessibility.md](docs/accessibility.md).
+
 ## Task tracking
 
 Issues are tracked with [beads](https://github.com/steveyegge/beads) (`bd`),

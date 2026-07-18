@@ -5,19 +5,23 @@
  * and emits intents; the renderer subscribes to the same store. Later UI beads
  * should preserve that boundary.
  *
- * DOM contract for later beads (accessibility, mobile):
+ * DOM contract for later beads (mobile, audio):
  *
  * ```
  * div.hud
- *   div.readout#readout            > p#countdown[role=timer], p#target-label, p.readout__state
+ *   div.readout#readout            > p#countdown[role=timer][aria-live=off], p#target-label, p.readout__state
  *   div.status#time-status         > span.status__dot, span.status__text
  *   button#settings-toggle[aria-expanded][aria-controls=settings-panel]
  *   section#settings-panel.panel   (see ui/settingsPanel.ts)
  *   div.toast-region[role=status]
+ * p#countdown-announcement.sr-only[aria-live=polite]   (sibling of .hud)
  * ```
  *
- * `#countdown` carries the same `formatCountdown` string it always has, so the
- * accessibility bead can mirror it into a live region without reformatting it.
+ * `#countdown` carries the same `formatCountdown` string it always has and is
+ * *not* a live region: `role="timer"` would make it one implicitly, and it
+ * changes four times a second. The announcements come from `CountdownAnnouncer`
+ * on a throttled schedule instead — see `ui/countdownAnnouncer.ts` and
+ * `docs/accessibility.md`.
  */
 
 import { CountdownAnnouncer } from './countdownAnnouncer.js';
