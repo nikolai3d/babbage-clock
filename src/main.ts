@@ -3,7 +3,13 @@ import { readLaunchParams, writeSceneParam } from './app/urlParams.js';
 import { ClockRenderer } from './render/renderer.js';
 import { sceneRegistry } from './scene/scenes/index.js';
 import { computeCountdown } from './time/countdown.js';
-import { resolveCountdownTarget, systemTimeSource } from './time/target.js';
+import { resolveTargetFromParams } from './time/target.js';
+import {
+  disposeTrueTime,
+  getTimeStatus,
+  getTrueTimeClock,
+  trueTimeSource,
+} from './time/trueTime.js';
 import { Hud } from './ui/hud.js';
 import type { AppState } from './app/store.js';
 import './styles.css';
@@ -20,19 +26,31 @@ function bootstrap(): void {
   if (!canvas || !uiRoot) throw new Error('Expected #scene-canvas and #ui-root in the document');
 
   const params = readLaunchParams(window.location.search);
-  const timeSource = systemTimeSource;
+  // The corrected clock: monotonic in-session and skew-checked against the
+  // network. It reports the device clock immediately and improves in place
+  // once the first sync lands, so nothing here has to wait on the network.
+  const timeSource = trueTimeSource;
   const nowMs = timeSource.now();
 
-  const target = resolveCountdownTarget(params.target, nowMs);
+  const target = resolveTargetFromParams({ target: params.target, tz: params.tz }, nowMs);
   const sceneId = sceneRegistry.resolveId(params.sceneId);
 
   const store = new Store<AppState>({
     sceneId,
     target,
     countdown: computeCountdown(target.atMs, nowMs),
+    timeStatus: getTimeStatus(),
     hidden: document.hidden,
     fps: 0,
   });
+
+  const unsubscribeTime = getTrueTimeClock().subscribe((timeStatus) => {
+    store.set({ timeStatus });
+  });
+  // Fire and forget: a failed sync degrades the accuracy tier, never the view.
+  void getTrueTimeClock()
+    .init()
+    .catch(() => undefined);
 
   const renderer = new ClockRenderer({ canvas, store, timeSource });
   renderer.setScene(sceneRegistry.resolve(sceneId));
@@ -59,6 +77,8 @@ function bootstrap(): void {
       hud.dispose();
       renderer.dispose();
       store.dispose();
+      unsubscribeTime();
+      disposeTrueTime();
     });
   }
 }

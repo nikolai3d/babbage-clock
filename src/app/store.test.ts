@@ -85,10 +85,19 @@ describe('readLaunchParams', () => {
     expect(readLaunchParams('?scene=slate-orrery&target=2030-01-01')).toEqual({
       sceneId: 'slate-orrery',
       target: '2030-01-01',
+      tz: null,
+    });
+  });
+
+  it('extracts the timezone that a zone-less target is expressed in', () => {
+    expect(readLaunchParams('?target=2026-12-31T23:59:59&tz=Europe/Paris')).toEqual({
+      sceneId: null,
+      target: '2026-12-31T23:59:59',
+      tz: 'Europe/Paris',
     });
   });
 
   it('returns nulls when parameters are absent', () => {
-    expect(readLaunchParams('')).toEqual({ sceneId: null, target: null });
+    expect(readLaunchParams('')).toEqual({ sceneId: null, target: null, tz: null });
   });
 });
