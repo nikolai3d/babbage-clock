@@ -1,5 +1,6 @@
 import { LoadingTracker } from './app/loading.js';
 import { Store } from './app/store.js';
+import { installTestApi, readTestHooks, resolveTimeSource } from './app/testHooks.js';
 import { buildShareUrl, readLaunchParams, writeAppParams } from './app/urlParams.js';
 import { ClockRenderer } from './render/renderer.js';
 import {
@@ -43,11 +44,27 @@ function bootstrap(): void {
   if (!canvas || !uiRoot) throw new Error('Expected #scene-canvas and #ui-root in the document');
 
   const params = readLaunchParams(window.location.search);
+  // Test hooks are inert unless their query parameters are present: with none
+  // of them set this is exactly `trueTimeSource`, motion on, no global API.
+  const hooks = readTestHooks(window.location.search);
   // The corrected clock: monotonic in-session and skew-checked against the
   // network. It reports the device clock immediately and improves in place
   // once the first sync lands, so nothing here has to wait on the network.
-  const timeSource = trueTimeSource;
-  const nowMs = timeSource.now();
+  // `?mockNow=` replaces it wholesale; without that parameter this is exactly
+  // `trueTimeSource`.
+  const timeSource = resolveTimeSource(hooks, trueTimeSource);
+  // Floor is load-bearing, not tidiness. `trueTimeSource.now()` is
+  // `baseEpochMs + (performance.now() - baseMark)`, which is fractional
+  // whenever those monotonic marks do not differ by a whole millisecond. The
+  // Temporal-backed target resolution below takes epoch *integers* and throws
+  // `Expected finite integer` on a fraction — which killed bootstrap outright,
+  // leaving a blank page with the canvas present and no UI. It reproduced on
+  // roughly 3% of loads, so it read as flakiness rather than a bug.
+  //
+  // The durable fix belongs in `src/time/trueTime.ts` (epoch milliseconds
+  // should be integral at the source); this satisfies the contract at the call
+  // site until then. See the follow-up bead.
+  const nowMs = Math.floor(timeSource.now());
   const viewerZone = viewerTimeZone();
 
   const target = resolveTargetFromParams({ target: params.target, tz: params.tz }, nowMs);
@@ -75,15 +92,28 @@ function bootstrap(): void {
     store.set({ timeStatus });
   });
   // Fire and forget: a failed sync degrades the accuracy tier, never the view.
-  void getTrueTimeClock()
-    .init()
-    .catch(() => undefined)
-    .finally(() => {
-      store.set({ syncPending: false });
-      clockTask.done();
-    });
+  //
+  // Skipped when the clock is pinned (correcting a deliberately frozen clock is
+  // contradictory, and it would make a deterministic capture depend on an
+  // external service) or when `?nosync` asks for a hermetic run. Neither
+  // parameter is set in production, so the sync is the normal path.
+  //
+  // The pending state and the loading task still have to be settled either way,
+  // or the loading screen would wait forever on a sync that is never coming.
+  if (hooks.mockNowMs === null && hooks.timeSync) {
+    void getTrueTimeClock()
+      .init()
+      .catch(() => undefined)
+      .finally(() => {
+        store.set({ syncPending: false });
+        clockTask.done();
+      });
+  } else {
+    store.set({ syncPending: false });
+    clockTask.done();
+  }
 
-  const renderer = new ClockRenderer({ canvas, store, timeSource });
+  const renderer = new ClockRenderer({ canvas, store, timeSource, motion: hooks.motion });
 
   /** Rebuilds the three.js scene for the current scene id and lighting mood. */
   const applyScene = (): void => {
@@ -187,10 +217,13 @@ function bootstrap(): void {
     void import('./ui/debugPanel.js').then(({ DebugPanel }) => new DebugPanel(uiRoot, store));
   }
 
+  const uninstallTestApi = installTestApi(hooks, { store, renderer, timeSource });
+
   // Vite HMR: without this the old WebGL context and its listeners survive every
   // edit, and the tab dies after a handful of saves.
   if (import.meta.hot) {
     import.meta.hot.dispose(() => {
+      uninstallTestApi();
       hud.dispose();
       renderer.dispose();
       store.dispose();

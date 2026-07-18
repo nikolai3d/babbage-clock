@@ -275,6 +275,67 @@ describe('ClockSceneView', () => {
   });
 });
 
+/**
+ * The `?nomotion` half of the determinism contract. The other half (a pinned
+ * clock) lives in `src/app/testHooks.test.ts`; together they are what make the
+ * screenshot baselines reproducible.
+ */
+describe('ClockSceneView motion', () => {
+  function ringAngles(view: ClockSceneView): number[] {
+    const axis = copperPadlockScene.rings.axis;
+    return view.root.children
+      .filter((child) => child.name.startsWith('ring:'))
+      .map((child) => child.rotation[axis]);
+  }
+
+  it('eases rings towards their digit over several frames by default', () => {
+    const view = new ClockSceneView(scene, copperPadlockScene);
+    view.setDigits([5, 5, 5, 5, 5, 5, 5]);
+
+    view.update(0.016);
+    const afterOneFrame = ringAngles(view);
+
+    // Part of the way there, not all of it: that is the easing.
+    expect(afterOneFrame[0]).not.toBe(0);
+    expect(Math.abs(afterOneFrame[0] ?? 0)).toBeLessThan(Math.PI);
+
+    view.dispose();
+  });
+
+  it('snaps rings to their digit in a single frame with motion off', () => {
+    const view = new ClockSceneView(scene, copperPadlockScene, { motion: false });
+    view.setDigits([5, 5, 5, 5, 5, 5, 5]);
+
+    view.update(0.016);
+    const afterOneFrame = ringAngles(view);
+    view.update(0.5);
+    const afterALongFrame = ringAngles(view);
+
+    // Frame-rate independent: the angle depends only on the digit.
+    expect(afterALongFrame).toEqual(afterOneFrame);
+    expect(afterOneFrame[0]).toBeCloseTo(-Math.PI, 5);
+
+    view.dispose();
+  });
+
+  it('keeps gears still with motion off and turning by default', () => {
+    const gearRotation = (view: ClockSceneView): number => {
+      const gear = view.root.children.find((child) => child.name.startsWith('gear:'));
+      return gear?.children[0]?.rotation.y ?? Number.NaN;
+    };
+
+    const moving = new ClockSceneView(scene, copperPadlockScene);
+    moving.update(0.5);
+    expect(gearRotation(moving)).not.toBe(0);
+    moving.dispose();
+
+    const still = new ClockSceneView(scene, copperPadlockScene, { motion: false });
+    still.update(0.5);
+    expect(gearRotation(still)).toBe(0);
+    still.dispose();
+  });
+});
+
 describe('MaterialLibrary', () => {
   it('builds a material for every slot', () => {
     const library = new MaterialLibrary(copperPadlockScene.materials);
