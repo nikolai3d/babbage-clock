@@ -35,7 +35,7 @@ export interface CountdownAnnouncement {
  * then once at expiry.
  */
 export function announcementKey(remaining: RemainingTime): string {
-  if (remaining.expired) return 'expired';
+  if (remaining.expired) return expiredKey(remaining);
   if (remaining.clamped) return 'clamped';
 
   for (const threshold of ANNOUNCEMENT_THRESHOLDS) {
@@ -51,6 +51,32 @@ function plural(value: number, unit: string): string {
 }
 
 /**
+ * The slot an expired countdown falls in.
+ *
+ * The announcer used to fall silent after one "time is up", which told a
+ * screen-reader user nothing about how stale the page had become. Elapsed
+ * time mirrors the countdown's cadence on the other side of zero — per minute
+ * for the first ten, then per hour — so a tab reopened later says how long ago
+ * the moment passed, and a tab left open does not chatter all night.
+ */
+function expiredKey(remaining: RemainingTime): string {
+  const elapsedSeconds = -remaining.rawTotalSeconds;
+  if (elapsedSeconds < 60) return 'expired';
+  const minutes = Math.floor(elapsedSeconds / 60);
+  if (minutes <= 10) return `expired-minute:${String(minutes)}`;
+  return `expired-hour:${String(Math.floor(elapsedSeconds / 3600))}`;
+}
+
+/** "3 minutes ago" / "2 hours ago", matching the {@link expiredKey} slots. */
+function describeElapsed(remaining: RemainingTime): string | null {
+  const elapsedSeconds = -remaining.rawTotalSeconds;
+  if (elapsedSeconds < 60) return null;
+  const hours = Math.floor(elapsedSeconds / 3600);
+  if (hours >= 1) return `Expired ${plural(hours, 'hour')} ago.`;
+  return `Expired ${plural(Math.floor(elapsedSeconds / 60), 'minute')} ago.`;
+}
+
+/**
  * The remaining time as a sentence — "41 hours, 12 minutes remaining".
  *
  * Not `HHH:MM:SS`: a screen reader reads that as "zero zero one colon zero
@@ -60,7 +86,10 @@ function plural(value: number, unit: string): string {
  * useful gain.
  */
 export function describeRemaining(remaining: RemainingTime): string {
-  if (remaining.expired) return 'Time is up.';
+  if (remaining.expired) {
+    const elapsed = describeElapsed(remaining);
+    return elapsed === null ? 'Time is up.' : `Time is up. ${elapsed}`;
+  }
   if (remaining.clamped) return 'More than 999 hours remaining.';
 
   const parts: string[] = [];

@@ -108,3 +108,31 @@ describe('countdownAnnouncement', () => {
     );
   });
 });
+
+describe('after expiry', () => {
+  const at = (elapsedSeconds: number) => computeRemaining(0, elapsedSeconds * 1000);
+
+  it('announces the moment itself first', () => {
+    expect(announcementKey(at(0))).toBe('expired');
+    expect(announcementKey(at(59))).toBe('expired');
+    expect(describeRemaining(at(30))).toBe('Time is up.');
+  });
+
+  it('then reports elapsed minutes, once each', () => {
+    expect(announcementKey(at(60))).toBe('expired-minute:1');
+    expect(announcementKey(at(119))).toBe('expired-minute:1');
+    expect(announcementKey(at(180))).toBe('expired-minute:3');
+    expect(describeRemaining(at(185))).toBe('Time is up. Expired 3 minutes ago.');
+  });
+
+  it('coarsens to hours so an open tab does not chatter all night', () => {
+    expect(announcementKey(at(11 * 60))).toBe('expired-hour:0');
+    expect(announcementKey(at(2 * 3600))).toBe('expired-hour:2');
+    expect(describeRemaining(at(2 * 3600 + 90))).toBe('Time is up. Expired 2 hours ago.');
+  });
+
+  it('uses the singular where one is one', () => {
+    expect(describeRemaining(at(60))).toBe('Time is up. Expired 1 minute ago.');
+    expect(describeRemaining(at(3700))).toBe('Time is up. Expired 1 hour ago.');
+  });
+});
