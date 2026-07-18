@@ -20,9 +20,5 @@
     "baseColor": "#3d4756",
     "metalness": 1,
     "roughness": 0.3
-  },
-  "physical": {
-    "anisotropy": 0.45,
-    "anisotropyRotation": 1.5708
   }
 }

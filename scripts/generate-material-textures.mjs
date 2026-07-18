@@ -187,7 +187,13 @@ const materials = {
         roughness: 0.38,
         aoIntensity: 1,
       },
-      physical: { clearcoat: 0.08, clearcoatRoughness: 0.5 },
+      // No `physical` extras on the shipped samples, deliberately. Clearcoat
+      // and anisotropy each add a second BRDF lobe, and measured on the
+      // reference scene under software rendering the two together cost about
+      // an eighth of the frame budget — for a sheen that is invisible on
+      // planished copper at this framing. The pipeline supports them fully and
+      // the unit tests cover them; a material that actually wants a lacquer
+      // should say so and pay for it.
     },
     files: {
       'basecolor.png': (u, v) => {
@@ -230,7 +236,6 @@ const materials = {
       normal: { convention: 'opengl', scale: 0.7 },
       tiling: [0.8, 0.8],
       scalars: { baseColor: '#3d4756', metalness: 1, roughness: 0.3 },
-      physical: { anisotropy: 0.45, anisotropyRotation: 1.5708 },
     },
     files: {
       'basecolor.png': (u, v) => {
@@ -274,6 +279,10 @@ const materials = {
       description: 'Scalars only — no maps. Proves the manifest-fallback path.',
       maps: {},
       tiling: [1, 1],
+      // The one sample that does declare a physical extra: the numerals are a
+      // small fraction of the frame, so the lacquer costs almost nothing there
+      // and keeps the feature exercised in the shipped scene rather than only
+      // in the unit tests.
       scalars: { baseColor: '#241a12', metalness: 0.08, roughness: 0.62 },
       physical: { clearcoat: 0.35, clearcoatRoughness: 0.25 },
     },

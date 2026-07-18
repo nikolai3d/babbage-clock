@@ -263,6 +263,37 @@ describe('scalar fallbacks', () => {
   });
 });
 
+describe('physical extras', () => {
+  /**
+   * Sampler can author a lacquer or a brushed anisotropy that plain
+   * metallic-roughness cannot express. These reach three.js as properties of
+   * the same name — and, just as importantly, are reset when the slot is
+   * rebound, so a look that declared clearcoat cannot leave it behind on the
+   * look that follows it.
+   */
+  it('applies declared extras and clears them on rebind', async () => {
+    const { registry } = harness();
+    const library = new MaterialLibrary(
+      slots({ housing: { kind: 'pbr', textureSet: 'copper-plate' } }),
+      registry,
+    );
+    await library.ready();
+
+    const material = library.get('housing');
+    expect(material.clearcoat).toBeCloseTo(0.08);
+
+    library.apply({ housing: { kind: 'pbr', textureSet: 'blued-steel' } });
+    await library.ready();
+
+    // `blued-steel` declares none, so the clearcoat has to be gone rather than
+    // inherited.
+    expect(material.clearcoat).toBe(0);
+
+    library.dispose();
+    registry.dispose();
+  });
+});
+
 describe('tiling', () => {
   it('lets a scene override the manifest per slot, sharing the download', async () => {
     const { registry, loads } = harness();

@@ -179,6 +179,14 @@ property of the same name. Anything omitted stays at the three.js default —
 including across a look change, so a clearcoated material cannot leave clearcoat
 behind on the one that follows it.
 
+**They are not free.** Clearcoat, anisotropy, sheen, iridescence and
+transmission each add a BRDF lobe evaluated per pixel. Measured on the reference
+scene under software rendering, clearcoat plus anisotropy across the case and
+the drums cost roughly an eighth of the frame budget — so declare them on
+materials that cover a small part of the frame, or where the look genuinely
+needs them, rather than by default. The shipped `dark-enamel` uses clearcoat on
+the numerals for exactly that reason; the two metals declare none.
+
 ---
 
 ## 4. Registering a material and assigning it to a slot
@@ -284,12 +292,12 @@ the same naming, the same ORM channel packing, the same colour spaces and the
 same OpenGL normal convention that Sampler's glTF template produces. Swapping in
 a real Sampler folder is a file copy.
 
-| Folder         | Exercises                                                      |
-| -------------- | -------------------------------------------------------------- |
-| `copper-plate` | ORM-packed export, `physical.clearcoat`                        |
-| `blued-steel`  | Separate roughness/metallic/AO maps, `physical.anisotropy`     |
-| `dark-enamel`  | A folder with **no maps at all** — scalars only, zero requests |
-| `uv-grid`      | The UV diagnostic checker                                      |
+| Folder         | Exercises                                                     |
+| -------------- | ------------------------------------------------------------- |
+| `copper-plate` | ORM-packed export                                             |
+| `blued-steel`  | Separate roughness/metallic/AO maps                           |
+| `dark-enamel`  | **No maps at all** — scalars only, zero requests; `clearcoat` |
+| `uv-grid`      | The UV diagnostic checker                                     |
 
 Regenerate with `npm run materials:generate`.
 
@@ -297,8 +305,14 @@ Regenerate with `npm run materials:generate`.
 
 ## 7. Texture size and delivery
 
-**Cap textures at 2048 px.** Everything is mipmapped and filtered anisotropically
-(up to 8x, whatever the context allows), and repeat-wrapped.
+**Cap textures at 2048 px.** Everything is mipmapped, repeat-wrapped, and
+filtered anisotropically at up to 4x.
+
+4x rather than the 16x the hardware reports: anisotropic filtering is
+per-sample work, and on the drums — where it matters, since they are read at a
+grazing angle — the step from 4x to 16x is not visible at this framing.
+Measured under software rendering, 8x to 4x returned about a quarter of the
+frame budget.
 
 ### KTX2 / BasisU
 

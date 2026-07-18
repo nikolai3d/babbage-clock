@@ -19,9 +19,5 @@
     "metalness": 1,
     "roughness": 0.38,
     "aoIntensity": 1
-  },
-  "physical": {
-    "clearcoat": 0.08,
-    "clearcoatRoughness": 0.5
   }
 }

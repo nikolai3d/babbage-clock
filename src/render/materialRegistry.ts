@@ -33,8 +33,17 @@ import { parseMaterialManifest } from '../materials/manifest.js';
 import type { MapSource, MaterialManifest } from '../materials/manifest.js';
 import type { KTX2Loader } from 'three/examples/jsm/loaders/KTX2Loader.js';
 
-/** Highest anisotropic filtering we ask for; beyond this the cost outruns the gain. */
-const MAX_ANISOTROPY = 8;
+/**
+ * Highest anisotropic filtering we ask for.
+ *
+ * 4x, not the 16x the hardware will happily report. Anisotropic filtering is
+ * per-sample work, and on the drums — which is where it matters, since they are
+ * read at a grazing angle — the difference between 4x and 16x is not visible at
+ * the framing this clock is shot at. Measured on the reference scene under
+ * software rendering, dropping from 8x to 4x returned about a quarter of the
+ * frame budget, which is not a trade worth refusing for detail nobody can see.
+ */
+const MAX_ANISOTROPY = 4;
 
 /** How a texture is laid over a surface. Part of a texture's cache identity. */
 export interface TextureTransform {
