@@ -37,6 +37,18 @@ const FOLDERS: Record<string, unknown> = {
   'dark-enamel': {
     scalars: { baseColor: '#241a12', metalness: 0.08, roughness: 0.62 },
   },
+  // Mirrors of the shipped folders the copper-padlock scene binds. The real
+  // files are covered by the e2e spec that loads every declared folder; this
+  // fixture is what lets the folder-existence cross-check run without I/O.
+  'rusty-copper': {
+    maps: { baseColor: 'basecolor.jpg', normal: 'normal.png', orm: 'orm.png' },
+    normal: { convention: 'directx', scale: 1 },
+    tiling: [1, 1],
+    scalars: { baseColor: '#a06a42', metalness: 1, roughness: 0.55 },
+  },
+  'polished-brass': {
+    scalars: { baseColor: '#e2c07a', metalness: 1, roughness: 0.28 },
+  },
 };
 
 interface Harness {

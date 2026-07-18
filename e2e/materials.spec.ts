@@ -66,8 +66,8 @@ test('every material folder the default scene declares actually loads', async ({
   const materials = await readMaterials(page);
   // The scene is expressed as a look: every slot names a material folder.
   expect(Object.values(materials.slots).every((value) => value.startsWith('pbr:'))).toBe(true);
-  expect(materials.slots['ring']).toBe('pbr:copper-plate');
-  expect(materials.slots['numerals']).toBe('pbr:dark-enamel');
+  expect(materials.slots['ring']).toBe('pbr:rusty-copper');
+  expect(materials.slots['numerals']).toBe('pbr:polished-brass');
   // Three distinct folders, and the ORM map is one file feeding three slots.
   expect(materials.sources).toBeGreaterThan(0);
 
@@ -84,7 +84,7 @@ test('a material folder with no maps needs no requests', async ({ page }) => {
   // `dark-enamel` is scalars only. It is bound, it renders, and it costs one
   // manifest and no images.
   const materials = await readMaterials(page);
-  expect(materials.slots['numerals']).toBe('pbr:dark-enamel');
+  expect(materials.slots['numerals']).toBe('pbr:polished-brass');
 });
 
 test('a look swap rebinds every slot without reloading', async ({ page }) => {

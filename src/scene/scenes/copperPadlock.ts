@@ -110,16 +110,22 @@ export const copperPadlockScene: SceneDefinition = {
   // The per-slot `roughness` and `metalness` here are multipliers over the
   // authored maps, not replacements — see `PbrMaterialBinding`.
   materials: {
-    housing: pbr('copper-plate', { roughness: 1.1 }),
-    bezel: pbr('copper-plate', { tiling: [1.2, 1.2], roughness: 0.8 }),
-    ring: pbr('copper-plate', { tiling: [0.9, 0.9] }),
-    numerals: pbr('dark-enamel'),
-    gearA: pbr('copper-plate', { tiling: [1.2, 1.2] }),
+    housing: pbr('rusty-copper', { roughness: 1.1 }),
+    bezel: pbr('rusty-copper', { tiling: [1.2, 1.2], roughness: 0.8 }),
+    // The drums are the reading surface: tighter tiling shrinks the rust
+    // spotting to flecks and the lower roughness reads as metal polished by
+    // the detents' contact — which is also what keeps the numerals legible
+    // against it. The housing keeps the full-scale weathering.
+    ring: pbr('rusty-copper', { tiling: [3.2, 3.2], roughness: 0.5 }),
+    // Bright raised digits on the weathered drum — dark enamel vanished
+    // tone-on-tone once the drums carried real rust.
+    numerals: pbr('polished-brass'),
+    gearA: pbr('rusty-copper', { tiling: [1.2, 1.2] }),
     gearB: pbr('blued-steel'),
-    gearC: pbr('copper-plate', { tiling: [1.4, 1.4], roughness: 0.9 }),
+    gearC: pbr('rusty-copper', { tiling: [1.4, 1.4], roughness: 0.9 }),
     gearD: pbr('blued-steel', { roughness: 1.2 }),
     arbor: pbr('blued-steel', { tiling: [2, 2] }),
-    frame: pbr('copper-plate', { tiling: [0.7, 0.7], roughness: 1.25 }),
+    frame: pbr('rusty-copper', { tiling: [0.7, 0.7], roughness: 1.25 }),
   },
 
   lighting: {

@@ -1,0 +1,20 @@
+{
+  "name": "Rusted copper",
+  "description": "Authored in Substance 3D Sampler, exported as an Unreal 4 PBR texture set (2026-07-18). Basecolor recompressed to JPEG; ORM and normal downsampled 2K to 1K. The export's Emissioncolor map is uniform white (Sampler exports the colour separately from a strength it does not export) and is deliberately omitted — shipped as-is it would make every surface glow. The Geometrydisplacement map is unused until a height channel exists.",
+  "maps": {
+    "baseColor": "basecolor.jpg",
+    "normal": "normal.png",
+    "orm": "orm.png"
+  },
+  "normal": {
+    "convention": "directx",
+    "scale": 1
+  },
+  "tiling": [1, 1],
+  "scalars": {
+    "baseColor": "#a06a42",
+    "metalness": 1,
+    "roughness": 0.55,
+    "aoIntensity": 1
+  }
+}
