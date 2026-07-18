@@ -16,6 +16,7 @@ import {
   ringStackSpan,
 } from '../geometry/ringLayout.js';
 import { Mechanism, type MechanismEvent, type MechanismInput } from '../mechanism/index.js';
+import type { TextureSizePreference } from '../app/quality.js';
 import type { Axis, GearSpec, RingConfig, SceneDefinition } from '../scene/types.js';
 
 const TWO_PI = Math.PI * 2;
@@ -54,6 +55,12 @@ export interface ClockSceneViewOptions {
    * `?nomotion`; see `app/testHooks.ts`.
    */
   readonly motion?: boolean;
+  /**
+   * Texture resolution the material pipeline should prefer, from the active
+   * quality tier. Threaded through to `MaterialLibrary`; see `app/quality.ts`.
+   * Defaults to `full`.
+   */
+  readonly textureSize?: TextureSizePreference;
 }
 
 /**
@@ -114,7 +121,9 @@ export class ClockSceneView {
     this.definition = definition;
     this.root.name = `scene:${definition.id}`;
 
-    this.materials = new MaterialLibrary(definition.materials);
+    this.materials = new MaterialLibrary(definition.materials, {
+      textureSize: options.textureSize ?? 'full',
+    });
     this.lighting = new SceneLighting(scene, definition.lighting);
     this.caseMetrics = measureCase(definition);
     this.mechanism = new Mechanism({

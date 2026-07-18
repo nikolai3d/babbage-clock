@@ -129,6 +129,10 @@ describe('installTestApi', () => {
     cameraPosition: [0, 0, 6],
     sceneId: 'copper-padlock',
     lighting: 'ready',
+    quality: 'high',
+    maxFps: null,
+    framingFit: 'whole',
+    ringExtentPx: 420,
   };
 
   function deps(): {

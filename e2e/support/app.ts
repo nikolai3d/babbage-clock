@@ -28,6 +28,7 @@ export const SELECTOR = {
   settingsClose: '#settings-close',
   sceneSelect: '#scene-select',
   moodSelect: '#mood-select',
+  qualitySelect: '#quality-select',
   targetInput: '#target-input',
   targetApply: '#target-apply',
   tzInput: '#tz-input',
@@ -74,6 +75,18 @@ export interface AppOptions {
   readonly noSync?: boolean;
   /** Installs `window.__clock`. On by default; pass false to test the gate. */
   readonly testApi?: boolean;
+  /**
+   * Pins the render-quality tier (`?quality=`).
+   *
+   * This is ambient variation in exactly the way the clock and the timezone
+   * are, and it has to be pinned for the same reason. Left to `auto`, the tier
+   * is chosen from `navigator.hardwareConcurrency` — which is 2 on a CI runner
+   * and 8 or more on a developer's machine — and the two tiers do not draw the
+   * same background. A baseline taken on one would then fail on the other.
+   * {@link deterministicOptions} pins it to `high`; pass `auto` in the one spec
+   * that is about the heuristic itself.
+   */
+  readonly quality?: 'auto' | 'high' | 'low';
 }
 
 /**
@@ -91,6 +104,7 @@ export function appUrl(options: AppOptions = {}): string {
   if (options.target !== undefined) params.set('target', options.target);
   if (options.mockNow !== undefined) params.set('mockNow', String(options.mockNow));
   if (options.mockNowMode !== undefined) params.set('mockNowMode', options.mockNowMode);
+  if (options.quality !== undefined) params.set('quality', options.quality);
   if (options.noMotion) params.set('nomotion', '1');
   if (options.noSync !== false) params.set('nosync', '1');
   if (options.testApi !== false) params.set('testApi', '1');
@@ -101,7 +115,7 @@ export function appUrl(options: AppOptions = {}): string {
 
 /**
  * Options that make a frame reproducible: a frozen clock, an absolute target,
- * and no drift, rotation or easing.
+ * no drift, rotation or easing, and a pinned render-quality tier.
  */
 export function deterministicOptions(overrides: AppOptions = {}): AppOptions {
   return {
@@ -109,6 +123,9 @@ export function deterministicOptions(overrides: AppOptions = {}): AppOptions {
     mockNowMode: 'frozen',
     target: PINNED_TARGET,
     noMotion: true,
+    // See `AppOptions.quality`: left automatic, this is decided by the core
+    // count of whatever machine the run happens on.
+    quality: 'high',
     ...overrides,
   };
 }

@@ -79,3 +79,29 @@ export const DETERMINISTIC_CONTEXT = {
   timezoneId: 'UTC',
   colorScheme: 'dark',
 } as const;
+
+/**
+ * A portrait phone, for the mobile project.
+ *
+ * Pixel 7's CSS viewport, which is within a few pixels of every current phone
+ * that matters (Pixel 7 412x915, iPhone 15 393x852, Galaxy S23 360x780) and
+ * gives the same 0.45 aspect ratio the framing has to cope with.
+ *
+ * `deviceScaleFactor` is pinned to 1 rather than the device's real 2.625, for
+ * the same reason the desktop context pins it: a baseline is compared pixel for
+ * pixel, and a 2.625x image is seven times the pixels to rasterise, diff and
+ * store. What the tier does with a high device pixel ratio is a unit test
+ * (`src/app/quality.test.ts`) — it needs no browser.
+ *
+ * `isMobile` brings the mobile viewport meta handling and `hasTouch` the touch
+ * event model, which are the parts the responsive shell actually depends on.
+ */
+export const MOBILE_PORTRAIT_CONTEXT = {
+  viewport: { width: 412, height: 915 },
+  deviceScaleFactor: 1,
+  isMobile: true,
+  hasTouch: true,
+  locale: 'en-US',
+  timezoneId: 'UTC',
+  colorScheme: 'dark',
+} as const;

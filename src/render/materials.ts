@@ -1,6 +1,21 @@
 import * as THREE from 'three';
 import { MATERIAL_SLOTS } from '../scene/types.js';
+import type { TextureSizePreference } from '../app/quality.js';
 import type { MaterialBinding, MaterialSlot, MaterialSlotMap } from '../scene/types.js';
+
+export interface MaterialLibraryOptions {
+  /**
+   * Texture resolution to prefer for `pbr` bindings.
+   *
+   * **Extension point for the PBR materials bead.** The quality tier already
+   * decides this and threads it here (`app/quality.ts` -> `ClockSceneView` ->
+   * this class), because texture memory is the first thing a mobile browser
+   * kills a WebGL tab for. The loading code that lands later should pick the
+   * authored variant from {@link MaterialLibrary.textureSize} rather than
+   * introducing a second notion of quality.
+   */
+  readonly textureSize?: TextureSizePreference;
+}
 
 /**
  * Turns a scene's material slot map into concrete three.js materials.
@@ -11,8 +26,11 @@ import type { MaterialBinding, MaterialSlot, MaterialSlotMap } from '../scene/ty
  */
 export class MaterialLibrary {
   private readonly materials = new Map<MaterialSlot, THREE.MeshStandardMaterial>();
+  /** The tier's texture-resolution preference. See {@link MaterialLibraryOptions}. */
+  readonly textureSize: TextureSizePreference;
 
-  constructor(slots: MaterialSlotMap) {
+  constructor(slots: MaterialSlotMap, options: MaterialLibraryOptions = {}) {
+    this.textureSize = options.textureSize ?? 'full';
     for (const slot of MATERIAL_SLOTS) {
       const material = createMaterial(slots[slot]);
       material.name = `slot:${slot}`;

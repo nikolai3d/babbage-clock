@@ -3,20 +3,25 @@ import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { ClockSceneView } from './clockScene.js';
 import { createEnvironmentLibrary } from './ibl/library.js';
 import { EnvironmentController } from './lighting.js';
+import { qualitySettings } from '../app/quality.js';
+import { frameForAspect, ringStackRadius } from '../scene/framing.js';
+import { ringStackSpan } from '../geometry/ringLayout.js';
 import { computeCountdown, computeRemaining } from '../time/countdown.js';
 import { clockFrame, countdownFrame } from '../mechanism/index.js';
 import type { IblStatus } from './lighting.js';
+import type { QualitySettings } from '../app/quality.js';
 import type { AppStore } from '../app/store.js';
+import type { ContentExtent } from '../scene/framing.js';
 import type { SceneDefinition } from '../scene/types.js';
 import type { RemainingTime } from '../time/countdown.js';
 import type { TimeSource } from '../time/target.js';
 
-/** Retina displays gain little above 2x and cost a lot of fill rate. */
-const MAX_PIXEL_RATIO = 2;
 /** Clamp for the frame delta so a stalled frame does not spike the fps readout. */
 const MAX_FRAME_DELTA_SECONDS = 0.1;
 const FPS_SMOOTHING = 0.1;
 const STORE_UPDATE_INTERVAL_MS = 250;
+/** See the frame ceiling in `frame`. */
+const FRAME_CAP_TOLERANCE = 0.9;
 
 /** Radians per arrow-key press when orbiting from the keyboard. */
 const KEY_ORBIT_STEP = 0.12;
@@ -47,6 +52,12 @@ export interface ClockRendererOptions {
   readonly onContextLost?: () => void;
   /** The context came back and the loop has resumed on the correct instant. */
   readonly onContextRestored?: () => void;
+  /**
+   * How hard this device may be pushed. Defaults to the high tier, so a caller
+   * that does not care gets exactly the behaviour that shipped before tiers
+   * existed. See `app/quality.ts`.
+   */
+  readonly quality?: QualitySettings;
 }
 
 /**
@@ -72,6 +83,21 @@ export class ClockRenderer {
   private readonly onContextLostCallback: (() => void) | undefined;
   private readonly onContextRestoredCallback: (() => void) | undefined;
 
+  private quality: QualitySettings;
+  /**
+   * What the active scene needs to keep in frame. Measured from the built scene
+   * graph rather than declared, so a scene that grows a part reframes itself.
+   */
+  private extent: ContentExtent = { contentRadius: 1, ringRadius: 1 };
+  private framingFit: 'whole' | 'rings' = 'whole';
+  /**
+   * True once the viewer has orbited or pinched. From then on the automatic
+   * framing stops moving the camera and only tracks the orbit limits.
+   */
+  private userAdjustedCamera = false;
+  /** Timestamp of the last drawn frame, for the low tier's frame ceiling. */
+  private lastRenderMs = Number.NEGATIVE_INFINITY;
+
   private view: ClockSceneView | null = null;
   private definition: SceneDefinition | null = null;
   private frameHandle: number | null = null;
@@ -89,6 +115,11 @@ export class ClockRenderer {
   private frameCount = 0;
 
   private readonly resizeObserver: ResizeObserver;
+  /** The viewer has taken the camera; automatic framing stops moving it. */
+  private readonly onControlsStart = (): void => {
+    this.userAdjustedCamera = true;
+  };
+
   private readonly onVisibilityChange = (): void => {
     const hidden = document.hidden;
     this.store.set({ hidden });
@@ -103,6 +134,7 @@ export class ClockRenderer {
     motion = true,
     onContextLost,
     onContextRestored,
+    quality = qualitySettings('high'),
   }: ClockRendererOptions) {
     this.canvas = canvas;
     this.store = store;
@@ -110,13 +142,14 @@ export class ClockRenderer {
     this.motionEnabled = motion;
     this.onContextLostCallback = onContextLost;
     this.onContextRestoredCallback = onContextRestored;
+    this.quality = quality;
 
     this.renderer = new THREE.WebGLRenderer({
       canvas,
       antialias: true,
       powerPreference: 'high-performance',
     });
-    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, MAX_PIXEL_RATIO));
+    this.renderer.setPixelRatio(this.pixelRatio());
     this.renderer.outputColorSpace = THREE.SRGBColorSpace;
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
 
@@ -130,6 +163,7 @@ export class ClockRenderer {
       renderer: this.renderer,
       scene: this.scene,
       library: createEnvironmentLibrary(this.renderer),
+      panoramaBackground: quality.panoramaBackground,
     });
 
     this.controls = new OrbitControls(this.camera, canvas);
@@ -139,6 +173,17 @@ export class ClockRenderer {
     this.controls.enableDamping = this.motionEnabled;
     this.controls.dampingFactor = 0.08;
     this.controls.enablePan = false;
+    // Touch: one finger orbits, two fingers pinch-zoom. `DOLLY_PAN` with
+    // panning disabled is a pure pinch, which is the predictable gesture — a
+    // two-finger drag that also rotated would fight the pinch on every zoom.
+    //
+    // The listeners are bound to the canvas, never to the document, so a
+    // gesture that starts on the settings drawer or anywhere else in the 2D
+    // shell is left entirely to the browser. Nothing here calls
+    // `preventDefault` on a page-level scroll.
+    this.controls.touches = { ONE: THREE.TOUCH.ROTATE, TWO: THREE.TOUCH.DOLLY_PAN };
+
+    this.controls.addEventListener('start', this.onControlsStart);
 
     this.resizeObserver = new ResizeObserver(() => {
       this.resize();
@@ -168,7 +213,11 @@ export class ClockRenderer {
   setScene(definition: SceneDefinition): void {
     this.view?.dispose();
     this.definition = definition;
-    this.view = new ClockSceneView(this.scene, definition, { motion: this.motionEnabled });
+    this.view = new ClockSceneView(this.scene, definition, {
+      motion: this.motionEnabled,
+      textureSize: this.quality.textureSize,
+    });
+    this.extent = this.measureExtent(definition);
     this.applyCameraConfig(definition);
     // The lighting mood owns the environment, the rig and the grade — including
     // exposure — and re-asserts itself over the scene that was just rebuilt.
@@ -203,8 +252,48 @@ export class ClockRenderer {
     const definition = this.definition;
     if (!definition) return;
     this.view?.dispose();
-    this.view = new ClockSceneView(this.scene, definition, { motion: enabled });
+    this.view = new ClockSceneView(this.scene, definition, {
+      motion: enabled,
+      textureSize: this.quality.textureSize,
+    });
     this.syncMechanism(this.timeSource.now());
+  }
+
+  /**
+   * Changes the quality tier at runtime, from the settings drawer.
+   *
+   * Everything a tier controls is re-derivable, so this is a live switch rather
+   * than a reload: pixel ratio and the frame cap apply on the next frame, and
+   * the environment controller re-commits its background atomically. The
+   * texture-size preference reaches the material pipeline on the next
+   * `setScene`, which is when materials are rebuilt anyway.
+   */
+  setQuality(quality: QualitySettings): void {
+    this.quality = quality;
+    this.applyQuality();
+  }
+
+  /** The tier currently in force. */
+  get qualityTier(): QualitySettings['tier'] {
+    return this.quality.tier;
+  }
+
+  /**
+   * Re-asserts everything a lost-and-restored WebGL context forgets.
+   *
+   * A restored context comes back at the browser's default pixel ratio and
+   * drawing-buffer size, so the tier's cap and the derived framing have to be
+   * stated again — otherwise a phone silently starts shading at 3x after the
+   * first context loss, which is exactly the state the tier exists to avoid.
+   *
+   * The camera is deliberately left alone, the same way `setMotion` leaves it:
+   * a context loss is not a reason to throw away the viewer's orbit. `resize`
+   * re-derives the framing, which respects that too.
+   */
+  refresh(): void {
+    if (this.disposed) return;
+    this.applyQuality();
+    this.resize();
   }
 
   /**
@@ -233,6 +322,10 @@ export class ClockRenderer {
     cameraPosition: readonly [number, number, number];
     sceneId: string | null;
     lighting: IblStatus;
+    quality: QualitySettings['tier'];
+    maxFps: number | null;
+    framingFit: 'whole' | 'rings';
+    ringExtentPx: number;
   } {
     const size = this.renderer.getSize(new THREE.Vector2());
     return {
@@ -252,7 +345,41 @@ export class ClockRenderer {
       // A frame captured while this is 'loading' still shows the previous
       // mood, so anything photographing the scene has to wait it out.
       lighting: this.environment.status,
+      quality: this.quality.tier,
+      maxFps: this.quality.maxFps,
+      framingFit: this.framingFit,
+      ringExtentPx: this.measureRingExtentPx(),
     };
+  }
+
+  /**
+   * How wide the ring stack is on screen, in CSS pixels.
+   *
+   * This is the number the mobile acceptance criterion is actually about — "the
+   * reading is legible without interaction" is "the drums are big and all of
+   * them are on screen" — so it is measured rather than eyeballed. Projecting
+   * the two ends of the stack through the live camera is the same arithmetic
+   * the GPU does, which is why it can be trusted as a proxy for the picture.
+   */
+  private measureRingExtentPx(): number {
+    const definition = this.view?.definition;
+    if (!definition) return 0;
+
+    const size = this.renderer.getSize(new THREE.Vector2());
+    const axis = definition.rings.axis;
+    // The stack itself, not the sphere the framing fits: this number is read as
+    // "how much of the screen do the drums occupy", so it has to be the drums.
+    const half = ringStackSpan(definition.rings) / 2;
+    const target = definition.camera.target;
+    const offset = new THREE.Vector3(
+      axis === 'x' ? half : 0,
+      axis === 'y' ? half : 0,
+      axis === 'z' ? half : 0,
+    );
+
+    const a = new THREE.Vector3(...target).sub(offset).project(this.camera);
+    const b = new THREE.Vector3(...target).add(offset).project(this.camera);
+    return (Math.abs(b.x - a.x) / 2) * size.x;
   }
 
   start(): void {
@@ -268,6 +395,7 @@ export class ClockRenderer {
     this.canvas.removeEventListener('webglcontextrestored', this.onWebGLContextRestored);
     this.canvas.removeEventListener('keydown', this.onCanvasKeyDown);
     this.resizeObserver.disconnect();
+    this.controls.removeEventListener('start', this.onControlsStart);
     this.controls.dispose();
     // Before the view: the controller detaches its rig from the same scene.
     this.environment.dispose();
@@ -277,21 +405,104 @@ export class ClockRenderer {
     this.renderer.forceContextLoss();
   }
 
+  /**
+   * The bounding radii the framing works from, measured off the scene graph.
+   *
+   * Both are radii about the camera *target*, because that is the point the
+   * camera orbits: a radius about the geometric centre would be wrong by the
+   * offset between them. `contentRadius` covers everything drawn — case, lid,
+   * shackle, gear train — and `ringRadius` comes from `RingConfig` maths, so it
+   * is exactly the drums and nothing else.
+   */
+  private measureExtent(definition: SceneDefinition): ContentExtent {
+    const target = new THREE.Vector3(...definition.camera.target);
+    const box = new THREE.Box3().setFromObject(this.scene);
+
+    let contentRadius = 0;
+    if (!box.isEmpty()) {
+      const corner = new THREE.Vector3();
+      for (const x of [box.min.x, box.max.x]) {
+        for (const y of [box.min.y, box.max.y]) {
+          for (const z of [box.min.z, box.max.z]) {
+            contentRadius = Math.max(contentRadius, corner.set(x, y, z).distanceTo(target));
+          }
+        }
+      }
+    }
+
+    const ringRadius = ringStackRadius(definition.rings);
+    // A scene whose bounding box somehow came back empty still has rings.
+    return { contentRadius: Math.max(contentRadius, ringRadius), ringRadius };
+  }
+
+  /** The framing for the viewport as it is right now. */
+  private currentFraming(definition: SceneDefinition): ReturnType<typeof frameForAspect> {
+    return frameForAspect({
+      camera: definition.camera,
+      aspect: this.camera.aspect,
+      extent: this.extent,
+    });
+  }
+
+  /**
+   * Places the camera for a scene. Resets the viewer's orbit, which is correct
+   * here: a new scene is a new subject.
+   */
   private applyCameraConfig(definition: SceneDefinition): void {
     const config = definition.camera;
+    const framing = this.currentFraming(definition);
 
     this.camera.fov = config.fov;
     this.camera.near = config.near;
     this.camera.far = config.far;
-    this.camera.position.set(...config.position);
+    this.camera.position.set(...framing.position);
     this.camera.updateProjectionMatrix();
 
     this.controls.target.set(...config.target);
-    this.controls.minDistance = config.minDistance;
-    this.controls.maxDistance = config.maxDistance;
     this.controls.minPolarAngle = config.minPolarAngle;
     this.controls.maxPolarAngle = config.maxPolarAngle;
+    this.applyFramingLimits(framing);
+    this.userAdjustedCamera = false;
     this.controls.update();
+  }
+
+  /**
+   * Re-frames for a new aspect ratio — a rotated phone, a resized window, a
+   * keyboard opening under a bottom sheet.
+   *
+   * The distance is only re-applied while the viewer has not moved the camera
+   * themselves. Snatching a pose back from someone mid-orbit because the
+   * address bar collapsed would be worse than a slightly loose frame; the
+   * limits still track the aspect either way, so the pose that fits is always
+   * reachable.
+   */
+  private applyFraming(): void {
+    const definition = this.view?.definition;
+    if (!definition) return;
+
+    const framing = this.currentFraming(definition);
+    this.applyFramingLimits(framing);
+    if (!this.userAdjustedCamera) {
+      this.camera.position.set(...framing.position);
+    }
+    this.controls.update();
+  }
+
+  private applyFramingLimits(framing: ReturnType<typeof frameForAspect>): void {
+    this.controls.minDistance = framing.minDistance;
+    this.controls.maxDistance = framing.maxDistance;
+    this.framingFit = framing.fit;
+  }
+
+  /** Pixel ratio for this device under the active tier. */
+  private pixelRatio(): number {
+    return Math.min(window.devicePixelRatio || 1, this.quality.maxPixelRatio);
+  }
+
+  /** Applies everything the current tier controls to the live renderer. */
+  private applyQuality(): void {
+    this.renderer.setPixelRatio(this.pixelRatio());
+    this.environment.setPanoramaBackground(this.quality.panoramaBackground);
   }
 
   private resize(): void {
@@ -303,10 +514,12 @@ export class ClockRenderer {
     // with Infinity and the scene would never come back.
     if (width <= 0 || height <= 0) return;
 
-    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, MAX_PIXEL_RATIO));
+    this.renderer.setPixelRatio(this.pixelRatio());
     this.renderer.setSize(width, height, false);
     this.camera.aspect = width / height;
     this.camera.updateProjectionMatrix();
+    // After the projection matrix, because the framing reads `camera.aspect`.
+    this.applyFraming();
   }
 
   /**
@@ -415,6 +628,11 @@ export class ClockRenderer {
   }
 
   private applyOrbit(): void {
+    // The keyboard path does not go through OrbitControls, so it would not fire
+    // the `start` event the pointer path uses to claim the camera. Without this
+    // the next resize — a rotated phone, an opening keyboard — would snap a
+    // keyboard user's view back to the automatic pose.
+    this.userAdjustedCamera = true;
     this.orbitOffset.setFromSpherical(this.orbitSpherical);
     this.camera.position.copy(this.controls.target).add(this.orbitOffset);
     this.camera.lookAt(this.controls.target);
@@ -435,6 +653,19 @@ export class ClockRenderer {
 
   private readonly frame = (frameMs: number): void => {
     this.frameHandle = requestAnimationFrame(this.frame);
+
+    // The low tier's frame ceiling. Skipping the whole body — not just the
+    // draw — is the point: on a device that could run at 60 this halves the
+    // work, and the mechanism does not care, because every transform is a
+    // function of the instant rather than of an accumulated delta.
+    //
+    // The 10% slack matters: at exactly one interval a 30 fps cap on a 60 Hz
+    // display lands a hair short of every second vsync and collapses to 20.
+    const maxFps = this.quality.maxFps;
+    if (maxFps !== null && frameMs - this.lastRenderMs < (1000 / maxFps) * FRAME_CAP_TOLERANCE) {
+      return;
+    }
+    this.lastRenderMs = frameMs;
     this.frameCount += 1;
 
     const dt = Math.min((frameMs - this.lastFrameMs) / 1000, MAX_FRAME_DELTA_SECONDS);

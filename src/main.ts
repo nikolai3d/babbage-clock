@@ -1,6 +1,12 @@
 import { CountdownTicker } from './app/countdownTicker.js';
 import { LoadingTracker } from './app/loading.js';
 import { MotionPreference } from './app/motion.js';
+import {
+  parseQualityPreference,
+  qualitySettings,
+  readDeviceProfile,
+  resolveQualityTier,
+} from './app/quality.js';
 import { Store } from './app/store.js';
 import { installTestApi, readTestHooks, resolveTimeSource } from './app/testHooks.js';
 import { buildShareUrl, readLaunchParams, writeAppParams } from './app/urlParams.js';
@@ -85,9 +91,16 @@ function bootstrap(): void {
   const target = resolveTargetFromParams({ target: params.target, tz: params.tz }, nowMs);
   const sceneId = sceneRegistry.resolveId(params.sceneId);
 
+  // How hard this device may be pushed. `auto` consults the heuristic; the
+  // viewer can override it in the drawer at any time, and `?quality=` pins it.
+  const deviceProfile = readDeviceProfile();
+  const qualityTier = resolveQualityTier(params.quality, deviceProfile);
+
   const store = new Store<AppState>({
     sceneId,
     mood: params.mood,
+    quality: params.quality,
+    qualityTier,
     target,
     countdown: computeCountdown(target.atMs, nowMs),
     remaining: computeRemaining(target.atMs, nowMs),
@@ -154,6 +167,10 @@ function bootstrap(): void {
     ticker.stop();
     fallback.hide();
     hud.setReadoutVisible(true);
+    // A restored context comes back at the browser's defaults: it has forgotten
+    // the pixel ratio the quality tier chose and the framing derived for this
+    // viewport. Re-assert both before the first frame is drawn on it.
+    renderer?.refresh();
   }
 
   // A browser with no WebGL throws here rather than returning null, and that
@@ -166,6 +183,7 @@ function bootstrap(): void {
       store,
       timeSource,
       motion: motionPreference.enabled,
+      quality: qualitySettings(qualityTier),
       onContextLost: () => {
         enterFallback('context-lost');
         // A second loss before the first restore must not leave the first
@@ -237,6 +255,32 @@ function bootstrap(): void {
         store.set({ mood });
         applyScene();
         writeAppParams(shareState());
+      },
+    }),
+    defineSelect({
+      id: 'quality-select',
+      label: 'Render quality',
+      hint: 'Automatic follows the device. Lower caps resolution and frame rate, and draws a plain backdrop.',
+      options: [
+        { value: 'auto', label: 'Automatic', hint: 'Chosen from screen, cores and pointer type.' },
+        {
+          value: 'high',
+          label: 'Higher',
+          hint: 'Full resolution, panorama backdrop, uncapped frames.',
+        },
+        { value: 'low', label: 'Lower', hint: 'Kinder to a phone battery and a warm laptop.' },
+      ],
+      read: (state) => state.quality,
+      apply: (value) => {
+        const preference = parseQualityPreference(value);
+        if (preference === store.get().quality) return;
+        // Re-read the device: the viewer may have rotated the phone or moved
+        // the window to another display since boot, and `auto` should answer
+        // for the machine as it is now.
+        const tier = resolveQualityTier(preference, readDeviceProfile());
+        store.set({ quality: preference, qualityTier: tier });
+        // Live, not on reload: everything a tier controls is re-derivable.
+        renderer?.setQuality(qualitySettings(tier));
       },
     }),
   ];
@@ -317,6 +361,12 @@ function bootstrap(): void {
       sceneId: null,
       // No scene was ever built, so no environment map was ever asked for.
       lighting: 'none',
+      // The tier was still chosen — it describes the device, not the context —
+      // but nothing is being framed or drawn against it.
+      quality: qualityTier,
+      maxFps: qualitySettings(qualityTier).maxFps,
+      framingFit: 'whole',
+      ringExtentPx: 0,
     }),
   };
   const uninstallTestApi = installTestApi(hooks, {

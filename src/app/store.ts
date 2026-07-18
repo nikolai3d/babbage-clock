@@ -1,3 +1,4 @@
+import type { QualityPreference, QualityTier } from './quality.js';
 import type { EnvironmentPresetId } from '../scene/types.js';
 import type { CountdownParts, RemainingTime } from '../time/countdown.js';
 import type { ResolvedTarget } from '../time/target.js';
@@ -45,6 +46,18 @@ export interface AppState {
    * clock is the hero, so it starts closed.
    */
   readonly settingsOpen: boolean;
+  /**
+   * The viewer's render-quality choice, from `?quality=` or the settings
+   * drawer. `auto` — the default — means the device heuristic decides.
+   */
+  readonly quality: QualityPreference;
+  /**
+   * The tier actually in force. Equal to `quality` unless that is `auto`, in
+   * which case it is what the heuristic picked. Kept beside the preference
+   * rather than derived in the UI, so the drawer can show "Automatic" and the
+   * diagnostics can show which tier that turned out to be.
+   */
+  readonly qualityTier: QualityTier;
   /** True while the render loop is idle because the tab is hidden. */
   readonly hidden: boolean;
   /** Frames per second, smoothed; surfaced for the diagnostics overlay. */
