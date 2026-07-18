@@ -1,0 +1,14 @@
+node_modules/
+dist/
+coverage/
+package-lock.json
+docs/reference/
+
+# Tool-managed files: these are generated/maintained by bd and the agent
+# harnesses, and reformatting them produces spurious diffs.
+.beads/
+.agents/
+.claude/
+.codex/
+AGENTS.md
+CLAUDE.md
