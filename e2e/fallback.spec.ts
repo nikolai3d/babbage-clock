@@ -23,9 +23,15 @@ import type { Page } from '@playwright/test';
 
 test.describe('no WebGL', () => {
   test('shows a live text countdown when the context cannot be created', async ({ page }) => {
-    // The genuine failure: `getContext('webgl2')` returns null and three.js
-    // throws out of the `WebGLRenderer` constructor.
+    // The genuine failure: `getContext('webgl2')` returns null. The WebGL2
+    // probe in main.ts is meant to skip the render layer's dynamic import
+    // entirely on this path, so a GPU-less client never downloads three.js —
+    // record every script request and hold it to that below.
     await disableWebGL(page);
+    const scripts: string[] = [];
+    page.on('request', (request) => {
+      if (request.resourceType() === 'script') scripts.push(request.url());
+    });
 
     await page.goto(
       appUrl({
@@ -38,6 +44,15 @@ test.describe('no WebGL', () => {
 
     const fallback = page.locator(SELECTOR.fallbackView);
     await expect(fallback).toBeVisible();
+
+    // The payload promise, not just the visual one: no renderer chunk and no
+    // three.js chunk were ever requested. (In dev Vite serves modules
+    // individually, so match the source paths as well as the built names.)
+    const rendering = scripts.filter((url) => /three|renderer-|\/render\//.test(url));
+    expect(
+      rendering,
+      `render-layer scripts fetched without WebGL: ${rendering.join(', ')}`,
+    ).toHaveLength(0);
     await expect(page.locator(SELECTOR.fallbackNote)).toContainText('WebGL');
 
     // The canvas is out of the document's flow and out of the tab order, so it
