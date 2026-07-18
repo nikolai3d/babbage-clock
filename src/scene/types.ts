@@ -7,6 +7,8 @@
  * actual GPU objects.
  */
 
+import type { GearSpokeStyle } from '../geometry/gearProfile.js';
+
 /** A 3D vector expressed as a plain tuple so scene data stays serialisable. */
 export type Vec3 = readonly [x: number, y: number, z: number];
 
@@ -96,7 +98,7 @@ export interface RingConfig {
   readonly markSlot: MaterialSlot;
 }
 
-/** A decorative rotating disc. The real geared mechanism arrives in a later bead. */
+/** A gear wheel in the decorative train. */
 export interface GearSpec {
   readonly id: string;
   readonly slot: MaterialSlot;
@@ -107,6 +109,13 @@ export interface GearSpec {
   readonly axis: Vec3;
   /** Radians per second; sign selects the direction. */
   readonly angularVelocity: number;
+  /**
+   * Wheel style. Omitted, the style derives deterministically from the gear's
+   * index and tooth count — which is why every scene so far never set it. Set
+   * it when a scene wants a particular wheel (the reference image's 5-spoke
+   * painted wheels, say) rather than whatever the derivation deals out.
+   */
+  readonly spokeStyle?: GearSpokeStyle;
 }
 
 /** IBL presets contributed by the lighting bead. */

@@ -648,3 +648,43 @@ describe('MaterialLibrary', () => {
     expect(() => library.get('housing')).toThrow(/was not built/);
   });
 });
+
+describe('gear spoke styles', () => {
+  function trianglesIn(scene: THREE.Scene): number {
+    let total = 0;
+    scene.traverse((node) => {
+      const mesh = node as THREE.Mesh;
+      if (!mesh.isMesh || !mesh.geometry) return;
+      const geometry = mesh.geometry;
+      const index = geometry.getIndex();
+      total += (index ? index.count : geometry.getAttribute('position').count) / 3;
+    });
+    return total;
+  }
+
+  it('honours a scene-declared style over the index derivation', () => {
+    const oneGear = (spokeStyle?: 'crescent') => ({
+      ...copperPadlockScene,
+      id: 'spoke-style-probe',
+      gears: [
+        spokeStyle ? { ...copperPadlockScene.gears[0]!, spokeStyle } : copperPadlockScene.gears[0]!,
+      ],
+    });
+
+    // Index 0 derives spoke5 today; declaring crescent must change the mesh.
+    // Triangle count is a blunt but honest proxy: the two spoke patterns
+    // punch different cutouts, so equal counts would mean the declaration
+    // never reached the generator.
+    const styledScene = new THREE.Scene();
+    const styled = new ClockSceneView(styledScene, oneGear('crescent'), { motion: false });
+    const styledTriangles = trianglesIn(styledScene);
+    styled.dispose();
+
+    const derivedScene = new THREE.Scene();
+    const derived = new ClockSceneView(derivedScene, oneGear(), { motion: false });
+    const derivedTriangles = trianglesIn(derivedScene);
+    derived.dispose();
+
+    expect(styledTriangles).not.toBe(derivedTriangles);
+  });
+});
