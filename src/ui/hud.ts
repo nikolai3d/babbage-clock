@@ -5,21 +5,26 @@
  * and emits intents; the renderer subscribes to the same store. Later UI beads
  * should preserve that boundary.
  *
- * DOM contract for later beads (accessibility, mobile):
+ * DOM contract for later beads (mobile, audio):
  *
  * ```
  * div.hud
- *   div.readout#readout            > p#countdown[role=timer], p#target-label, p.readout__state
+ *   div.readout#readout            > p#countdown[role=timer][aria-live=off], p#target-label, p.readout__state
  *   div.status#time-status         > span.status__dot, span.status__text
  *   button#settings-toggle[aria-expanded][aria-controls=settings-panel]
  *   section#settings-panel.panel   (see ui/settingsPanel.ts)
  *   div.toast-region[role=status]
+ * p#countdown-announcement.sr-only[aria-live=polite]   (sibling of .hud)
  * ```
  *
- * `#countdown` carries the same `formatCountdown` string it always has, so the
- * accessibility bead can mirror it into a live region without reformatting it.
+ * `#countdown` carries the same `formatCountdown` string it always has and is
+ * *not* a live region: `role="timer"` would make it one implicitly, and it
+ * changes four times a second. The announcements come from `CountdownAnnouncer`
+ * on a throttled schedule instead — see `ui/countdownAnnouncer.ts` and
+ * `docs/accessibility.md`.
  */
 
+import { CountdownAnnouncer } from './countdownAnnouncer.js';
 import { LoadingScreen } from './loadingScreen.js';
 import { SettingsPanel } from './settingsPanel.js';
 import { describeTimeStatus } from './statusText.js';
@@ -47,7 +52,9 @@ export interface HudOptions extends Pick<
 
 export class Hud {
   private readonly root: HTMLDivElement;
+  private readonly readoutEl: HTMLDivElement;
   private readonly countdownEl: HTMLParagraphElement;
+  private readonly announcer: CountdownAnnouncer;
   private readonly labelEl: HTMLParagraphElement;
   private readonly stateEl: HTMLParagraphElement;
   private readonly statusEl: HTMLDivElement;
@@ -76,13 +83,16 @@ export class Hud {
     const readout = document.createElement('div');
     readout.className = 'readout';
     readout.id = 'readout';
+    this.readoutEl = readout;
 
     this.countdownEl = document.createElement('p');
     this.countdownEl.className = 'readout__countdown';
     this.countdownEl.id = 'countdown';
     this.countdownEl.setAttribute('role', 'timer');
-    // The accessibility bead owns the live-region mirror; announcing every tick
-    // from here would be unbearable.
+    // `role="timer"` is an implicit live region and this element changes four
+    // times a second, so it is pinned off. The announcements come from
+    // `CountdownAnnouncer` below, on a throttled schedule — exactly one of the
+    // two elements is ever live. See `ui/countdownAnnouncer.ts`.
     this.countdownEl.setAttribute('aria-live', 'off');
 
     this.labelEl = document.createElement('p');
@@ -142,6 +152,11 @@ export class Hud {
     this.root.append(readout, this.statusEl, this.toggle, this.panel.root);
     container.append(this.root);
 
+    // The text mirror of the countdown. Lives outside `.hud` so it is never
+    // affected by the HUD's layout, its `pointer-events` rules, or the readout
+    // being hidden in favour of the no-WebGL fallback.
+    this.announcer = new CountdownAnnouncer({ container, store });
+
     const loadingElement = document.querySelector<HTMLElement>('#loading-screen');
     if (options.loading && loadingElement) {
       this.loadingScreen = new LoadingScreen({
@@ -158,10 +173,20 @@ export class Hud {
     });
   }
 
+  /**
+   * Hides the corner readout, for when the fallback view is showing the
+   * countdown instead. The `hidden` attribute, so the duplicate leaves the
+   * accessibility tree along with the picture — one countdown, not two.
+   */
+  setReadoutVisible(visible: boolean): void {
+    this.readoutEl.hidden = !visible;
+  }
+
   dispose(): void {
     this.unsubscribe();
     this.toggle.removeEventListener('click', this.onToggleClick);
     document.removeEventListener('keydown', this.onKeyDown);
+    this.announcer.dispose();
     this.loadingScreen?.dispose();
     this.panel.dispose();
     this.toasts.dispose();

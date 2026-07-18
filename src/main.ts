@@ -1,4 +1,6 @@
+import { CountdownTicker } from './app/countdownTicker.js';
 import { LoadingTracker } from './app/loading.js';
+import { MotionPreference } from './app/motion.js';
 import { Store } from './app/store.js';
 import { installTestApi, readTestHooks, resolveTimeSource } from './app/testHooks.js';
 import { buildShareUrl, readLaunchParams, writeAppParams } from './app/urlParams.js';
@@ -23,12 +25,25 @@ import {
   getTrueTimeClock,
   trueTimeSource,
 } from './time/trueTime.js';
+import { FallbackClock } from './ui/fallbackClock.js';
 import { Hud } from './ui/hud.js';
 import { defineSelect } from './ui/settings.js';
 import type { AppState } from './app/store.js';
+import type { RendererProbe } from './app/testHooks.js';
 import type { ShareableState } from './app/urlParams.js';
+import type { FallbackReason } from './ui/fallbackClock.js';
 import type { SettingControl } from './ui/settings.js';
 import './styles.css';
+
+/**
+ * How long to wait for a lost WebGL context before calling it permanent.
+ *
+ * Browsers restore a context asynchronously and give no signal that they have
+ * given up, so the only honest options are "wait forever" or a deadline. The
+ * fallback countdown is already correct and on screen either way; this only
+ * decides when the note stops saying "waiting".
+ */
+const CONTEXT_RESTORE_GRACE_MS = 8_000;
 
 /**
  * Application bootstrap: read the URL, build the store, wire renderer and UI.
@@ -114,12 +129,68 @@ function bootstrap(): void {
     clockTask.done();
   }
 
-  const renderer = new ClockRenderer({ canvas, store, timeSource, motion: hooks.motion });
+  // The one motion switch: `prefers-reduced-motion` and `?nomotion=1` combined
+  // into a single value, kept current if the viewer changes the setting.
+  const motionPreference = new MotionPreference(hooks.motion);
+  // Advances the countdown whenever the render loop is not there to do it —
+  // no WebGL at all, or a context that has been taken away. Idle otherwise.
+  const ticker = new CountdownTicker({ store, timeSource });
+  const fallback = new FallbackClock({ container: uiRoot, store });
+  let restoreTimer: ReturnType<typeof setTimeout> | null = null;
+
+  /** Text countdown in, mechanism out. Safe to call repeatedly. */
+  function enterFallback(reason: FallbackReason): void {
+    hud.setReadoutVisible(false);
+    fallback.show(reason);
+    ticker.start();
+  }
+
+  /** Mechanism back, text countdown out. */
+  function leaveFallback(): void {
+    if (restoreTimer !== null) {
+      clearTimeout(restoreTimer);
+      restoreTimer = null;
+    }
+    ticker.stop();
+    fallback.hide();
+    hud.setReadoutVisible(true);
+  }
+
+  // A browser with no WebGL throws here rather than returning null, and that
+  // must not take the countdown down with it: everything below this point works
+  // with `renderer === null`, and the fallback view runs off the same store.
+  let renderer: ClockRenderer | null = null;
+  try {
+    renderer = new ClockRenderer({
+      canvas,
+      store,
+      timeSource,
+      motion: motionPreference.enabled,
+      onContextLost: () => {
+        enterFallback('context-lost');
+        // A second loss before the first restore must not leave the first
+        // deadline running: it would declare the context permanently gone while
+        // the browser is still trying to bring the new one back.
+        if (restoreTimer !== null) clearTimeout(restoreTimer);
+        restoreTimer = setTimeout(() => {
+          restoreTimer = null;
+          fallback.show('context-lost-permanent');
+        }, CONTEXT_RESTORE_GRACE_MS);
+      },
+      onContextRestored: leaveFallback,
+    });
+  } catch (error) {
+    console.warn('[main] WebGL is unavailable — showing the text countdown instead.', error);
+  }
+
+  const unsubscribeMotion = motionPreference.subscribe((enabled) => {
+    renderer?.setMotion(enabled);
+  });
 
   /** Rebuilds the three.js scene for the current scene id and lighting mood. */
   const applyScene = (): void => {
     const state = store.get();
-    renderer.setScene(withEnvironmentPreset(sceneRegistry.resolve(state.sceneId), state.mood));
+    renderer?.setScene(withEnvironmentPreset(sceneRegistry.resolve(state.sceneId), state.mood));
   };
 
   const shareState = (): ShareableState => {
@@ -209,7 +280,14 @@ function bootstrap(): void {
     onCopyLink: copyToClipboard,
   });
 
-  renderer.start();
+  if (renderer) {
+    renderer.start();
+  } else {
+    // The canvas is inert without a context; leaving it in the document would
+    // put an unlabelled tab stop in front of the countdown.
+    canvas.hidden = true;
+    enterFallback('no-webgl');
+  }
   sceneTask.done();
 
   if (import.meta.env.DEV) {
@@ -218,15 +296,47 @@ function bootstrap(): void {
     void import('./ui/debugPanel.js').then(({ DebugPanel }) => new DebugPanel(uiRoot, store));
   }
 
-  const uninstallTestApi = installTestApi(hooks, { store, renderer, timeSource });
+  // Without a renderer there is still state worth observing, so the probe
+  // reports an honest "nothing is being drawn" rather than being absent — that
+  // is what lets the no-WebGL e2e spec assert on the fallback.
+  const rendererProbe: RendererProbe = renderer ?? {
+    getDigits: () => [],
+    getRenderState: () => ({
+      webgl2: false,
+      frames: 0,
+      fps: 0,
+      running: false,
+      drawCalls: 0,
+      triangles: 0,
+      width: 0,
+      height: 0,
+      pixelRatio: 1,
+      motion: motionPreference.enabled,
+      contextLost: true,
+      cameraPosition: [0, 0, 0],
+      sceneId: null,
+      // No scene was ever built, so no environment map was ever asked for.
+      lighting: 'none',
+    }),
+  };
+  const uninstallTestApi = installTestApi(hooks, {
+    store,
+    renderer: rendererProbe,
+    timeSource,
+  });
 
   // Vite HMR: without this the old WebGL context and its listeners survive every
   // edit, and the tab dies after a handful of saves.
   if (import.meta.hot) {
     import.meta.hot.dispose(() => {
       uninstallTestApi();
+      if (restoreTimer !== null) clearTimeout(restoreTimer);
+      unsubscribeMotion();
+      motionPreference.dispose();
+      ticker.dispose();
+      fallback.dispose();
       hud.dispose();
-      renderer.dispose();
+      renderer?.dispose();
       store.dispose();
       loading.dispose();
       unsubscribeTime();

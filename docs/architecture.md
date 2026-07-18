@@ -18,6 +18,8 @@ src/
     store.ts             the observable app-state store (framework-free)
     urlParams.ts         ?scene= / ?target= / ?tz= / ?mood= reading, writing, sharing
     loading.ts           weighted boot-progress aggregation for the loading screen
+    motion.ts            the one motion switch: reduced-motion + ?nomotion
+    countdownTicker.ts   advances the countdown when there is no render loop
   geometry/              ── pure geometry maths, no three.js ──
     types.ts             Point2/Contour/Outline plus small 2D helpers
     strokes.ts           centre-line stroke -> filled outline
@@ -61,6 +63,9 @@ src/
     providers.ts         the time-source fallback chain
   ui/                    ── no three.js imports here either ──
     hud.ts               the shell: readout, status strip, drawer toggle, toasts
+    countdownAnnouncer.ts the throttled aria-live mirror of the countdown
+    countdownSpeech.ts   phrasing and announcement cadence (pure)
+    fallbackClock.ts     the text countdown for no-WebGL / lost context
     settingsPanel.ts     the settings drawer (target, zone, controls, share)
     settings.ts          SettingControl descriptors — how a setting is added
     timeZonePicker.ts    searchable combobox over the platform tz database
@@ -208,9 +213,11 @@ soup.
 The structure later beads extend:
 
 ```
+#scene-canvas               [role=img][aria-label][tabindex=0]; arrow keys orbit
+p#canvas-help.sr-only
 #ui-root
   .hud
-    .readout#readout          p#countdown[role=timer], p#target-label, p.readout__state
+    .readout#readout          p#countdown[role=timer][aria-live=off], p#target-label, p.readout__state
     .status#time-status       span.status__dot, span.status__text, [data-level=ok|info|warn]
     button#settings-toggle    [aria-expanded][aria-controls=settings-panel]
     section#settings-panel.panel[hidden]
@@ -223,8 +230,16 @@ The structure later beads extend:
       .panel__group           one .field per SettingControl descriptor
       .field--share           input#share-url[readonly], button#share-button
     .toast-region[role=status]
+  p#countdown-announcement.sr-only[aria-live=polite][aria-atomic=true]
+  section#fallback-view.fallback[hidden]   the text countdown, when there is no GPU
 #loading-screen.loader        authored in index.html, removed once boot completes
 ```
+
+`#countdown` and `#countdown-announcement` are a pair, and the split is
+deliberate: `role="timer"` is an implicit live region and the readout changes
+four times a second, so it is pinned to `aria-live="off"` and the throttled
+announcements happen in the hidden element instead. Exactly one is ever live.
+See **[accessibility.md](accessibility.md)**.
 
 Hiding is done with the `hidden` attribute so hidden content leaves the
 accessibility tree and the tab order together; `[hidden] { display: none
@@ -340,6 +355,28 @@ installs `window.__clock` for state assertions. **Every hook is inert without
 its parameter** — production behaviour is unchanged, and unit tests assert it.
 The renderer is consumed through a structural `RendererProbe` interface, so
 nothing in `src/render/` imports test-only code.
+
+`?nomotion=1` is a _hook_; the effective motion setting is
+`?nomotion` combined with `prefers-reduced-motion` in `app/motion.ts`, and that
+combined value is the only one the renderer sees. `window.__clock.hooks().motion`
+reports the parameter, `renderer().motion` reports the effective value —
+comparing them is how a spec tells the media query apart from the URL.
+
+## Accessibility and fallbacks
+
+Read **[accessibility.md](accessibility.md)** before touching the HUD, the
+motion switch or the renderer's context handling. In short:
+
+- The countdown reaches assistive technology as words through one throttled
+  live region, not through the `role="timer"` readout.
+- There is one motion switch (`app/motion.ts`). Do not add a second
+  `prefers-reduced-motion` check anywhere.
+- When there is no WebGL context — creation failed, or the one we had was lost —
+  `ui/fallbackClock.ts` shows a text countdown that `app/countdownTicker.ts`
+  keeps advancing off the same `TimeSource`. Neither imports three.js, and that
+  is load-bearing: it is what makes the countdown survive the GPU.
+- Chrome backgrounds are opaque enough to clear AA against _any_ backdrop,
+  because IBL presets change what is behind them.
 
 ## Resource ownership
 

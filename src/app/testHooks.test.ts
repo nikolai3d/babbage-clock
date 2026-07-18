@@ -125,6 +125,8 @@ describe('installTestApi', () => {
     height: 600,
     pixelRatio: 1,
     motion: false,
+    contextLost: false,
+    cameraPosition: [0, 0, 6],
     sceneId: 'copper-padlock',
     lighting: 'ready',
   };

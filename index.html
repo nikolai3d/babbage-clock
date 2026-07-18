@@ -21,7 +21,27 @@
     />
   </head>
   <body>
-    <canvas id="scene-canvas"></canvas>
+    <!--
+      `role="img"` plus a name, rather than an unlabelled canvas: assistive
+      technology describes the view instead of announcing an empty graphic, and
+      it does not try to walk inside it. The remaining time is not carried here
+      — `ui/countdownAnnouncer.ts` mirrors it into a live region as text.
+
+      `tabindex="0"` makes orbiting reachable without a pointer (arrow keys,
+      +/-, Home to reset — see `render/renderer.ts`). It is one tab stop and
+      nothing traps focus: Tab always moves on to the settings button.
+    -->
+    <canvas
+      id="scene-canvas"
+      tabindex="0"
+      role="img"
+      aria-label="Three-dimensional view of the clock mechanism"
+      aria-describedby="canvas-help"
+    ></canvas>
+    <p id="canvas-help" class="sr-only">
+      Use the arrow keys to orbit the mechanism, plus and minus to zoom, and Home to reset the view.
+      The remaining time is announced separately, so you do not need this view to read the clock.
+    </p>
     <div id="ui-root"></div>
 
     <!--
