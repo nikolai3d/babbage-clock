@@ -80,8 +80,11 @@ typed extension points for PBR materials, IBL presets and NTP time.
 
 ## Conventions & Patterns
 
-- `src/scene/` and `src/time/` must not import three.js — that is what keeps
-  them unit-testable without a WebGL context.
+- `src/scene/`, `src/time/` and `src/geometry/` must not import three.js — that
+  is what keeps them unit-testable without a WebGL context. Geometry maths
+  (tooth profiles, glyph outlines, digit angles) lives in `src/geometry/`;
+  `src/render/geometry/` is the only place it becomes a `BufferGeometry`.
+  Conventions and budgets: `docs/assets.md`.
 - `src/ui/` must not import three.js either. UI reads the app store and emits
   intents; `main.ts` wires them to the renderer.
 - Anything `ClockSceneView` creates must be disposed: register geometries with

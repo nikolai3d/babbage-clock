@@ -4,7 +4,7 @@ import { ClockSceneView } from './clockScene.js';
 import { MaterialLibrary } from './materials.js';
 import { copperPadlockScene } from '../scene/scenes/copperPadlock.js';
 import { slateOrreryScene } from '../scene/scenes/slateOrrery.js';
-import { MATERIAL_SLOTS } from '../scene/types.js';
+import { MATERIAL_SLOTS, type SceneDefinition } from '../scene/types.js';
 
 /**
  * Scene-graph construction needs no WebGL context — only WebGLRenderer does —
@@ -234,6 +234,33 @@ describe('ClockSceneView', () => {
       ),
     );
     expect(shell.geometry.boundingSphere!.radius).toBeGreaterThan(furthestGear);
+    view.dispose();
+  });
+
+  /**
+   * The property this geometry work exists to protect: a variant that changes
+   * only scene data must render without a single code change here.
+   */
+  it('builds a six-ring clock variant from scene data alone', () => {
+    const sixRing: SceneDefinition = {
+      ...copperPadlockScene,
+      id: 'six-ring',
+      mode: 'clock',
+      rings: { ...copperPadlockScene.rings, count: 6, radius: 0.8, thickness: 0.3, spacing: 0.4 },
+    };
+
+    const view = new ClockSceneView(scene, sixRing);
+    view.setDigits([1, 2, 3, 4, 5, 6]);
+    view.update(0.1);
+
+    expect(view.ringCount).toBe(6);
+    expect(view.root.children.filter((child) => child.name.startsWith('ring:'))).toHaveLength(6);
+
+    const drum = view.root.getObjectByName('ring:0')!.children[0] as THREE.Mesh;
+    drum.geometry.computeBoundingBox();
+    // Sized from the new config, not from the preset it was copied from.
+    expect(drum.geometry.boundingBox!.max.y).toBeCloseTo(0.8, 6);
+
     view.dispose();
   });
 
