@@ -623,15 +623,21 @@ describe('MaterialLibrary', () => {
     library.dispose();
   });
 
-  it('falls back to a placeholder for not-yet-loadable PBR bindings', () => {
-    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+  /**
+   * A PBR binding is asynchronous by nature, and the first frame cannot wait
+   * for it. The slot therefore renders a plausible neutral surface immediately
+   * and upgrades itself in place once the folder arrives — which is also why a
+   * hot swap never flashes. The loading half is covered in `materials.test.ts`.
+   */
+  it('shows a neutral surface immediately for a PBR binding', () => {
     const library = new MaterialLibrary({
       ...copperPadlockScene.materials,
-      housing: { kind: 'pbr', textureSet: 'copper-padlock/housing', roughness: 0.12 },
+      housing: { kind: 'pbr', textureSet: 'copper-plate', roughness: 0.12 },
     });
 
-    expect(library.get('housing').roughness).toBe(0.12);
-    expect(warn).toHaveBeenCalledOnce();
+    const material = library.get('housing');
+    expect(material.roughness).toBe(0.12);
+    expect(material.map).toBeNull();
     library.dispose();
   });
 

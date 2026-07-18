@@ -111,6 +111,15 @@ creates a material; it declares which slot it belongs to and the caller binds it
 | `gearA`–`gearD` | gear wheels per `GearSpec.slot`; `gearD` also the escape wheel |
 | `arbor`         | ring shaft, gear pins, detent levers                           |
 
+**Texture coordinates.** Every generator writes UVs on one convention: **one UV
+unit is one metre of real surface**, so a material's `tiling` means the same
+thing on the drums, the case, a gear face and the engraved numerals. The
+projections that get there — cylindrical for revolved parts, planar for flat
+discs, box projection for merged solids — live in `src/render/geometry/uv.ts`,
+and the numerals' cylindrical mapping is computed in the same pass that bends
+them onto the drum. Details and the verification procedure:
+**[materials.md](materials.md)**.
+
 **For any future authored glTF:** name each mesh or material after the slot it
 targets (`housing`, `bezel`, …). A loader can then bind an imported part to the
 scene's existing `MaterialSlotMap` without touching a single scene file, and an
@@ -136,11 +145,13 @@ win detail that is invisible at the framing this clock is shot at.
 
 ### (b) Normal + albedo texture atlas wrapped per ring
 
-Cheapest to render and the standard answer. Rejected for now on two counts.
-First, it depends on textures that do not exist: the PBR bead has not landed, so
-today an atlas would have to be drawn to a canvas at runtime — and the unit
-tests run in a plain Node environment with no DOM, which would make the entire
-numeral path untestable headlessly. Second, resolution: with ten digits around a
+Cheapest to render and the standard answer. Rejected on two counts. First, at
+the time it depended on textures that did not exist, and an atlas drawn to a
+canvas at runtime would have made the entire numeral path untestable in the
+DOM-free Node unit environment. (The PBR pipeline has since landed, so this
+argument is now only historical — but the geometry is built and paid for, and
+the numerals carry correct cylindrical UVs, so a texture can be laid over them
+if a later bead wants one.) Second, resolution: with ten digits around a
 1 m drum, keeping the reading digit crisp under orbit needs a large atlas per
 ring size, and a normal map alone would make the digits vanish at grazing angles
 where the padlock reads best.

@@ -2,6 +2,11 @@ node_modules/
 dist/
 .DS_Store
 
+# KTX2/BasisU transcoder, copied out of `three` by scripts/sync-basis-transcoder.mjs
+# on predev/prebuild. An exact function of the installed three version, so a
+# committed copy could only ever go stale.
+public/basis/
+
 # Playwright run output. Baselines under e2e/__screenshots__/ ARE committed.
 test-results/
 playwright-report/

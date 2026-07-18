@@ -31,6 +31,10 @@ src/
     easing.ts            the escapement curve and friends
     mechanism.ts         tick / carry / seek / expire state machine
     frames.ts            RemainingTime or wall clock -> a mechanism frame
+  materials/             ── the Substance material contract, no three.js ──
+    manifest.ts          material.json parsing, validation, colour-space rules
+    looks.ts             slot -> material-id mappings; the `pbr()` binding helper
+    paths.ts             runtime asset URLs, resolved against BASE_URL
   scene/                 ── no three.js imports anywhere below this line ──
     types.ts             SceneDefinition and everything it contains
     validate.ts          structural checks for scene definitions
@@ -50,7 +54,8 @@ src/
       ring.ts            createRingBodyGeometry / createRingNumeralsGeometry
       housing.ts         createHousingParts (case, bezel, studs, lid, shackle)
       escapement.ts      balance, escape wheel, cock, detent lever
-    materials.ts         material slot map -> three.js materials
+    materials.ts         material slot map -> three.js materials, hot-swappable
+    materialRegistry.ts  material folders -> cached, refcounted textures
     lighting.ts          scene lights + EnvironmentController (applies a mood)
     ibl/                 lighting moods: HDR panorama + rig + grade
       manifest.ts        preset.json schema and parser (no three.js)
@@ -325,28 +330,40 @@ These are typed and wired but intentionally not implemented yet. Each is a real
 interface rather than a TODO, so the bead that fills it in should not need to
 change anything outside its own module.
 
-### Materials (Substance PBR bead)
+### Materials (implemented)
 
-`MaterialBinding` is a discriminated union. `{ kind: 'placeholder' }` is the
-untextured material the scaffold ships. `{ kind: 'pbr' }` already carries a
-`textureSet`, per-channel `maps`, `tiling` and roughness/metalness overrides.
+`MaterialBinding` is a discriminated union. `{ kind: 'placeholder' }` is an
+untextured material, still a valid long-term binding — `slate-orrery` uses them
+throughout. `{ kind: 'pbr', textureSet }` names a material folder under
+`public/assets/materials/`, which the `MaterialRegistry` loads, parses and
+caches. `copper-padlock` binds all ten of its slots that way, which is the
+validation that the abstraction holds: re-skinning the whole clock changed ten
+lines of scene data and no render code.
 
-`MaterialLibrary` in `src/render/materials.ts` currently warns and substitutes a
-neutral material for `pbr` bindings. The materials bead implements loading
-there. It arrives already knowing which resolution to ask for:
-`MaterialLibrary.textureSize` is `half` on the low quality tier, threaded from
-`app/quality.ts` through `ClockSceneView`. Texture memory is the first thing a
-mobile browser kills a WebGL tab for, so read that rather than introducing a
-second notion of quality. Scene files then change from `placeholder(...)` to `{ kind: 'pbr', ... }`
-per slot, and nothing else moves.
+`MaterialLibrary.textureSize` carries the active quality tier's resolution
+preference (`half` on the low tier), threaded from `app/quality.ts` through
+`ClockSceneView`. It is recorded but not yet acted on: `material.json` has no
+size variants to choose between. When variants are authored, resolve them there
+rather than introducing a second notion of texture quality — texture memory is
+the first thing a mobile browser kills a WebGL tab for.
 
 Slot names are fixed in `MATERIAL_SLOTS`: `housing`, `bezel`, `ring`,
-`numerals`, `gearA`–`gearD`, `arbor`, `frame`. Authored texture sets should be
-keyed by these names. Every slot is consumed by geometry, so the materials bead
-needs no scene-file edits beyond swapping bindings: the case and the bearing
-bosses take `housing`, the bezel, its studs and the balance rim take `bezel`,
-the lid, hinge, shackle and balance cock take `frame`, the arbor, gear pins and
-detent levers take `arbor`, and the escape wheel takes `gearD`.
+`numerals`, `gearA`–`gearD`, `arbor`, `frame`. Every slot is consumed by
+geometry — the case and the bearing bosses take `housing`, the bezel, its studs
+and the balance rim take `bezel`, the lid, hinge, shackle and balance cock take
+`frame`, the arbor, gear pins and detent levers take `arbor`, and the escape
+wheel takes `gearD`.
+
+**The material instance for a slot never changes.** Meshes are handed it once
+and keep the reference; rebinding a slot rewrites that instance in place, which
+is what makes the settings panel's _Material look_ picker a runtime rebind
+rather than a scene rebuild. Textures are reference counted in the registry,
+which outlives any one scene, so switching scenes or looks re-downloads nothing
+and releases everything.
+
+See **[materials.md](materials.md)** for the `material.json` schema, the
+Substance 3D Sampler export settings that produce a compatible folder, the
+texel-density convention, and the KTX2 delivery path.
 
 ### Audio (sound bead)
 

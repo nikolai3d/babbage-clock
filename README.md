@@ -62,8 +62,14 @@ balance wheel and the detents — without changing what the rings read.
 Everything about how a clock looks — ring count and layout, materials, lighting,
 camera framing — is data in a `SceneDefinition`, registered in a scene registry
 and switchable at runtime. See [docs/architecture.md](docs/architecture.md) for
-the module layout, the extension points for materials and IBL, and how to add a
-new scene.
+the module layout, the remaining extension points, and how to add a new scene.
+
+Surfaces are PBR materials loaded from texture folders: drop a Substance 3D
+Sampler export into `public/assets/materials/<name>/` with a `material.json`
+beside it and name it from a scene's material slots — no code changes. Slots can
+also be re-bound at runtime from the settings panel. See
+[docs/materials.md](docs/materials.md) for the schema, the exact Sampler export
+settings, the texel-density convention and the KTX2 path.
 
 The countdown runs on a network-corrected clock rather than the device clock,
 and targets resolve through the real IANA timezone database. See

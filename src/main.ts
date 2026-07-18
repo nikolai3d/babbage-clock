@@ -21,6 +21,7 @@ import {
   parseEnvironmentPreset,
   withEnvironmentPreset,
 } from './scene/environment.js';
+import { MATERIAL_LOOKS } from './materials/looks.js';
 import { sceneRegistry } from './scene/scenes/index.js';
 import { computeCountdown, computeRemaining } from './time/countdown.js';
 import {
@@ -104,6 +105,7 @@ async function bootstrap(): Promise<void> {
   const store = new Store<AppState>({
     sceneId,
     mood: params.mood,
+    materialLook: null,
     quality: params.quality,
     qualityTier,
     target,
@@ -121,6 +123,7 @@ async function bootstrap(): Promise<void> {
   const loading = new LoadingTracker();
   const sceneTask = loading.task('scene', { label: 'Assembling the mechanism', weight: 2 });
   const clockTask = loading.task('time-sync', { label: 'Checking world time', weight: 1 });
+  const materialTask = loading.task('materials', { label: 'Loading materials', weight: 3 });
 
   const unsubscribeTime = getTrueTimeClock().subscribe((timeStatus) => {
     store.set({ timeStatus });
@@ -241,6 +244,25 @@ async function bootstrap(): Promise<void> {
 
   applyScene();
 
+  // Real progress, not a guess: the loader waits for the first scene's textures
+  // so the clock is never photographed — or first seen — half-skinned. A folder
+  // that fails to load still settles the task; the material falls back to a
+  // neutral surface rather than holding the loading screen up for ever.
+  //
+  // Settled immediately when there is no renderer at all: without a WebGL
+  // context nothing will ever load a texture, and the loading screen must not
+  // wait for something that is not coming.
+  if (renderer) {
+    void renderer
+      .materialsReady()
+      .catch(() => undefined)
+      .finally(() => {
+        materialTask.done();
+      });
+  } else {
+    materialTask.done();
+  }
+
   const controls: readonly SettingControl[] = [
     defineSelect({
       id: 'scene-select',
@@ -257,6 +279,26 @@ async function bootstrap(): Promise<void> {
         store.set({ sceneId: definition.id });
         applyScene();
         writeAppParams(shareState());
+      },
+    }),
+    defineSelect({
+      id: 'look-select',
+      label: 'Material look',
+      hint: 'Rebinds every material slot at runtime — no reload, no scene rebuild.',
+      options: [
+        { value: '', label: 'Scene default' },
+        ...MATERIAL_LOOKS.map((look) => ({
+          value: look.id,
+          label: look.name,
+          hint: look.description,
+        })),
+      ],
+      read: (state) => state.materialLook ?? '',
+      apply: (value) => {
+        const materialLook = value === '' ? null : value;
+        if (materialLook === store.get().materialLook) return;
+        store.set({ materialLook });
+        renderer?.setMaterialLook(materialLook);
       },
     }),
     defineSelect({
@@ -375,6 +417,8 @@ async function bootstrap(): Promise<void> {
       running: false,
       drawCalls: 0,
       triangles: 0,
+      textures: 0,
+      geometries: 0,
       width: 0,
       height: 0,
       pixelRatio: 1,
@@ -390,6 +434,15 @@ async function bootstrap(): Promise<void> {
       maxFps: qualitySettings(qualityTier).maxFps,
       framingFit: 'whole',
       ringExtentPx: 0,
+    }),
+    // Likewise: no slot was ever bound and no folder was ever fetched.
+    getMaterialState: () => ({
+      look: null,
+      slots: {},
+      textures: 0,
+      sources: 0,
+      pending: 0,
+      ktx2: false,
     }),
   };
   const uninstallTestApi = installTestApi(hooks, {

@@ -9,6 +9,7 @@
 
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
+import { ensureUv } from './uv.js';
 import type { Contour, Outline } from '../../geometry/types.js';
 
 export interface ExtrudeOptions {
@@ -90,6 +91,12 @@ export function mergeAndDispose(geometries: THREE.BufferGeometry[]): THREE.Buffe
  *
  * Used to bend flat extruded glyphs onto a cylinder. Normals must be recomputed
  * rather than rotated because the mapping is not rigid.
+ *
+ * The callback is handed the vertex's UV alongside its position, and for the
+ * same reason: `ExtrudeGeometry` writes UVs for the *flat* profile, so once the
+ * profile is bent they describe a surface that no longer exists. Only the
+ * caller knows the mapping, so only the caller can restate them — see
+ * `createRingNumeralsGeometry`.
  */
 /**
  * Splits triangles until no edge spans more than `maxSpanY` along y.
@@ -189,16 +196,23 @@ export function subdivideTrianglesY(
 
 export function deformPositions(
   geometry: THREE.BufferGeometry,
-  transform: (point: THREE.Vector3) => void,
+  transform: (point: THREE.Vector3, uv: THREE.Vector2) => void,
 ): THREE.BufferGeometry {
   const position = geometry.getAttribute('position');
+  const uvAttribute = ensureUv(geometry);
   const vertex = new THREE.Vector3();
+  const uv = new THREE.Vector2();
+
   for (let i = 0; i < position.count; i += 1) {
     vertex.fromBufferAttribute(position, i);
-    transform(vertex);
+    uv.fromBufferAttribute(uvAttribute, i);
+    transform(vertex, uv);
     position.setXYZ(i, vertex.x, vertex.y, vertex.z);
+    uvAttribute.setXY(i, uv.x, uv.y);
   }
+
   position.needsUpdate = true;
+  uvAttribute.needsUpdate = true;
   geometry.computeVertexNormals();
   geometry.computeBoundingSphere();
   return geometry;

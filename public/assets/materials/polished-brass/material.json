@@ -1,0 +1,11 @@
+{
+  "name": "Polished brass",
+  "description": "Scalars only. Bright metal for raised numerals: dark enamel digits vanish against the rusted-copper drums, and brass catching the key light is what keeps the reading line legible in every mood.",
+  "maps": {},
+  "tiling": [1, 1],
+  "scalars": {
+    "baseColor": "#e2c07a",
+    "metalness": 1,
+    "roughness": 0.28
+  }
+}

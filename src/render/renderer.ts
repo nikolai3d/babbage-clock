@@ -3,6 +3,8 @@ import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { ClockSceneView } from './clockScene.js';
 import { createEnvironmentLibrary } from './ibl/library.js';
 import { EnvironmentController } from './lighting.js';
+import { MaterialRegistry } from './materialRegistry.js';
+import { lookToSlotMap, resolveLook } from '../materials/looks.js';
 import { qualitySettings } from '../app/quality.js';
 import { frameForAspect, ringStackRadius } from '../scene/framing.js';
 import { ringStackSpan } from '../geometry/ringLayout.js';
@@ -11,8 +13,9 @@ import { clockFrame, countdownFrame } from '../mechanism/index.js';
 import type { IblStatus } from './lighting.js';
 import type { QualitySettings } from '../app/quality.js';
 import type { AppStore } from '../app/store.js';
+import { MATERIAL_SLOTS } from '../scene/types.js';
 import type { ContentExtent } from '../scene/framing.js';
-import type { SceneDefinition } from '../scene/types.js';
+import type { MaterialSlotMap, SceneDefinition } from '../scene/types.js';
 import type { RemainingTime } from '../time/countdown.js';
 import type { TimeSource } from '../time/target.js';
 
@@ -82,6 +85,15 @@ export class ClockRenderer {
   private motionEnabled: boolean;
   private readonly onContextLostCallback: (() => void) | undefined;
   private readonly onContextRestoredCallback: (() => void) | undefined;
+  /**
+   * Material folders and their textures, cached across scene and look changes.
+   *
+   * Owned here rather than by the scene view because it must outlive one: the
+   * whole point of the cache is that switching away and back does not
+   * re-download anything.
+   */
+  private readonly materials: MaterialRegistry;
+  private materialLook: string | null = null;
 
   private quality: QualitySettings;
   /**
@@ -158,6 +170,10 @@ export class ClockRenderer {
       console.warn('[renderer] WebGL2 unavailable — rendering may be degraded.');
     }
 
+    // Handed the renderer so it can detect KTX2 transcoder support and read
+    // the anisotropy cap off the real context rather than guessing.
+    this.materials = new MaterialRegistry({ renderer: this.renderer });
+
     this.camera = new THREE.PerspectiveCamera(45, 1, 0.1, 100);
     this.environment = new EnvironmentController({
       renderer: this.renderer,
@@ -215,8 +231,10 @@ export class ClockRenderer {
     this.definition = definition;
     this.view = new ClockSceneView(this.scene, definition, {
       motion: this.motionEnabled,
+      materials: this.materials,
       textureSize: this.quality.textureSize,
     });
+    if (this.materialLook !== null) this.applyLook(definition);
     this.extent = this.measureExtent(definition);
     this.applyCameraConfig(definition);
     // The lighting mood owns the environment, the rig and the grade — including
@@ -226,6 +244,28 @@ export class ClockRenderer {
     // Put the new mechanism on the clock immediately, so a scene switched to
     // while the tab is hidden is already reading the right time when it shows.
     this.syncMechanism(this.timeSource.now());
+  }
+
+  /**
+   * Swaps every slot to a named look, or back to the scene's own materials.
+   *
+   * The scene graph is untouched — this is a material rebind, not a rebuild —
+   * so it costs no geometry upload and cannot drop a frame's worth of state.
+   */
+  setMaterialLook(lookId: string | null): void {
+    this.materialLook = resolveLook(lookId) ? lookId : null;
+    if (this.view) this.applyLook(this.view.definition);
+  }
+
+  /** Resolves once the active scene's materials have finished loading. */
+  async materialsReady(): Promise<void> {
+    await this.view?.materialsReady();
+  }
+
+  private applyLook(definition: SceneDefinition): void {
+    const look = resolveLook(this.materialLook);
+    const bindings: MaterialSlotMap = look ? lookToSlotMap(look) : definition.materials;
+    this.view?.setMaterials(bindings);
   }
 
   /** The active scene view, or null before the first `setScene`. */
@@ -314,6 +354,10 @@ export class ClockRenderer {
     running: boolean;
     drawCalls: number;
     triangles: number;
+    /** Live GPU textures, straight off `renderer.info.memory`. Leak canary. */
+    textures: number;
+    /** Live GPU geometries, likewise. */
+    geometries: number;
     width: number;
     height: number;
     pixelRatio: number;
@@ -335,6 +379,8 @@ export class ClockRenderer {
       running: this.frameHandle !== null,
       drawCalls: this.renderer.info.render.calls,
       triangles: this.renderer.info.render.triangles,
+      textures: this.renderer.info.memory.textures,
+      geometries: this.renderer.info.memory.geometries,
       width: size.x,
       height: size.y,
       pixelRatio: this.renderer.getPixelRatio(),
@@ -349,6 +395,39 @@ export class ClockRenderer {
       maxFps: this.quality.maxFps,
       framingFit: this.framingFit,
       ringExtentPx: this.measureRingExtentPx(),
+    };
+  }
+
+  /**
+   * What the materials layer is currently doing. See `app/testHooks.ts`.
+   *
+   * Reported rather than inferred because the two things worth asserting about
+   * a hot swap — that it took effect, and that it released what it replaced —
+   * are invisible in a screenshot.
+   */
+  getMaterialState(): {
+    look: string | null;
+    slots: Record<string, string>;
+    textures: number;
+    sources: number;
+    pending: number;
+    ktx2: boolean;
+  } {
+    const stats = this.materials.stats();
+    const slots: Record<string, string> = {};
+    if (this.view) {
+      for (const slot of MATERIAL_SLOTS) {
+        const binding = this.view.bindingFor(slot);
+        slots[slot] = binding.kind === 'pbr' ? `pbr:${binding.textureSet}` : 'placeholder';
+      }
+    }
+    return {
+      look: this.materialLook,
+      slots,
+      textures: stats.textures,
+      sources: stats.sources,
+      pending: stats.pending,
+      ktx2: stats.ktx2,
     };
   }
 
@@ -401,6 +480,7 @@ export class ClockRenderer {
     this.environment.dispose();
     this.view?.dispose();
     this.view = null;
+    this.materials.dispose();
     this.renderer.dispose();
     this.renderer.forceContextLoss();
   }

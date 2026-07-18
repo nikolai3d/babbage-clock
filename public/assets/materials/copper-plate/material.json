@@ -1,0 +1,23 @@
+{
+  "name": "Hammered copper plate",
+  "description": "Synthetic stand-in for a Substance 3D Sampler glTF metallic-roughness export. ORM-packed.",
+  "maps": {
+    "baseColor": "basecolor.png",
+    "normal": "normal.png",
+    "orm": "orm.png"
+  },
+  "normal": {
+    "convention": "opengl",
+    "scale": 1
+  },
+  "tiling": [
+    0.6,
+    0.6
+  ],
+  "scalars": {
+    "baseColor": "#b87333",
+    "metalness": 1,
+    "roughness": 0.38,
+    "aoIntensity": 1
+  }
+}

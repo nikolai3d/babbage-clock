@@ -4,6 +4,11 @@ coverage/
 package-lock.json
 docs/reference/
 
+# Served verbatim, and generated: sample material folders (written by
+# scripts/generate-material-textures.mjs) and the KTX2 transcoder copied out of
+# `three` at build time. Reformatting them only creates diff churn.
+public/
+
 # Playwright output and committed image baselines.
 test-results/
 playwright-report/
