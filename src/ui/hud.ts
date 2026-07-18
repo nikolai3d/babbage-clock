@@ -29,6 +29,7 @@ import { LoadingScreen } from './loadingScreen.js';
 import { SettingsPanel } from './settingsPanel.js';
 import { describeTimeStatus } from './statusText.js';
 import { ToastRegion } from './toast.js';
+import { readoutStateText } from './readoutState.js';
 import { formatCountdown } from '../time/countdown.js';
 import type { LoadingTracker } from '../app/loading.js';
 import type { AppState, AppStore } from '../app/store.js';
@@ -68,6 +69,7 @@ export class Hud {
   private lastCountdown = '';
   private lastLabel = '';
   private lastStatusText = '';
+  private lastStateText = '';
   private lastElapsed: boolean | null = null;
   private lastSettingsOpen: boolean;
 
@@ -212,9 +214,14 @@ export class Hud {
 
     if (state.countdown.elapsed !== this.lastElapsed) {
       this.lastElapsed = state.countdown.elapsed;
-      this.stateEl.hidden = !state.countdown.elapsed;
-      this.stateEl.textContent = state.countdown.elapsed ? 'Time up' : '';
       this.root.classList.toggle('hud--expired', state.countdown.elapsed);
+    }
+
+    const stateText = readoutStateText(state.countdown, state.remaining);
+    if (stateText !== this.lastStateText) {
+      this.lastStateText = stateText;
+      this.stateEl.hidden = stateText === '';
+      this.stateEl.textContent = stateText;
     }
 
     const status = describeTimeStatus(state.timeStatus, { syncPending: state.syncPending });

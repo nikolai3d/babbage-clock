@@ -8,9 +8,14 @@ import {
   resolveQualityTier,
 } from './app/quality.js';
 import { Store } from './app/store.js';
-import { installTestApi, readTestHooks, resolveTimeSource } from './app/testHooks.js';
+import {
+  installTestApi,
+  presentationTimeStatus,
+  readTestHooks,
+  resolveTimeSource,
+} from './app/testHooks.js';
 import { buildShareUrl, readLaunchParams, writeAppParams } from './app/urlParams.js';
-import { ClockRenderer } from './render/renderer.js';
+import type { ClockRenderer } from './render/renderer.js';
 import {
   ENVIRONMENT_PRESETS,
   parseEnvironmentPreset,
@@ -60,7 +65,7 @@ const CONTEXT_RESTORE_GRACE_MS = 8_000;
  * `ui/` (how it is presented). This module is where UI intents become state
  * changes, because it is the only place that knows about all four.
  */
-function bootstrap(): void {
+async function bootstrap(): Promise<void> {
   const canvas = document.querySelector<HTMLCanvasElement>('#scene-canvas');
   const uiRoot = document.querySelector<HTMLElement>('#ui-root');
   if (!canvas || !uiRoot) throw new Error('Expected #scene-canvas and #ui-root in the document');
@@ -141,7 +146,14 @@ function bootstrap(): void {
         clockTask.done();
       });
   } else {
-    store.set({ syncPending: false });
+    // A hermetic run never syncs, so the strip would honestly warn about the
+    // device clock in every capture. `?mocksync` presents a healthy synced
+    // status instead — presentation only; the clock stays hermetic.
+    if (hooks.mockSync) {
+      store.set({ timeStatus: presentationTimeStatus(timeSource.now()), syncPending: false });
+    } else {
+      store.set({ syncPending: false });
+    }
     clockTask.done();
   }
 
@@ -176,11 +188,22 @@ function bootstrap(): void {
     renderer?.refresh();
   }
 
-  // A browser with no WebGL throws here rather than returning null, and that
-  // must not take the countdown down with it: everything below this point works
-  // with `renderer === null`, and the fallback view runs off the same store.
+  // A browser with no WebGL must not take the countdown down with it:
+  // everything below this point works with `renderer === null`, and the
+  // fallback view runs off the same store.
+  //
+  // The render layer — and three.js inside it, the biggest thing this app
+  // ships — is a dynamic import behind a WebGL2 probe. A client that cannot
+  // render never downloads a renderer: the probe uses a throwaway canvas (the
+  // real one must meet three.js with no context attached), and a null probe
+  // skips the fetch entirely rather than downloading half a megabyte to watch
+  // its constructor throw. The countdown works either way; three.js parse and
+  // fetch no longer sit in front of the readout on any path.
   let renderer: ClockRenderer | null = null;
+  const probeContext = document.createElement('canvas').getContext('webgl2');
   try {
+    if (probeContext === null) throw new Error('WebGL2 probe returned null');
+    const { ClockRenderer } = await import('./render/renderer.js');
     renderer = new ClockRenderer({
       canvas,
       store,
@@ -460,4 +483,9 @@ async function copyToClipboard(text: string): Promise<boolean> {
   }
 }
 
-bootstrap();
+bootstrap().catch((error: unknown) => {
+  // A failed bootstrap leaves a blank page with no signal otherwise. There is
+  // no UI to fall back to at this point, so the console is the honest option.
+  console.error('[main] bootstrap failed', error);
+  throw error;
+});

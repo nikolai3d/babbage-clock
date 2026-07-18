@@ -85,11 +85,16 @@ function strokesFor(digit: number, q: number): Stroke[] {
     case 5:
       return [
         {
+          // The bowl's sweep runs all the way to -190 deg so its round end cap
+          // lands back on the arc's own start, sealing the join. Stopping at
+          // -165 left a sliver of a gap between cap and start — invisible in
+          // 2D at text sizes, but as extruded relief it caught the light as a
+          // stray facet on the drum.
           path: [
             pt(0.24, 0.5),
             pt(-0.21, 0.5),
             pt(-0.235, 0.06),
-            ...arc(0, -0.18, 0.28, 0.3, 150, -165, q),
+            ...arc(0, -0.18, 0.28, 0.3, 150, -190, q),
           ],
         },
       ];

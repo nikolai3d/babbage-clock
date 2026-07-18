@@ -15,7 +15,8 @@
  *    `src/render/` do not import this module.
  */
 
-import type { CountdownParts } from '../time/countdown.js';
+import type { CountdownParts, RemainingTime } from '../time/countdown.js';
+import type { TrueTimeStatus } from '../time/trueTime.js';
 import type { CountdownTarget, TimeSource } from '../time/target.js';
 
 /** Canonical test-hook query-parameter names, kept beside the app's own. */
@@ -28,6 +29,8 @@ export const TEST_URL_PARAM = {
   noMotion: 'nomotion',
   /** Skips the network clock correction. */
   noSync: 'nosync',
+  /** Presents the hermetic clock as a healthy synced one. */
+  mockSync: 'mocksync',
   /** Installs `window.__clock`. */
   testApi: 'testApi',
 } as const;
@@ -59,6 +62,18 @@ export interface TestHooks {
    * contention to starve the page's own module loads.
    */
   readonly timeSync: boolean;
+  /**
+   * `true` only when `?mocksync` is set alongside a pinned or hermetic clock.
+   *
+   * A hermetic run (`?nosync`, or a pinned `?mockNow`) never syncs, so the
+   * status strip honestly reports "Device clock — may be inaccurate" — and
+   * every screenshot baseline and demo capture then carries a warning badge
+   * that production viewers never see. This presents the status of a healthy
+   * synced clock instead, so captures look like the site actually looks. It
+   * fakes the *presentation* only: `trueNow()` and the countdown are exactly
+   * as hermetic as without it.
+   */
+  readonly mockSync: boolean;
   /** Whether `window.__clock` should be installed. */
   readonly testApi: boolean;
 }
@@ -68,6 +83,7 @@ export const DEFAULT_TEST_HOOKS: TestHooks = {
   mockNowMode: 'frozen',
   motion: true,
   timeSync: true,
+  mockSync: false,
   testApi: false,
 };
 
@@ -122,7 +138,30 @@ export function readTestHooks(search: string): TestHooks {
     mockNowMode: parseMockNowMode(params.get(TEST_URL_PARAM.mockNowMode)),
     motion: !readFlag(params, TEST_URL_PARAM.noMotion),
     timeSync: !readFlag(params, TEST_URL_PARAM.noSync),
+    mockSync: readFlag(params, TEST_URL_PARAM.mockSync),
     testApi: readFlag(params, TEST_URL_PARAM.testApi),
+  };
+}
+
+/**
+ * The status a healthy just-synced clock would report. For `?mocksync`.
+ *
+ * The numbers are ordinary rather than perfect — a 12 ms offset with 25 ms of
+ * uncertainty is what a good sync over home broadband actually produces —
+ * so a capture shows the true quiet-dot presentation, not an implausible ideal
+ * that would mask a formatting bug in the status strip.
+ */
+export function presentationTimeStatus(nowMs: number): TrueTimeStatus {
+  return {
+    tier: 'ntp-lite',
+    sourceId: 'presentation',
+    offsetMs: 12,
+    uncertaintyMs: 25,
+    lastSyncMs: nowMs,
+    sampleCount: 5,
+    synced: true,
+    skewWarning: false,
+    degraded: false,
   };
 }
 
@@ -262,6 +301,7 @@ export interface StoreProbe {
     readonly sceneId: string;
     readonly target: CountdownTarget;
     readonly countdown: CountdownParts;
+    readonly remaining: RemainingTime;
     readonly hidden: boolean;
     readonly fps: number;
   };
@@ -280,6 +320,8 @@ export interface ClockTestApi {
   digits(): readonly number[];
   sceneId(): string;
   countdown(): CountdownParts;
+  /** What the rings actually display, including whether the hours are pinned. */
+  remaining(): RemainingTime;
   target(): CountdownTarget;
   renderer(): RendererState;
   /** Material bindings, look and texture accounting. */
@@ -322,6 +364,7 @@ export function installTestApi(
     digits: () => renderer.getDigits(),
     sceneId: () => store.get().sceneId,
     countdown: () => store.get().countdown,
+    remaining: () => store.get().remaining,
     target: () => store.get().target,
     renderer: () => renderer.getRenderState(),
     materials: () => renderer.getMaterialState(),

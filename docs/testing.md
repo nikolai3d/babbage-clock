@@ -30,15 +30,24 @@ CI job, because it needs a browser and takes longer.
    ```bash
    timeout 600 npm run test:e2e > /tmp/e2e.log 2>&1; tail -60 /tmp/e2e.log
    ```
-4. **Take your own port rather than clearing someone else's.** The default is
-   4173; `E2E_PORT` moves it. If several agents or checkouts are working in the
-   same repo at once, a blanket `pkill -f playwright` kills their in-flight runs
-   and the failures look exactly like flaky tests:
+4. **Never clear someone else's port or processes.** A blanket
+   `pkill -f playwright`, or killing whatever holds 4173, destroys the in-flight
+   runs of any other agent or worktree working in this repo — and the resulting
+   failures look exactly like flaky tests. Kill only what you started:
 
    ```bash
-   E2E_PORT=4291 npm run test:e2e            # your own port, nobody else's
-   lsof -ti:4291 -sTCP:LISTEN | xargs kill   # only if *your* run died
+   lsof -ti:"$E2E_PORT" -sTCP:LISTEN | xargs kill   # only if *your* run died
    ```
+
+   You no longer need to pick a port by hand. Outside CI the suite takes a
+   per-process port automatically (4174 + pid % 500); `E2E_PORT` still overrides
+   it, and CI stays on the fixed 4173.
+
+   That default is load-bearing, not tidiness. `webServer.reuseExistingServer` is
+   on outside CI, so two runs on one port do not fail — the second **attaches to
+   the first one's server and tests the first one's build**. Wrong code, green
+   result, nothing in the log to suggest it. A per-process port makes that
+   impossible.
 
    `npm run test:e2e:docker` sidesteps the question entirely, and is how CI runs.
 
@@ -227,6 +236,7 @@ is off unless its parameter is present**, so production behaviour is unchanged;
 | `?mockNowMode=advance`  | Starts pinned, then advances with real monotonic time (genuine ticking). |
 | `?nomotion=1`           | Disables camera damping, gear rotation and ring easing.                  |
 | `?nosync=1`             | Skips the network clock correction, for hermetic runs.                   |
+| `?mocksync=1`           | Presents the hermetic clock as healthily synced (see below).             |
 | `?testApi=1`            | Installs `window.__clock`.                                               |
 
 `?quality=low` and `?quality=high` are **not** test hooks — they are a real
@@ -253,6 +263,15 @@ as a page that never finishes booting. `gotoApp()` therefore sets `?nosync` by
 default. One spec (`degrades quietly when the time-sync services are
 unreachable`) deliberately opts back in with `noSync: false` to cover the real
 path.
+
+`?mocksync` exists because `?nosync` is honest to a fault: an unsynced clock
+really is running on the device clock, so the status strip warns about it — and
+every screenshot baseline and demo capture then carries a warning badge that a
+production viewer never sees. `?mocksync` presents the status of a healthy
+synced clock (ordinary numbers, not implausibly perfect ones) while leaving the
+clock exactly as hermetic as before. It fakes presentation only.
+`deterministicOptions()` sets it, so baselines double as production-faithful
+captures.
 
 `mockNow` is an adapter satisfying the existing `TimeSource` interface from
 `src/time/target.ts`, so it composes with whatever that module becomes.
@@ -314,6 +333,17 @@ git add e2e/__screenshots__
 **Always look at the new images before committing them.** The point of the
 baseline is to make an unintended visual change impossible to merge quietly; a
 blind `--update-snapshots` throws that away.
+
+**A stale-but-passing baseline is never refreshed.** Playwright only rewrites a
+snapshot when the comparison _fails_, so a visual change that lands under the
+diff tolerance leaves `--update-snapshots` keeping the old image — it happened
+once with a four-digit time change. When you know the frame changed, delete the
+PNGs first and let the run rewrite them from nothing:
+
+```bash
+rm -r e2e/__screenshots__
+npm run test:e2e:docker:update
+```
 
 Requirements: Docker running. The script picks the image tag from the installed
 `@playwright/test` version, mounts the repo, and shadows `node_modules` with a

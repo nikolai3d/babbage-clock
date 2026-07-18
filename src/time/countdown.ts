@@ -56,14 +56,27 @@ export function computeRemaining(targetEpochMs: number, nowMs: number): Remainin
   }
 
   const clamped = rawTotalSeconds > MAX_DISPLAY_SECONDS;
-  const totalSeconds = clamped ? MAX_DISPLAY_SECONDS : Math.max(0, rawTotalSeconds);
+
+  // Only the hours are pinned. Clamping the whole value to `MAX_DISPLAY_SECONDS`
+  // would make every component constant, which stops the mechanism dead: the
+  // default target is the next New Year, thousands of hours out, so the landing
+  // view showed a clock that never moved. Minutes and seconds keep running off
+  // the real remaining time, so the seconds ring ticks and carries at any
+  // distance and only the hundreds place waits.
+  //
+  // Continuous at the boundary: one second under the cap the hours are 999 by
+  // arithmetic anyway, so nothing jumps when the pin comes off.
+  const safeTotalSeconds = Math.max(0, rawTotalSeconds);
+  const minutes = Math.floor(safeTotalSeconds / 60) % 60;
+  const seconds = safeTotalSeconds % 60;
+  const hours = clamped ? MAX_DISPLAY_HOURS : Math.floor(safeTotalSeconds / 3600);
 
   return {
-    totalSeconds,
+    totalSeconds: hours * 3600 + minutes * 60 + seconds,
     rawTotalSeconds,
-    hours: Math.floor(totalSeconds / 3600),
-    minutes: Math.floor(totalSeconds / 60) % 60,
-    seconds: totalSeconds % 60,
+    hours,
+    minutes,
+    seconds,
     clamped,
     expired: false,
   };

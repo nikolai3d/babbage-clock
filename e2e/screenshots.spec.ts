@@ -47,6 +47,25 @@ test.describe('screenshots', () => {
   }
 
   /**
+   * The reading line, close up.
+   *
+   * The full-frame shots cannot guard the digits: a numeral is a few hundred
+   * pixels in a 1280x720 frame, so even a multi-digit error sits under any
+   * tolerance loose enough to survive runner-to-runner noise — four changed
+   * digits once passed unnoticed at 0.5%. In this crop the drums fill the
+   * frame, so a single changed digit is percent-scale and glyph-geometry
+   * defects (a sunk stroke, a stray facet) are visible at all.
+   */
+  test('reading line close-up', async ({ page }) => {
+    await gotoApp(page, deterministicOptions({}));
+    await settle(page);
+
+    await expect(page).toHaveScreenshot('reading-line.png', {
+      clip: { x: 460, y: 280, width: 380, height: 220 },
+    });
+  });
+
+  /**
    * A packing boundary: 9 days 23:59:59 of real remaining time, which the
    * seven rings read as `239:59:59` — hours, not days.
    *

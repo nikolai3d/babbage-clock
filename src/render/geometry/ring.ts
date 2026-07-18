@@ -17,8 +17,14 @@ import {
   validateRingGeometry,
   type NumeralLayoutOptions,
 } from '../../geometry/ringLayout.js';
-import { deformPositions, extrudeOutlines, mergeAndDispose } from './extrude.js';
+import {
+  deformPositions,
+  extrudeOutlines,
+  mergeAndDispose,
+  subdivideTrianglesY,
+} from './extrude.js';
 import { SURFACE_UNIT_METRES, latheUvToSurface } from './uv.js';
+import { subdivideOutlineY } from '../../geometry/subdivide.js';
 import type { Axis, RingConfig } from '../../scene/types.js';
 
 export interface RingBodyOptions {
@@ -126,11 +132,25 @@ export function createRingNumeralsGeometry(
     ...(options.arcSegments === undefined ? {} : { arcSegments: options.arcSegments }),
   };
 
+  // Glyph y becomes arc length when the glyph is bent onto the drum, and the
+  // bend is exact only at vertices — a segment spanning too much y becomes a
+  // chord sagging inside the drum's curve. Bound the sag to a small fraction
+  // of the relief so straight strokes track the surface as faithfully as the
+  // flattened arcs always did. (Full-height strokes used to sag ~2x the whole
+  // relief, which sank the middles of 1, 7 and 4 below the drum.)
+  const maxSag = relief * 0.08;
+  const maxBendAngle = 2 * Math.acos(Math.max(0, 1 - maxSag / radius));
+  const maxSpanY = radius * maxBendAngle;
+
   const parts: THREE.BufferGeometry[] = [];
   for (let index = 0; index < digits.length; index += 1) {
     const digit = digits[index]!;
-    const outlines = transformGlyph(digitGlyph(digit, glyphOptions), layout.glyphHeight);
-    const geometry = extrudeOutlines(outlines, { depth: relief });
+    const outlines = transformGlyph(digitGlyph(digit, glyphOptions), layout.glyphHeight).map(
+      (outline) => subdivideOutlineY(outline, maxSpanY),
+    );
+    // Outline subdivision bounds the walls; the triangle pass bounds the cap
+    // diagonals earcut keeps regardless of how finely the outline is divided.
+    const geometry = subdivideTrianglesY(extrudeOutlines(outlines, { depth: relief }), maxSpanY);
     const angle = digitAngle(index, digits.length, readingAngle);
 
     // Flat glyph -> cylinder: glyph width runs along the ring axis, glyph

@@ -349,23 +349,39 @@ describe('Mechanism — expiry', () => {
 });
 
 describe('Mechanism — the 999-hour cap', () => {
-  it('holds the rings still while the countdown is clamped', () => {
+  it('keeps ticking while the countdown is clamped', () => {
+    // This is the bug the cap used to cause: pinning the whole value left every
+    // ring motionless, and the default target is thousands of hours out, so the
+    // landing view was a clock that never moved. Only the hours pin now.
     const driver = new Driver();
     const farOut = MAX_DISPLAY_SECONDS + 5000;
     driver.at(farOut);
-    expect(driver.mechanism.digits).toEqual([9, 9, 9, 5, 9, 5, 9]);
+    expect(driver.mechanism.digits.slice(0, 3)).toEqual([9, 9, 9]);
 
     for (let i = 1; i <= 20; i += 1) driver.at(farOut - i);
 
-    expect(driver.events).toHaveLength(0);
+    expect(driver.events).toHaveLength(20);
+    expect(driver.events.every((event) => event.kind === 'tick')).toBe(true);
+    // The hundreds place stays pinned throughout; the seconds ring does not.
+    expect(driver.mechanism.digits.slice(0, 3)).toEqual([9, 9, 9]);
   });
 
-  it('resumes with an ordinary tick on the first second under the cap', () => {
+  it('re-spins once as the pin comes off, then ticks normally', () => {
     const driver = new Driver();
     driver.at(MAX_DISPLAY_SECONDS + 1);
-    // Still pinned at the cap: nothing moves.
-    expect(driver.at(MAX_DISPLAY_SECONDS)).toBeNull();
 
+    // One transition is unavoidable here and it is worth naming. A true
+    // countdown crossing this instant ticks 1000:00:00 -> 999:59:59: the hours
+    // decrement and the lower components wrap. With the hours pinned at 999 on
+    // both sides, only the wrap is visible, so four rings move at once and the
+    // mechanism reports a correction rather than a tick. It happens exactly
+    // once, 999 hours before the target, and reads as the mechanism spinning up
+    // to meet the value it can finally display.
+    const offThePin = driver.at(MAX_DISPLAY_SECONDS)!;
+    expect(offThePin.kind).toBe('seek');
+    expect(offThePin.digits).toEqual([9, 9, 9, 5, 9, 5, 9]);
+
+    // From there it is an ordinary countdown again.
     const next = driver.at(MAX_DISPLAY_SECONDS - 1)!;
     expect(next.kind).toBe('tick');
     expect(next.carryDepth).toBe(0);
@@ -374,15 +390,68 @@ describe('Mechanism — the 999-hour cap', () => {
 });
 
 describe('Mechanism — corrections', () => {
-  it('seeks the short way round after a jump, and never spins', () => {
+  it('takes the short way round for a small correction, without spinning', () => {
     const driver = new Driver();
     driver.at(3661);
-    const event = driver.at(999)!;
+    // A clock re-sync nudging the reading by a couple of seconds. This has to
+    // stay unobtrusive: spinning the drum every time an NTP offset moved would
+    // be absurd, and re-syncs happen on every tab focus.
+    const event = driver.at(3663)!;
 
     expect(event.kind).toBe('seek');
+    expect(event.motions.length).toBeLessThan(3);
     for (const motion of event.motions) {
       expect(Math.abs(motion.deltaAngle)).toBeLessThanOrEqual(Math.PI + 1e-9);
     }
+  });
+
+  it('spins up and settles when most of the readout changes at once', () => {
+    const driver = new Driver();
+    driver.at(3661);
+    // What a viewer applying a new target looks like: the reading does not
+    // creep, it is replaced, and the drums should travel to it rather than
+    // teleporting.
+    const event = driver.at(999)!;
+
+    expect(event.kind).toBe('seek');
+    expect(event.motions.length).toBeGreaterThanOrEqual(3);
+    for (const motion of event.motions) {
+      expect(Math.abs(motion.deltaAngle)).toBeGreaterThan(Math.PI * 2);
+    }
+  });
+
+  it('spins as one movement, not seven races', () => {
+    const driver = new Driver();
+    driver.at(3661);
+    const event = driver.at(999)!;
+    expect(event.durationMs).toBeGreaterThan(0);
+    const start = event.atMs;
+
+    // Sampled without feeding new input, so only the animation advances.
+    // Half way through, every ring in the event is still travelling...
+    const midway = driver.sample(start + event.durationMs / 2);
+    for (const motion of event.motions) {
+      const resting = ringAngleForDigit(motion.toDigit, DIGITS_PER_RING);
+      expect(Math.abs(midway.ringAngles[motion.ring]! - resting)).toBeGreaterThan(1e-6);
+    }
+
+    // ...and they all arrive together, on the one shared duration.
+    const after = driver.sample(start + event.durationMs + 1);
+    for (const motion of event.motions) {
+      const resting = ringAngleForDigit(motion.toDigit, DIGITS_PER_RING);
+      expect(after.ringAngles[motion.ring]!).toBeCloseTo(resting, 6);
+    }
+  });
+
+  it('never spins while motion is off', () => {
+    const driver = new Driver({ motion: false });
+    driver.at(3661);
+    const event = driver.at(999)!;
+
+    // `?nomotion=1` and prefers-reduced-motion share this switch, so a spin
+    // must collapse to a snap rather than becoming a long unskippable turn.
+    expect(event.durationMs).toBe(0);
+    expect(driver.mechanism.digits).toEqual(event.digits);
   });
 
   it('lets an in-flight tick finish instead of re-planning it every frame', () => {

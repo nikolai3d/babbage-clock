@@ -36,9 +36,22 @@ export default defineConfig({
     target: 'es2022',
     outDir: 'dist',
     sourcemap: true,
-    // three.js alone is ~500 kB minified; the default warning threshold is
-    // noise here. Revisit if the app bundle grows independently of three.
-    chunkSizeWarningLimit: 900,
+    // The render layer is a dynamic import behind a WebGL2 probe (see
+    // main.ts), so three.js is already out of the entry chunk. Splitting it
+    // from the app's own render code as well means a rendering change does not
+    // re-download the ~500 kB of three.js that did not change — the vendor
+    // chunk's hash is stable until the three version moves.
+    rollupOptions: {
+      output: {
+        manualChunks(id: string) {
+          if (id.includes('node_modules/three/')) return 'three';
+          return undefined;
+        },
+      },
+    },
+    // With three.js in its own chunk nothing should come near this; the limit
+    // exists so the next accidental import into the entry chunk is loud.
+    chunkSizeWarningLimit: 600,
   },
   test: {
     // Unit tests are deliberately environment-free: time math and scene
