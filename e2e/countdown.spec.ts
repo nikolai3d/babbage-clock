@@ -68,7 +68,14 @@ test.describe('countdown readout', () => {
 
     // Frames keep being drawn; only the clock is pinned. This is what makes
     // screenshots reproducible without stopping the renderer.
-    await waitForFrames(page, 30);
+    //
+    // Ten rather than thirty since image-based lighting landed: a frame costs
+    // roughly three times as much under SwiftShader, and two CI workers share
+    // one runner between them, so thirty no longer fits the 45 s test timeout.
+    // Both assertions below are unchanged, and ten frames is still several
+    // seconds of continuous rendering — more wall-clock observation than thirty
+    // bought on the cheaper renderer this number was picked for.
+    await waitForFrames(page, 10);
 
     expect(await readDigits(page)).toEqual(before);
     expect(await page.locator(SELECTOR.countdown).textContent()).toBe(textBefore);

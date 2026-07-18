@@ -248,24 +248,25 @@ export async function openSettings(page: Page): Promise<void> {
 
 /** Waits until `count` further frames have been drawn since now. */
 /**
- * The budget is a liveness bound, not a performance assertion.
+ * Waits until `count` further frames have been drawn since now.
  *
- * Image-based lighting costs about 3x per frame under SwiftShader — measured at
- * ~22 fps with `?mood=none` against ~7 fps with an environment map, because
- * every PBR fragment gains a prefiltered cube lookup and a CPU rasteriser pays
- * for it in full. Three parallel workers on a two-core runner then share that
- * between them, which is enough to push 30 frames past 15 seconds.
+ * The budget is a liveness bound, not a performance assertion, and it is kept
+ * just under the 45 s per-test timeout on purpose: a poll that outlives its
+ * test reports Playwright's opaque timeout instead of "renderer stopped
+ * advancing", which is the message that actually says what went wrong.
  *
- * Raising the ceiling rather than lowering the frame count keeps every caller's
- * assertion exactly as strong: the renderer must still advance the frames it
- * was asked for, and a genuinely stalled loop still fails.
+ * Frames are not cheap under SwiftShader. Image-based lighting roughly triples
+ * the cost of one — measured at ~22 fps with `?mood=none` against ~7 fps with
+ * an environment map, because every PBR fragment gains a prefiltered cube
+ * lookup and a CPU rasteriser pays for it in full — and a two-core CI runner
+ * splits that between two workers again. Ask for frames in single figures.
  */
 export async function waitForFrames(page: Page, count: number): Promise<void> {
   const start = (await readRendererState(page)).frames;
   await expect
     .poll(async () => (await readRendererState(page)).frames, {
       message: `renderer stopped advancing after ${start} frames`,
-      timeout: 45_000,
+      timeout: 30_000,
     })
     .toBeGreaterThanOrEqual(start + count);
 }
