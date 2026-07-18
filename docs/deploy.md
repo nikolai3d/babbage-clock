@@ -42,6 +42,13 @@ Two conditions, both in `ci.yml`:
 half-finished publish is how a site ends up serving a partial artifact, so
 overlapping deploys queue instead of racing.
 
+Note how that interacts with `ci.yml`'s own `cancel-in-progress: true`: two
+pushes to `main` in quick succession cancel the _older whole run_, deploy job
+included, and the newer commit wins. That is the behaviour you want for pushes.
+The `publish` group is what protects the case the CI-level rule does not — a
+rollback re-run of an old commit overlapping a fresh push, since those are
+separate workflow runs and neither cancels the other.
+
 ### The smoke test is the acceptance test
 
 A workflow file that _looks_ right proves nothing. After `deploy-pages`
