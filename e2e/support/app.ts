@@ -33,6 +33,9 @@ export const SELECTOR = {
   targetApply: '#target-apply',
   tzInput: '#tz-input',
   tzListbox: '#tz-input-listbox',
+  /** Clock mode's reading-zone picker — the target form's replacement. */
+  clockZoneInput: '#clock-zone-input',
+  clockZoneListbox: '#clock-zone-input-listbox',
   shareButton: '#share-button',
   toastRegion: '.toast-region',
   /** The throttled live region that mirrors the countdown as text. */

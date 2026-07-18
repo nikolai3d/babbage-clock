@@ -9,6 +9,7 @@ import {
   resolveCountdownTarget,
   resolveTarget,
   resolveTargetFromParams,
+  retargetZone,
   systemTimeSource,
   wallClockInHours,
 } from './target.js';
@@ -291,6 +292,74 @@ describe('defaultTarget', () => {
 
     expect(target.label).toBe('New Year 2028');
     expect(target.atMs).toBe(Date.UTC(2028, 0, 1, 0, 0, 0));
+  });
+});
+
+describe('retargetZone', () => {
+  const base = resolveTarget({
+    value: '2027-01-01T00:00:00',
+    zone: 'UTC',
+    nowMs: NOW,
+    viewerZone: 'UTC',
+  });
+
+  it('keeps the instant and re-anchors the echoes in the new zone', () => {
+    const moved = retargetZone(base, 'Asia/Tokyo', NOW, 'UTC');
+
+    expect(moved.atMs).toBe(base.atMs);
+    expect(moved.zone).toBe('Asia/Tokyo');
+    expect(moved.enteredZone.formatted).toBe('2027-01-01 09:00:00 +09:00 (Asia/Tokyo)');
+    expect(moved.viewerZone.formatted).toBe('2027-01-01 00:00:00 +00:00 (UTC)');
+    expect(moved.disambiguation).toBe('none');
+    expect(moved.notes).toEqual([]);
+  });
+
+  it('preserves the exact instant through a DST overlap, where a wall-clock round trip would not', () => {
+    // 2026-11-01T06:30Z is the *second* 01:30 in New York (offset -05:00).
+    // Re-resolving the wall clock would take the earlier -04:00 instant; the
+    // retarget must not move the epoch at all.
+    const later = resolveTarget({ value: '2026-11-01T06:30:00Z', nowMs: NOW, viewerZone: 'UTC' });
+    const moved = retargetZone(later, 'America/New_York', NOW, 'UTC');
+
+    expect(moved.atMs).toBe(later.atMs);
+    expect(moved.enteredZone.wallClock).toBe('2026-11-01T01:30:00');
+    expect(moved.enteredZone.offset).toBe('-05:00');
+  });
+
+  it('maps the local aliases to the viewer zone', () => {
+    const moved = retargetZone(base, 'local', NOW, 'Europe/Paris');
+
+    expect(moved.zone).toBe('Europe/Paris');
+    expect(moved.atMs).toBe(base.atMs);
+  });
+
+  it('accepts a fixed offset as the new zone', () => {
+    const moved = retargetZone(base, '+05:30', NOW, 'UTC');
+
+    expect(moved.atMs).toBe(base.atMs);
+    expect(moved.zone).toBe('+05:30');
+    expect(moved.enteredZone.wallClock).toBe('2027-01-01T05:30:00');
+  });
+
+  it('recomputes expiry against the given now', () => {
+    const past = resolveTarget({ value: '2026-01-01T00:00:00Z', nowMs: NOW, viewerZone: 'UTC' });
+    const moved = retargetZone(past, 'Asia/Tokyo', NOW, 'UTC');
+
+    expect(moved.expired).toBe(true);
+    expect(moved.notes).toContain('This target is in the past.');
+  });
+
+  it('keeps how the target was chosen but regenerates the label', () => {
+    const fresh = defaultTarget(NOW, 'UTC');
+    const moved = retargetZone(fresh, 'Asia/Tokyo', NOW, 'UTC');
+
+    expect(moved.source).toBe('default-new-year');
+    // "New Year 2027" would read wrong against a 09:00 wall clock.
+    expect(moved.label).toBe('2027-01-01 09:00:00 (Asia/Tokyo)');
+  });
+
+  it('rejects an unusable zone with a TargetError', () => {
+    expect(() => retargetZone(base, 'Not/AZone', NOW, 'UTC')).toThrow(TargetError);
   });
 });
 

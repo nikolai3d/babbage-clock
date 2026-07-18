@@ -38,7 +38,12 @@ import type { SettingsPanelOptions } from './settingsPanel.js';
 
 export interface HudOptions extends Pick<
   SettingsPanelOptions,
-  'onSubmitTarget' | 'onResetTarget' | 'shareUrl' | 'onCopyLink' | 'quickTargets'
+  | 'onSubmitTarget'
+  | 'onSubmitClockZone'
+  | 'onResetTarget'
+  | 'shareUrl'
+  | 'onCopyLink'
+  | 'quickTargets'
 > {
   readonly container: HTMLElement;
   readonly store: AppStore;
@@ -137,6 +142,7 @@ export class Hud {
       controls: options.controls,
       viewerZone: options.viewerZone,
       onSubmitTarget: options.onSubmitTarget,
+      onSubmitClockZone: options.onSubmitClockZone,
       quickTargets: options.quickTargets,
       onResetTarget: options.onResetTarget,
       shareUrl: options.shareUrl,

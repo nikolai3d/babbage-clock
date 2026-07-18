@@ -36,6 +36,7 @@ import {
   nextMidnightWallClock,
   resolveTarget,
   resolveTargetFromParams,
+  retargetZone,
   viewerTimeZone,
   wallClockInHours,
 } from './time/target.js';
@@ -538,6 +539,22 @@ async function bootstrap(): Promise<void> {
           error instanceof TargetError
             ? error.message
             : 'That date and time could not be understood.';
+        return { ok: false, message };
+      }
+    },
+    onSubmitClockZone: (zone) => {
+      try {
+        // The instant is deliberately preserved: in clock mode the viewer is
+        // choosing what zone the rings read, not moving the countdown target.
+        // `writeAppParams` then re-encodes `?tz=` (and the target's wall clock
+        // in the new zone), so "Tokyo time" stays a shareable link.
+        const next = retargetZone(store.get().target, zone, timeSource.now(), viewerZone);
+        store.set({ target: next });
+        writeAppParams(shareState());
+        return { ok: true };
+      } catch (error) {
+        const message =
+          error instanceof TargetError ? error.message : 'That time zone could not be used.';
         return { ok: false, message };
       }
     },

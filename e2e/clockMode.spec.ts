@@ -1,5 +1,12 @@
 import { expect, test } from '@playwright/test';
-import { PINNED_NOW, deterministicOptions, gotoApp, readDigits } from './support/app.js';
+import {
+  PINNED_NOW,
+  SELECTOR,
+  deterministicOptions,
+  gotoApp,
+  openSettings,
+  readDigits,
+} from './support/app.js';
 
 /**
  * Clock mode. `PINNED_NOW` is 2026-06-15T12:00:00Z and the container runs in
@@ -58,4 +65,33 @@ test('clock mode hides the countdown affordances and shows the time', async ({ p
   await page.locator('#settings-toggle').click();
   await expect(page.locator('#target-form')).toBeHidden();
   await expect(page.locator('#target-echo')).toBeHidden();
+});
+
+test('the drawer offers a zone control in clock mode, and it moves the reading', async ({
+  page,
+}) => {
+  await gotoApp(page, { ...deterministicOptions({ scene: 'copper-padlock-clock' }) });
+  // 12:00 UTC on the rings before any change.
+  expect(await readDigits(page)).toEqual([1, 2, 0, 0, 0, 0]);
+
+  await openSettings(page);
+  // The zone control stands in for the hidden target form.
+  await expect(page.locator('#target-form')).toBeHidden();
+  const zone = page.locator(SELECTOR.clockZoneInput);
+  await expect(zone).toBeVisible();
+
+  // Search and commit through the combobox.
+  await zone.click();
+  await zone.fill('Tokyo');
+  await page.locator(`${SELECTOR.clockZoneListbox} [data-zone="Asia/Tokyo"]`).click();
+  await expect(zone).toHaveValue('Asia/Tokyo');
+
+  // The rings and the HUD follow within a tick: 12:00 UTC is 21:00 in Tokyo.
+  await expect.poll(async () => (await readDigits(page)).join('')).toBe('210000');
+  await expect(page.locator('#target-label')).toHaveText('Asia/Tokyo time');
+
+  // The change is shareable — `?tz=` carries the zone — and the countdown
+  // target kept its instant: midnight UTC re-anchored as 09:00 Tokyo.
+  expect(page.url()).toContain('tz=Asia/Tokyo');
+  expect(page.url()).toContain('target=2027-01-01T09:00:00');
 });

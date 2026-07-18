@@ -244,6 +244,45 @@ export function resolveTargetFromParams(
 }
 
 /**
+ * The same target instant re-anchored in another zone.
+ *
+ * Written for the clock-mode zone control: the viewer is changing the zone the
+ * rings *read the current time in*, not the moment being counted down to, so
+ * `atMs` is carried over exactly. Re-resolving the wall clock instead would
+ * silently move the instant when it falls in a DST overlap (`compatible`
+ * disambiguation always takes the earlier of the pair). The echoes, label,
+ * expiry and notes are recomputed for the new zone; the label is regenerated
+ * rather than kept, because a label like `New Year` reads wrong against a wall
+ * clock that is no longer midnight.
+ *
+ * @throws {TargetError} when the zone cannot be used.
+ */
+export function retargetZone(
+  target: ResolvedTarget,
+  zone: string,
+  nowMs: number,
+  viewerZone?: string,
+): ResolvedTarget {
+  const fallback = normalizeZone(viewerZone, viewerTimeZone());
+  const zoneId = normalizeZone(zone, fallback);
+  const zoned = inZone(
+    Temporal.Instant.fromEpochMilliseconds(target.atMs).toZonedDateTimeISO('UTC'),
+    zoneId,
+  );
+  // `toString` yields `2027-01-01T08:00:00+09:00[Asia/Tokyo]` — self-describing,
+  // so `resolveTarget` takes the instant whole: no disambiguation, no notes
+  // about an offset overriding the zone, and the epoch survives to the digit.
+  // Default precision on purpose: pinning `smallestUnit` would truncate a
+  // target that carries sub-second milliseconds.
+  return resolveTarget({
+    value: zoned.toString(),
+    source: target.source,
+    nowMs,
+    viewerZone,
+  });
+}
+
+/**
  * Owner decision: with no `?target=`, count down to the next New Year in the
  * viewer's zone, so the landing page is never blank.
  */
