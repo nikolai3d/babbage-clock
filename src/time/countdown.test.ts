@@ -12,6 +12,7 @@ import {
   countdownDigits,
   formatCountdown,
   formatRemaining,
+  remainingDigits,
 } from './countdown.js';
 import { nextNewYear, parseTargetParam, resolveCountdownTarget } from './target.js';
 
@@ -91,6 +92,50 @@ describe('countdownDigits', () => {
       expect(digit).toBeGreaterThanOrEqual(0);
       expect(digit).toBeLessThanOrEqual(9);
     }
+  });
+});
+
+describe('remainingDigits', () => {
+  const at = (secondsLeft: number): ReturnType<typeof computeRemaining> =>
+    computeRemaining(secondsLeft * MS_PER_SECOND, 0);
+
+  it('reads HHH:MM:SS across seven rings', () => {
+    expect(remainingDigits(at(3661), 7)).toEqual([0, 0, 1, 0, 1, 0, 1]);
+  });
+
+  it('pins at the cap instead of overflowing the rings — the 999-hour clamp', () => {
+    // The bug this exists to close: with a days-based packing, a target 4,000
+    // hours out put a `4` on the leading ring and the readout was a lie.
+    const farOut = computeRemaining(5000 * MS_PER_HOUR, 0);
+    expect(farOut.clamped).toBe(true);
+    expect(remainingDigits(farOut, 7)).toEqual([9, 9, 9, 5, 9, 5, 9]);
+  });
+
+  it('keeps the least significant digits when rings are scarce', () => {
+    // Five rings show H:MM:SS's tail, so seconds still land on the right.
+    expect(remainingDigits(at(3661), 5)).toEqual([1, 0, 1, 0, 1]);
+  });
+
+  it('zero-pads on the left when rings are plentiful', () => {
+    expect(remainingDigits(at(61), 9)).toEqual([0, 0, 0, 0, 0, 0, 1, 0, 1]);
+  });
+
+  it('is all zeros once the target has passed', () => {
+    expect(remainingDigits(computeRemaining(0, 1000), 7)).toEqual([0, 0, 0, 0, 0, 0, 0]);
+  });
+
+  it('only ever produces single digits', () => {
+    for (const secondsLeft of [0, 1, 59, 60, 3599, 3600, 359_999, MAX_DISPLAY_SECONDS]) {
+      for (const digit of remainingDigits(at(secondsLeft), 7)) {
+        expect(Number.isInteger(digit)).toBe(true);
+        expect(digit).toBeGreaterThanOrEqual(0);
+        expect(digit).toBeLessThanOrEqual(9);
+      }
+    }
+  });
+
+  it('returns nothing for a scene with no rings', () => {
+    expect(remainingDigits(at(10), 0)).toEqual([]);
   });
 });
 
