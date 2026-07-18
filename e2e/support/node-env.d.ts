@@ -32,3 +32,19 @@ declare const process: {
   readonly pid: number;
   cwd(): string;
 };
+
+/**
+ * Just enough of pngjs for the contrast spec. Its published typings live in
+ * `@types/pngjs`, which depends on `@types/node` — installing that re-types
+ * `setTimeout` across `src/` (see the `process` note above), so the four
+ * symbols the spec uses are declared here instead.
+ */
+declare module 'pngjs' {
+  export class PNG {
+    static sync: { read(buffer: Uint8Array): PNG };
+    width: number;
+    height: number;
+    /** RGBA, row-major, 4 bytes per pixel. */
+    data: Uint8Array;
+  }
+}

@@ -69,6 +69,8 @@ export interface AppOptions {
   readonly noMotion?: boolean;
   /** Presents the hermetic clock as healthily synced. See `?mocksync`. */
   readonly mockSync?: boolean;
+  /** Lighting mood for `?mood=`. Omit for the scene's own. */
+  readonly mood?: string;
   /** Viewer backdrop override for `?bg=`. */
   readonly background?: 'panorama' | 'backdrop';
   /**
@@ -105,6 +107,7 @@ export interface AppOptions {
 export function appUrl(options: AppOptions = {}): string {
   const params = new URLSearchParams();
   if (options.scene !== undefined) params.set('scene', options.scene);
+  if (options.mood !== undefined) params.set('mood', options.mood);
   if (options.target !== undefined) params.set('target', options.target);
   if (options.mockNow !== undefined) params.set('mockNow', String(options.mockNow));
   if (options.mockNowMode !== undefined) params.set('mockNowMode', options.mockNowMode);
