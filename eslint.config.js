@@ -10,6 +10,13 @@ export default tseslint.config(
       'node_modules/**',
       'coverage/**',
       '.beads/**',
+      // Agent scratch space. Worktrees under here are full checkouts of this
+      // repo, so without this ESLint lints every parallel branch as well as
+      // this one — and races their build output, failing on files that vanish
+      // mid-run. Invisible in CI, which has no worktrees.
+      '.claude/**',
+      '.codex/**',
+      '.agents/**',
       // Playwright output: baselines, videos, traces and diffs.
       'e2e/__screenshots__/**',
       'test-results/**',

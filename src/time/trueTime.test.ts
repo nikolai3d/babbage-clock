@@ -345,6 +345,23 @@ describe('fallback chain', () => {
 });
 
 describe('monotonic progression', () => {
+  it('always returns an integral epoch, whatever the monotonic source reports', async () => {
+    const world = new FakeWorld();
+    const clock = makeClock(world);
+    await clock.init();
+
+    // Temporal rejects fractional epochs with `Expected finite integer`, which
+    // blanked the page on ~3% of loads when `now()` leaked sub-millisecond
+    // precision from `performance.now()`.
+    for (const step of [0.1, 0.25, 0.5, 0.75, 1.3, 7.9999, 0.0001]) {
+      world.advance(step);
+      const value = clock.now();
+      expect(Number.isInteger(value)).toBe(true);
+    }
+
+    clock.dispose();
+  });
+
   it('ignores the OS clock jumping forward mid-session', async () => {
     const world = new FakeWorld();
     const clock = makeClock(world);
