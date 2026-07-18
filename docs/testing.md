@@ -324,6 +324,17 @@ git add e2e/__screenshots__
 baseline is to make an unintended visual change impossible to merge quietly; a
 blind `--update-snapshots` throws that away.
 
+**A stale-but-passing baseline is never refreshed.** Playwright only rewrites a
+snapshot when the comparison _fails_, so a visual change that lands under the
+diff tolerance leaves `--update-snapshots` keeping the old image — it happened
+once with a four-digit time change. When you know the frame changed, delete the
+PNGs first and let the run rewrite them from nothing:
+
+```bash
+rm -r e2e/__screenshots__
+npm run test:e2e:docker:update
+```
+
 Requirements: Docker running. The script picks the image tag from the installed
 `@playwright/test` version, mounts the repo, and shadows `node_modules` with a
 named volume so it never overwrites your host's macOS binaries.
