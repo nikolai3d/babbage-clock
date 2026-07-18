@@ -28,6 +28,7 @@ export const SELECTOR = {
   settingsClose: '#settings-close',
   sceneSelect: '#scene-select',
   moodSelect: '#mood-select',
+  qualitySelect: '#quality-select',
   targetInput: '#target-input',
   targetApply: '#target-apply',
   tzInput: '#tz-input',

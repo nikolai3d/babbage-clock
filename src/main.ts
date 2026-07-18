@@ -263,7 +263,11 @@ function bootstrap(): void {
       hint: 'Automatic follows the device. Lower caps resolution and frame rate, and draws a plain backdrop.',
       options: [
         { value: 'auto', label: 'Automatic', hint: 'Chosen from screen, cores and pointer type.' },
-        { value: 'high', label: 'Higher', hint: 'Full resolution, panorama backdrop, uncapped frames.' },
+        {
+          value: 'high',
+          label: 'Higher',
+          hint: 'Full resolution, panorama backdrop, uncapped frames.',
+        },
         { value: 'low', label: 'Lower', hint: 'Kinder to a phone battery and a warm laptop.' },
       ],
       read: (state) => state.quality,

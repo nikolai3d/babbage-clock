@@ -85,6 +85,78 @@ undo by accident:
 
 See [deploy.md](deploy.md) for the base-path rules this exists to police.
 
+### The mobile project
+
+`playwright.config.ts` defines two projects:
+
+| Project           | Viewport       | Runs                               |
+| ----------------- | -------------- | ---------------------------------- |
+| `chromium`        | 1280x720       | everything except `mobile.spec.ts` |
+| `mobile-portrait` | 412x915, touch | `mobile.spec.ts` only              |
+
+```bash
+npm run test:e2e -- --project=mobile-portrait
+```
+
+The split is deliberate and the second half of it matters more than the first:
+**the mobile project runs one spec, not the whole suite again.** E2E runs on a
+two-core runner where image-based lighting already makes a frame expensive, so
+re-running boot, scene switching and time assertions at a second viewport would
+roughly double the job to re-prove things that do not depend on the viewport.
+`mobile.spec.ts` covers only what does: the aspect-aware framing, the bottom
+sheet, touch orbit and pinch, the automatic quality tier, and one portrait
+baseline.
+
+Two details of the mobile context are load-bearing:
+
+- `deviceScaleFactor` is pinned to **1**, not the Pixel 7's real 2.625. A
+  baseline is compared pixel for pixel, and a 2.6x image is seven times the
+  pixels to rasterise, diff and store. What the quality tier does with a high
+  device pixel ratio is a unit test (`src/app/quality.test.ts`) and needs no
+  browser.
+- `isMobile` and `hasTouch` are on, which is what gives the touch event model
+  and `(pointer: coarse)`. Touch drags go in through CDP
+  (`Input.dispatchTouchEvent`) because Playwright's `touchscreen` can only tap.
+
+### What CI cannot tell you: the real-device checklist
+
+**Nothing below has been verified on hardware.** Chromium's device emulation
+gives a viewport, the touch event model and the pointer media queries; it does
+not give a mobile GPU, a thermal envelope, iOS's memory ceiling or WebKit. The
+e2e run is on SwiftShader on a Linux runner, which is a different machine in
+every way that mobile performance depends on.
+
+Run this by hand before claiming the site is good on phones:
+
+**Android (Chrome), iOS (Safari) — both, in portrait and landscape:**
+
+- [ ] The countdown reading is legible on first paint, with no interaction and
+      no rotation.
+- [ ] One finger orbits the mechanism; two fingers pinch-zoom and stay within
+      the scene's framing limits.
+- [ ] A swipe that starts on the settings sheet scrolls the sheet, and a swipe
+      that starts anywhere else does not scroll or bounce the page.
+- [ ] The settings sheet never covers the readout, and its bottom row of
+      controls sits above the home indicator.
+- [ ] Focusing the date field does not zoom the page (the 16px input font).
+- [ ] Rotating the device re-frames the mechanism; rotating it after orbiting
+      by hand leaves the viewer's own pose alone.
+- [ ] `?quality=high` and `?quality=low` visibly differ, and the drawer's
+      Render quality control switches between them without a reload.
+
+**iOS specifically — the two failure modes that do not reproduce anywhere else:**
+
+- [ ] Leave the tab open for ten minutes on a mid-range phone: the device
+      should stay warm rather than hot, and the frame rate should hold. The low
+      tier caps frames at 30 for exactly this.
+- [ ] Switch away to three or four other apps and come back. iOS kills greedy
+      WebGL tabs, and a killed context must come back through the
+      `webglcontextrestored` path with the quality tier and framing re-applied
+      (`ClockRenderer.refresh`), not as a blank canvas.
+- [ ] Check memory in Safari's Web Inspector while switching lighting moods
+      repeatedly; the prefiltered environment maps are the largest allocation
+      the app makes.
+
 ### Debugging a failure
 
 Failures leave everything you need under `test-results/<test-name>/`:
@@ -149,6 +221,10 @@ is off unless its parameter is present**, so production behaviour is unchanged;
 | `?nomotion=1`           | Disables camera damping, gear rotation and ring easing.                  |
 | `?nosync=1`             | Skips the network clock correction, for hermetic runs.                   |
 | `?testApi=1`            | Installs `window.__clock`.                                               |
+
+`?quality=low` and `?quality=high` are **not** test hooks — they are a real
+viewer-facing setting that pins the render tier, documented here because the
+mobile spec uses them. Anything else, including its absence, means `auto`.
 
 The hooks are orthogonal: setting one never implies another, and a unit test
 asserts it.

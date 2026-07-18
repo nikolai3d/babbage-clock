@@ -136,7 +136,12 @@ export class EnvironmentController {
   private disposed = false;
   private panoramaBackground: boolean;
 
-  constructor({ renderer, scene, library, panoramaBackground = true }: EnvironmentControllerOptions) {
+  constructor({
+    renderer,
+    scene,
+    library,
+    panoramaBackground = true,
+  }: EnvironmentControllerOptions) {
     this.renderer = renderer;
     this.scene = scene;
     this.library = library;

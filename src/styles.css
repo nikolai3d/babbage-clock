@@ -130,8 +130,7 @@ body {
    * on a desktop — `max()` keeps the design's own breathing room as the floor
    * rather than letting a zero inset shrink it.
    */
-  padding:
-    max(clamp(0.75rem, 2.2vw, 1.5rem), env(safe-area-inset-top))
+  padding: max(clamp(0.75rem, 2.2vw, 1.5rem), env(safe-area-inset-top))
     max(clamp(0.75rem, 2.2vw, 1.5rem), env(safe-area-inset-right))
     max(clamp(0.75rem, 2.2vw, 1.5rem), env(safe-area-inset-bottom))
     max(clamp(0.75rem, 2.2vw, 1.5rem), env(safe-area-inset-left));

@@ -19,6 +19,7 @@ src/
     urlParams.ts         ?scene= / ?target= / ?tz= / ?mood= reading, writing, sharing
     loading.ts           weighted boot-progress aggregation for the loading screen
     motion.ts            the one motion switch: reduced-motion + ?nomotion
+    quality.ts           device profile -> render tier; ?quality= and the override
     countdownTicker.ts   advances the countdown when there is no render loop
   geometry/              ── pure geometry maths, no three.js ──
     types.ts             Point2/Contour/Outline plus small 2D helpers
@@ -33,6 +34,7 @@ src/
   scene/                 ── no three.js imports anywhere below this line ──
     types.ts             SceneDefinition and everything it contains
     validate.ts          structural checks for scene definitions
+    framing.ts           CameraConfig + viewport aspect -> the pose to use
     registry.ts          SceneRegistry: lookup, listing, ?scene= resolution
     materialHelpers.ts   terse constructors for material bindings
     scenes/
@@ -126,8 +128,59 @@ Nothing in that path integrates a frame delta: every transform is a function of
 the instant, which is what keeps the display correct across tab sleeps and clock
 re-syncs. The delta is used for the fps readout and nothing else.
 
-The loop pauses when `document.hidden` and resumes on `visibilitychange`.
-Device pixel ratio is capped at 2.
+The loop pauses when `document.hidden` and resumes on `visibilitychange`. That
+is the battery behaviour a backgrounded tab depends on, and `e2e/boot.spec.ts`
+asserts it rather than trusting it.
+
+## Framing and quality
+
+Two decisions the renderer makes for itself, both from data, both pure enough to
+unit-test without a GPU.
+
+### Aspect-aware framing (`scene/framing.ts`)
+
+A `CameraConfig` is authored while looking at a 16:9 frame. A portrait phone
+keeps the same _vertical_ field of view and collapses the horizontal one, so a
+pose that comfortably contains the mechanism on a desktop cuts the ends off the
+ring stack on a phone — and the ring stack is the readout.
+
+`frameForAspect` re-derives the distance:
+
+1. It reads the author's intended tightness off the authored pose, as a multiple
+   of the exact fit at the reference aspect. At 16:9 it therefore reproduces the
+   authored numbers exactly, and a scene deliberately framed loose stays loose.
+2. At any aspect wide enough to hold the whole mechanism, nothing moves.
+3. At a narrower one it pulls back only as far as keeping the **rings** in frame
+   requires, and lets the case run off the edges. Fitting the whole case into a
+   portrait frame would shrink the numerals to nothing, which is the opposite of
+   the point.
+
+Only the distance changes; the authored view direction is the composition and is
+left alone. The content radius is measured off the built scene graph, so a scene
+that grows a part reframes itself, and a new scene inherits all of this without
+knowing the module exists.
+
+The renderer re-frames on resize, but **only until the viewer moves the camera
+themselves** — after a drag, a pinch or an arrow key, the aspect ratio tracks the
+orbit _limits_ and never the pose. `Home` puts it back and re-arms the automatic
+framing.
+
+### Quality tiers (`app/quality.ts`)
+
+`detectQualityTier` maps a `DeviceProfile` — pointer type, viewport, cores,
+memory — onto `high` or `low`. Every phone lands on `low`; so does a machine with
+four cores or less, one that reports 4 GB or less, and a large scaled display
+without the cores to feed it. The tier sets the pixel-ratio cap (2 or 1.5), a
+frame ceiling (none or 30 fps), whether a lighting mood may draw its HDR panorama
+as the background, and the texture size the material pipeline should prefer.
+
+The viewer always wins: `?quality=` pins it and the drawer's Render quality
+control changes it live, because everything a tier controls is re-derivable.
+`ClockRenderer.refresh()` re-asserts all of it after a lost context comes back,
+which a restored context needs because it returns at the browser's defaults.
+
+The tier is **not** part of a shared link. It describes the device it was chosen
+on, and sending "low quality" to whoever opens the link would be nonsense.
 
 ## SceneDefinition
 
@@ -245,6 +298,15 @@ Hiding is done with the `hidden` attribute so hidden content leaves the
 accessibility tree and the tab order together; `[hidden] { display: none
 !important }` in `styles.css` keeps a `display` rule from quietly overriding it.
 
+**Small viewports** (`width <= 40rem`) turn the drawer into a bottom sheet, and
+move the readout from the bottom-left corner to the top of the shell _while the
+sheet is open_ — the sheet used to cover it, which meant opening the settings
+hid the countdown. It is a grid change on `.hud--settings-open`, not a scroll, so
+the readout is never partly obscured. The shell's padding is `max(design
+padding, env(safe-area-inset-*))`, which is the design's own spacing everywhere
+that has no notch. `(pointer: coarse)` gives every control a 44px target and
+inputs a 16px font — below that, iOS Safari zooms the page on focus.
+
 Adding a setting means appending a descriptor in `main.ts` — see
 `ui/settings.ts`. Nothing in the panel changes.
 
@@ -271,7 +333,11 @@ untextured material the scaffold ships. `{ kind: 'pbr' }` already carries a
 
 `MaterialLibrary` in `src/render/materials.ts` currently warns and substitutes a
 neutral material for `pbr` bindings. The materials bead implements loading
-there. Scene files then change from `placeholder(...)` to `{ kind: 'pbr', ... }`
+there. It arrives already knowing which resolution to ask for:
+`MaterialLibrary.textureSize` is `half` on the low quality tier, threaded from
+`app/quality.ts` through `ClockSceneView`. Texture memory is the first thing a
+mobile browser kills a WebGL tab for, so read that rather than introducing a
+second notion of quality. Scene files then change from `placeholder(...)` to `{ kind: 'pbr', ... }`
 per slot, and nothing else moves.
 
 Slot names are fixed in `MATERIAL_SLOTS`: `housing`, `bezel`, `ring`,

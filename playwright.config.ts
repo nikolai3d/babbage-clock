@@ -5,6 +5,7 @@ import {
   E2E_BASE_URL,
   E2E_LOCAL_BASE_URL,
   E2E_SERVER_COMMAND,
+  MOBILE_PORTRAIT_CONTEXT,
 } from './e2e/support/env';
 
 /**
@@ -70,9 +71,32 @@ export default defineConfig({
   projects: [
     {
       name: 'chromium',
+      // The mobile spec asserts on a portrait viewport, so it belongs to the
+      // project that provides one and nowhere else.
+      testIgnore: '**/mobile.spec.ts',
       use: {
         ...devices['Desktop Chrome'],
         ...DETERMINISTIC_CONTEXT,
+        channel: 'chromium',
+        launchOptions: { args: CHROMIUM_GPU_ARGS },
+      },
+    },
+    {
+      /**
+       * A portrait phone.
+       *
+       * Deliberately **one** project running **one** spec rather than the whole
+       * suite a second time. E2E runs on a two-core runner where image-based
+       * lighting already makes a frame expensive, so a mobile project that
+       * duplicated the desktop coverage would roughly double the job for
+       * assertions that are not viewport-dependent. What is viewport-dependent
+       * — framing, the bottom sheet, touch input — lives in `mobile.spec.ts`.
+       */
+      name: 'mobile-portrait',
+      testMatch: '**/mobile.spec.ts',
+      use: {
+        ...devices['Pixel 7'],
+        ...MOBILE_PORTRAIT_CONTEXT,
         channel: 'chromium',
         launchOptions: { args: CHROMIUM_GPU_ARGS },
       },

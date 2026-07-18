@@ -40,9 +40,7 @@ describe('detectQualityTier', () => {
 
   it('puts a phone in landscape on the low tier too', () => {
     // The short side is what identifies a handheld, not the width.
-    expect(
-      detectQualityTier({ ...phone, viewportWidth: 844, viewportHeight: 390 }),
-    ).toBe('low');
+    expect(detectQualityTier({ ...phone, viewportWidth: 844, viewportHeight: 390 })).toBe('low');
   });
 
   it('does not demote a desktop with a touchscreen', () => {

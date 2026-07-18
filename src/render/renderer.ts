@@ -628,6 +628,11 @@ export class ClockRenderer {
   }
 
   private applyOrbit(): void {
+    // The keyboard path does not go through OrbitControls, so it would not fire
+    // the `start` event the pointer path uses to claim the camera. Without this
+    // the next resize — a rotated phone, an opening keyboard — would snap a
+    // keyboard user's view back to the automatic pose.
+    this.userAdjustedCamera = true;
     this.orbitOffset.setFromSpherical(this.orbitSpherical);
     this.camera.position.copy(this.controls.target).add(this.orbitOffset);
     this.camera.lookAt(this.controls.target);
