@@ -69,6 +69,8 @@ export interface AppOptions {
   readonly noMotion?: boolean;
   /** Presents the hermetic clock as healthily synced. See `?mocksync`. */
   readonly mockSync?: boolean;
+  /** Viewer backdrop override for `?bg=`. */
+  readonly background?: 'panorama' | 'backdrop';
   /**
    * Sets `?nosync`, skipping the network clock correction. **On by default**,
    * which is what keeps the suite hermetic and fast; pass `false` to exercise
@@ -109,6 +111,7 @@ export function appUrl(options: AppOptions = {}): string {
   if (options.quality !== undefined) params.set('quality', options.quality);
   if (options.noMotion) params.set('nomotion', '1');
   if (options.mockSync) params.set('mocksync', '1');
+  if (options.background) params.set('bg', options.background);
   if (options.noSync !== false) params.set('nosync', '1');
   if (options.testApi !== false) params.set('testApi', '1');
 

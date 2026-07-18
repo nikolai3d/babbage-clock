@@ -87,6 +87,7 @@ describe('readLaunchParams', () => {
       target: '2030-01-01',
       tz: null,
       mood: null,
+      background: null,
       quality: 'auto',
     });
   });
@@ -97,6 +98,7 @@ describe('readLaunchParams', () => {
       target: '2026-12-31T23:59:59',
       tz: 'Europe/Paris',
       mood: null,
+      background: null,
       quality: 'auto',
     });
   });
@@ -107,6 +109,7 @@ describe('readLaunchParams', () => {
       target: null,
       tz: null,
       mood: null,
+      background: null,
       quality: 'auto',
     });
   });

@@ -14,7 +14,12 @@ import {
   readTestHooks,
   resolveTimeSource,
 } from './app/testHooks.js';
-import { buildShareUrl, readLaunchParams, writeAppParams } from './app/urlParams.js';
+import {
+  buildShareUrl,
+  parseBackgroundPreference,
+  readLaunchParams,
+  writeAppParams,
+} from './app/urlParams.js';
 import type { ClockRenderer } from './render/renderer.js';
 import {
   ENVIRONMENT_PRESETS,
@@ -106,6 +111,7 @@ async function bootstrap(): Promise<void> {
     sceneId,
     mood: params.mood,
     materialLook: null,
+    background: params.background,
     quality: params.quality,
     qualityTier,
     target,
@@ -227,6 +233,9 @@ async function bootstrap(): Promise<void> {
     console.warn('[main] WebGL is unavailable — showing the text countdown instead.', error);
   }
 
+  // `?bg=` arrives before the first frame, the drawer takes over from there.
+  if (params.background !== null) renderer?.setBackgroundPreference(params.background);
+
   const unsubscribeMotion = motionPreference.subscribe((enabled) => {
     renderer?.setMotion(enabled);
   });
@@ -239,7 +248,12 @@ async function bootstrap(): Promise<void> {
 
   const shareState = (): ShareableState => {
     const state = store.get();
-    return { sceneId: state.sceneId, target: state.target, mood: state.mood };
+    return {
+      sceneId: state.sceneId,
+      target: state.target,
+      mood: state.mood,
+      background: state.background,
+    };
   };
 
   applyScene();
@@ -319,6 +333,28 @@ async function bootstrap(): Promise<void> {
         if (mood === store.get().mood) return;
         store.set({ mood });
         applyScene();
+        writeAppParams(shareState());
+      },
+    }),
+    defineSelect({
+      id: 'background-select',
+      label: 'Background',
+      hint: 'The mood still lights the scene either way; this only chooses the backdrop.',
+      options: [
+        { value: 'auto', label: 'Automatic', hint: 'Panorama on the high tier, backdrop on low.' },
+        {
+          value: 'panorama',
+          label: 'Panorama',
+          hint: "The mood's HDR environment, blurred per preset.",
+        },
+        { value: 'backdrop', label: 'Backdrop', hint: "The mood's authored gradient. Cheapest." },
+      ],
+      read: (state) => state.background ?? 'auto',
+      apply: (value) => {
+        const background = parseBackgroundPreference(value);
+        if (background === store.get().background) return;
+        store.set({ background });
+        renderer?.setBackgroundPreference(background);
         writeAppParams(shareState());
       },
     }),
@@ -433,6 +469,7 @@ async function bootstrap(): Promise<void> {
       quality: qualityTier,
       maxFps: qualitySettings(qualityTier).maxFps,
       framingFit: 'whole',
+      panoramaBackground: false,
       ringExtentPx: 0,
     }),
     // Likewise: no slot was ever bound and no folder was ever fetched.

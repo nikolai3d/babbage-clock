@@ -1,4 +1,5 @@
 import type { QualityPreference, QualityTier } from './quality.js';
+import type { BackgroundPreference } from './urlParams.js';
 import type { EnvironmentPresetId } from '../scene/types.js';
 import type { CountdownParts, RemainingTime } from '../time/countdown.js';
 import type { ResolvedTarget } from '../time/target.js';
@@ -24,6 +25,11 @@ export interface AppState {
    * `src/materials/looks.ts`.
    */
   readonly materialLook: string | null;
+  /**
+   * Backdrop preference chosen in the settings panel or via `?bg=`. Null and
+   * 'auto' both mean "the quality tier decides"; see `app/urlParams.ts`.
+   */
+  readonly background: BackgroundPreference | null;
   /** Includes both-zone echoes and DST notes for the UI to surface. */
   readonly target: ResolvedTarget;
   readonly countdown: CountdownParts;
