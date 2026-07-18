@@ -16,7 +16,8 @@ src/
   main.ts                bootstrap: read URL -> build store -> wire renderer + UI
   app/
     store.ts             the observable app-state store (framework-free)
-    urlParams.ts         ?scene= / ?target= reading and writing
+    urlParams.ts         ?scene= / ?target= / ?tz= / ?mood= reading, writing, sharing
+    loading.ts           weighted boot-progress aggregation for the loading screen
   geometry/              ── pure geometry maths, no three.js ──
     types.ts             Point2/Contour/Outline plus small 2D helpers
     strokes.ts           centre-line stroke -> filled outline
@@ -48,8 +49,17 @@ src/
     target.ts            TimeSource + timezone-aware target resolution
     trueTime.ts          network-corrected, monotonic in-session clock
     providers.ts         the time-source fallback chain
-  ui/
-    hud.ts               countdown readout + scene picker
+  ui/                    ── no three.js imports here either ──
+    hud.ts               the shell: readout, status strip, drawer toggle, toasts
+    settingsPanel.ts     the settings drawer (target, zone, controls, share)
+    settings.ts          SettingControl descriptors — how a setting is added
+    timeZonePicker.ts    searchable combobox over the platform tz database
+    timeZones.ts         zone list, search ranking, offset labels (pure)
+    targetSummary.ts     both-zone echo and DST notes for display (pure)
+    statusText.ts        TrueTimeStatus -> the sentence to show (pure)
+    loadingScreen.ts     drives the themed loader in index.html
+    toast.ts             transient confirmations
+    debugPanel.ts        dev-only diagnostics; never imported statically
 ```
 
 Three boundaries matter and should be preserved:
@@ -70,13 +80,20 @@ Three boundaries matter and should be preserved:
 ## Data flow
 
 ```
-URL params ──▶ main.ts ──▶ Store<AppState> ──▶ Hud (DOM)
-                  │              ▲
-                  │              │ countdown, fps, hidden
-                  └──▶ ClockRenderer ──▶ ClockSceneView ──▶ three.js scene graph
-                              ▲
-                        SceneRegistry.resolve()
+URL params ──▶ main.ts ──▶ Store<AppState> ──▶ Hud ──▶ SettingsPanel (DOM)
+                  ▲ │           ▲    │                       │
+          intents │ │           │    └───────────────────────┘
+                  │ │           │ countdown, fps, hidden
+                  └─┼───────────┴──── UI intents (target, scene, mood, share)
+                    └──▶ ClockRenderer ──▶ ClockSceneView ──▶ three.js scene graph
+                                ▲
+                          SceneRegistry.resolve()
 ```
+
+The UI never writes to the store and never resolves a target itself: it emits an
+intent, `main.ts` decides what that means, and the result arrives back through
+the store. That is why the panel can be rebuilt or replaced without touching
+anything else, and why the same state that draws the DOM also draws the rings.
 
 The frame loop lives in `ClockRenderer`. Each frame it asks the `TimeSource` for
 the current time, computes the countdown, packs it into digits sized to the
@@ -149,6 +166,50 @@ limits — fails loudly and immediately rather than rendering something wrong.
 produces exactly six digits for that case, and the ring, numeral and housing
 generators are all functions of `RingConfig`.
 
+## The UI shell
+
+Vanilla TypeScript and hand-written DOM — no framework, no component library
+(owner decision). Real elements throughout: `<button>`, `<label>`, `<input>`,
+`<form>`, so the accessibility bead has something to work with rather than div
+soup.
+
+The structure later beads extend:
+
+```
+#ui-root
+  .hud
+    .readout#readout          p#countdown[role=timer], p#target-label, p.readout__state
+    .status#time-status       span.status__dot, span.status__text, [data-level=ok|info|warn]
+    button#settings-toggle    [aria-expanded][aria-controls=settings-panel]
+    section#settings-panel.panel[hidden]
+      .panel__head            h2#settings-title, button#settings-close
+      form#target-form        input#target-input[type=datetime-local][step=1]
+                              .tzpicker > input#tz-input[role=combobox] + ul#tz-input-listbox[role=listbox]
+                              p#target-error[role=alert]
+                              button#target-apply, button#target-reset
+      .echo#target-echo       dl.echo__rows, p.echo__adjustment, ul.echo__notes, p.echo__origin
+      .panel__group           one .field per SettingControl descriptor
+      .field--share           input#share-url[readonly], button#share-button
+    .toast-region[role=status]
+#loading-screen.loader        authored in index.html, removed once boot completes
+```
+
+Hiding is done with the `hidden` attribute so hidden content leaves the
+accessibility tree and the tab order together; `[hidden] { display: none
+!important }` in `styles.css` keeps a `display` rule from quietly overriding it.
+
+Adding a setting means appending a descriptor in `main.ts` — see
+`ui/settings.ts`. Nothing in the panel changes.
+
+Boot progress is real, not simulated: work registers a task with
+`LoadingTracker` and reports against it (`app/loading.ts`). The texture and HDRI
+beads plug a three.js `LoadingManager` straight into it.
+
+**Share links** carry `?target=&tz=&scene=` plus `&mood=` when the viewer has
+overridden the scene's lighting preset. The target is written as the wall clock
+in the zone it was entered in, which round-trips exactly — including across DST
+gaps and overlaps, which `app/urlParams.test.ts` asserts case by case.
+
 ## Extension points
 
 These are typed and wired but intentionally not implemented yet. Each is a real
@@ -180,6 +241,12 @@ an `intensity` and a `showAsBackground` flag. `SceneLighting` in
 `src/render/lighting.ts` currently warns for any non-`none` preset. The IBL bead
 loads the environment map there and sets `scene.environment` (plus
 `scene.background` when requested). Analytic lights stay as the fallback.
+
+The viewer-facing half of this is already wired: the settings panel's lighting
+mood picker and `?mood=` set `AppState.mood`, and `scene/environment.ts`
+overrides the active scene's preset with it before `setScene`. So the moment the
+loader lands in `SceneLighting`, the picker starts working — until then it
+selects a preset that nothing renders, which the control says on its face.
 
 ### Time (implemented)
 

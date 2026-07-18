@@ -1,3 +1,4 @@
+import type { EnvironmentPresetId } from '../scene/types.js';
 import type { CountdownParts } from '../time/countdown.js';
 import type { ResolvedTarget } from '../time/target.js';
 import type { TrueTimeStatus } from '../time/trueTime.js';
@@ -11,6 +12,11 @@ import type { TrueTimeStatus } from '../time/trueTime.js';
  */
 export interface AppState {
   readonly sceneId: string;
+  /**
+   * Lighting-mood override chosen in the settings panel, or null to use the
+   * preset the active scene declares. See `scene/environment.ts`.
+   */
+  readonly mood: EnvironmentPresetId | null;
   /** Includes both-zone echoes and DST notes for the UI to surface. */
   readonly target: ResolvedTarget;
   readonly countdown: CountdownParts;
@@ -20,6 +26,19 @@ export interface AppState {
    * first network sync lands.
    */
   readonly timeStatus: TrueTimeStatus;
+  /**
+   * True until the first sync attempt settles. `TrueTimeStatus` cannot express
+   * this — "not synced yet" and "sync failed" are the same status object — and
+   * the UI needs the difference to avoid crying "device clock" for the second
+   * before the network answers.
+   */
+  readonly syncPending: boolean;
+  /**
+   * Whether the settings drawer is open. It lives here rather than inside the
+   * panel so that the rest of the UI (and the e2e suite) can observe it; the
+   * clock is the hero, so it starts closed.
+   */
+  readonly settingsOpen: boolean;
   /** True while the render loop is idle because the tab is hidden. */
   readonly hidden: boolean;
   /** Frames per second, smoothed; surfaced for the diagnostics overlay. */
