@@ -168,6 +168,10 @@ function bootstrap(): void {
       motion: motionPreference.enabled,
       onContextLost: () => {
         enterFallback('context-lost');
+        // A second loss before the first restore must not leave the first
+        // deadline running: it would declare the context permanently gone while
+        // the browser is still trying to bring the new one back.
+        if (restoreTimer !== null) clearTimeout(restoreTimer);
         restoreTimer = setTimeout(() => {
           restoreTimer = null;
           fallback.show('context-lost-permanent');

@@ -62,6 +62,11 @@ are the figure that matters.
 After expiry the announcer goes quiet. The HUD counts up from there, but
 narrating an elapsed timer forever is the same mistake as narrating a live one.
 
+The consequence of throttling is that the live region's text can be up to a
+minute behind. That is the right trade for _announcements_; for reading the
+current value on demand, `#countdown` is always exact and is a plain, navigable
+paragraph with `role="timer"`. Two elements, two jobs.
+
 ### Testing it by ear
 
 The automated checks prove the region exists, is polite and atomic, and does not
