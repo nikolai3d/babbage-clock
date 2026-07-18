@@ -69,6 +69,24 @@ npm run ci         # typecheck -> lint -> test -> build; run this before opening
 Individual gates: `npm run typecheck`, `npm run lint`, `npm run test` (Vitest,
 single run — never use watch mode in an agent session), `npm run build`.
 
+Browser tests (Playwright) are a separate layer and a separate CI job:
+
+```bash
+npm run test:e2e                    # e2e + screenshots, always --reporter=line
+npm run test:e2e:docker             # exactly as CI runs it (needs Docker)
+npm run test:e2e:docker:update      # regenerate screenshot baselines
+```
+
+**If you change how the scene looks — geometry, materials, lighting, camera, or
+the HUD — the screenshot baselines will fail. That is the point.** Regenerate
+them with `npm run test:e2e:docker:update`, then *look at the new PNGs* before
+committing. Do not raise the diff tolerance to make a failure go away.
+
+Baselines are Linux/SwiftShader images and are only comparable when produced in
+the Playwright container, which is why the screenshot specs skip on macOS.
+Never pass Playwright's default `html` reporter in an agent session: it starts a
+server on failure and hangs the command. Full details: **[docs/testing.md](docs/testing.md)**.
+
 ## Architecture Overview
 
 Vanilla TypeScript + three.js (WebGL2), no UI framework. How a clock looks —
