@@ -252,11 +252,18 @@ export class TrueTimeClock implements TimeSource {
     this.baseEpochMs = this.options.deviceNow();
   }
 
-  /** Corrected UTC epoch ms. Monotonic within the session apart from step corrections. */
+  /**
+   * Corrected UTC epoch ms. Monotonic within the session apart from step
+   * corrections.
+   *
+   * Floored to an integer because `performance.now()` is fractional and
+   * Temporal rejects non-integral epoch values with `Expected finite integer`,
+   * which killed bootstrap on roughly 3% of loads before this was fixed.
+   */
   now(): number {
     const mark = this.options.monotonic();
     this.advanceSlew(mark);
-    return this.baseEpochMs + (mark - this.baseMark);
+    return Math.floor(this.baseEpochMs + (mark - this.baseMark));
   }
 
   /** Syncs once and starts the re-sync timers. Safe to call more than once. */
