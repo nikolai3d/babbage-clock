@@ -125,6 +125,7 @@ export class EnvironmentController {
 
   /** Guards against a slow load for a mood the viewer has already left. */
   private requestId = 0;
+  private state: IblStatus = 'none';
   private disposed = false;
 
   constructor({ renderer, scene, library }: EnvironmentControllerOptions) {
@@ -141,6 +142,16 @@ export class EnvironmentController {
   /** The mood on screen right now, or null when none is applied. */
   get activeMood(): string | null {
     return this.committed?.id ?? null;
+  }
+
+  /**
+   * Whether a mood is on screen, still loading, off, or failed.
+   *
+   * Surfaced through the test API and on `<html data-ibl>` so a screenshot can
+   * wait for the lighting to settle instead of racing an HDR download.
+   */
+  get status(): IblStatus {
+    return this.state;
   }
 
   /**
@@ -332,6 +343,7 @@ export class EnvironmentController {
    * on screen instead of racing an HDR download. See `docs/lighting.md`.
    */
   private setStatus(status: IblStatus): void {
+    this.state = status;
     if (typeof document === 'undefined') return;
     document.documentElement.dataset['ibl'] = status;
   }

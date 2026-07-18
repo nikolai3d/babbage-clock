@@ -5,6 +5,7 @@ import { createEnvironmentLibrary } from './ibl/library.js';
 import { EnvironmentController } from './lighting.js';
 import { computeCountdown, computeRemaining } from '../time/countdown.js';
 import { clockFrame, countdownFrame } from '../mechanism/index.js';
+import type { IblStatus } from './lighting.js';
 import type { AppStore } from '../app/store.js';
 import type { SceneDefinition } from '../scene/types.js';
 import type { RemainingTime } from '../time/countdown.js';
@@ -161,6 +162,7 @@ export class ClockRenderer {
     pixelRatio: number;
     motion: boolean;
     sceneId: string | null;
+    lighting: IblStatus;
   } {
     const size = this.renderer.getSize(new THREE.Vector2());
     return {
@@ -175,6 +177,9 @@ export class ClockRenderer {
       pixelRatio: this.renderer.getPixelRatio(),
       motion: this.motionEnabled,
       sceneId: this.view?.definition.id ?? null,
+      // A frame captured while this is 'loading' still shows the previous
+      // mood, so anything photographing the scene has to wait it out.
+      lighting: this.environment.status,
     };
   }
 

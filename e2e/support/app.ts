@@ -173,6 +173,25 @@ export async function gotoApp(page: Page, options: AppOptions = {}): Promise<voi
       message: 'renderer never issued a draw call — is WebGL2/SwiftShader working?',
     })
     .toBeGreaterThan(0);
+  await waitForLighting(page);
+}
+
+/**
+ * Waits for the lighting mood to settle.
+ *
+ * Deliberately *not* folded into the loading screen: a mood's HDR environment
+ * map is fetched lazily so it never delays first paint, which means the app is
+ * fully booted and drawing while the map is still on its way. Frames captured
+ * in that window show the previous mood, so a screenshot has to wait here or it
+ * photographs a race.
+ */
+export async function waitForLighting(page: Page): Promise<void> {
+  await expect
+    .poll(async () => (await readRendererState(page)).lighting, {
+      message: 'lighting mood never finished loading — see docs/lighting.md',
+      timeout: 20_000,
+    })
+    .not.toBe('loading');
 }
 
 /** Reads live renderer diagnostics from the test API. */

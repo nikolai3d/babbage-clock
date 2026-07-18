@@ -175,6 +175,17 @@ export interface RendererState {
   /** Mirrors `?nomotion`: false when drift, rotation and easing are disabled. */
   readonly motion: boolean;
   readonly sceneId: string | null;
+  /**
+   * The lighting mood's state: `loading` while its HDR environment map is on
+   * its way, `ready` once it is applied, `none` when the scene asks for no
+   * environment, `error` when the map could not be loaded.
+   *
+   * A frame photographed while this is `loading` shows the previous mood, so a
+   * screenshot must wait for it to settle. Spelled out as a literal union
+   * rather than imported from `render/lighting.ts` to keep this module free of
+   * three.js-adjacent imports.
+   */
+  readonly lighting: 'none' | 'loading' | 'ready' | 'error';
 }
 
 /**
