@@ -67,6 +67,8 @@ export interface AppOptions {
   readonly mockNowMode?: 'frozen' | 'advance';
   /** Sets `?nomotion`. */
   readonly noMotion?: boolean;
+  /** Presents the hermetic clock as healthily synced. See `?mocksync`. */
+  readonly mockSync?: boolean;
   /**
    * Sets `?nosync`, skipping the network clock correction. **On by default**,
    * which is what keeps the suite hermetic and fast; pass `false` to exercise
@@ -106,6 +108,7 @@ export function appUrl(options: AppOptions = {}): string {
   if (options.mockNowMode !== undefined) params.set('mockNowMode', options.mockNowMode);
   if (options.quality !== undefined) params.set('quality', options.quality);
   if (options.noMotion) params.set('nomotion', '1');
+  if (options.mockSync) params.set('mocksync', '1');
   if (options.noSync !== false) params.set('nosync', '1');
   if (options.testApi !== false) params.set('testApi', '1');
 
@@ -123,6 +126,9 @@ export function deterministicOptions(overrides: AppOptions = {}): AppOptions {
     mockNowMode: 'frozen',
     target: PINNED_TARGET,
     noMotion: true,
+    // Captures present the healthy synced status a production viewer sees,
+    // not the hermetic run's device-clock warning.
+    mockSync: true,
     // See `AppOptions.quality`: left automatic, this is decided by the core
     // count of whatever machine the run happens on.
     quality: 'high',

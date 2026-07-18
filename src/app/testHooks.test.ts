@@ -4,6 +4,7 @@ import {
   createMockTimeSource,
   installTestApi,
   parseMockNow,
+  presentationTimeStatus,
   readTestHooks,
   resolveTimeSource,
 } from './testHooks.js';
@@ -110,6 +111,27 @@ describe('resolveTimeSource', () => {
 
     expect(resolved).not.toBe(fallback);
     expect(resolved.now()).toBe(EPOCH);
+  });
+});
+
+describe('mocksync', () => {
+  it('is off by default and off when negated', () => {
+    expect(readTestHooks('').mockSync).toBe(false);
+    expect(readTestHooks('?mocksync=0').mockSync).toBe(false);
+  });
+
+  it('is on with ?mocksync and ?mocksync=1', () => {
+    expect(readTestHooks('?mocksync').mockSync).toBe(true);
+    expect(readTestHooks('?mocksync=1').mockSync).toBe(true);
+  });
+
+  it('presents a healthy synced status, dated to the pinned clock', () => {
+    const status = presentationTimeStatus(1_750_000_000_000);
+    expect(status.synced).toBe(true);
+    expect(status.degraded).toBe(false);
+    expect(status.skewWarning).toBe(false);
+    expect(status.tier).toBe('ntp-lite');
+    expect(status.lastSyncMs).toBe(1_750_000_000_000);
   });
 });
 

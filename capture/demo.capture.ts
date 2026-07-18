@@ -42,6 +42,9 @@ test('demo tour', async ({ page }) => {
       target: DEMO_TARGET,
       mockNow: DEMO_START,
       mockNowMode: 'advance',
+      // The capture is a marketing artefact: present the healthy synced
+      // status a production viewer sees, not the hermetic run's warning.
+      mockSync: true,
     }),
   );
   await page.waitForFunction(() => window.__clock !== undefined);
