@@ -390,15 +390,68 @@ describe('Mechanism — the 999-hour cap', () => {
 });
 
 describe('Mechanism — corrections', () => {
-  it('seeks the short way round after a jump, and never spins', () => {
+  it('takes the short way round for a small correction, without spinning', () => {
     const driver = new Driver();
     driver.at(3661);
-    const event = driver.at(999)!;
+    // A clock re-sync nudging the reading by a couple of seconds. This has to
+    // stay unobtrusive: spinning the drum every time an NTP offset moved would
+    // be absurd, and re-syncs happen on every tab focus.
+    const event = driver.at(3663)!;
 
     expect(event.kind).toBe('seek');
+    expect(event.motions.length).toBeLessThan(3);
     for (const motion of event.motions) {
       expect(Math.abs(motion.deltaAngle)).toBeLessThanOrEqual(Math.PI + 1e-9);
     }
+  });
+
+  it('spins up and settles when most of the readout changes at once', () => {
+    const driver = new Driver();
+    driver.at(3661);
+    // What a viewer applying a new target looks like: the reading does not
+    // creep, it is replaced, and the drums should travel to it rather than
+    // teleporting.
+    const event = driver.at(999)!;
+
+    expect(event.kind).toBe('seek');
+    expect(event.motions.length).toBeGreaterThanOrEqual(3);
+    for (const motion of event.motions) {
+      expect(Math.abs(motion.deltaAngle)).toBeGreaterThan(Math.PI * 2);
+    }
+  });
+
+  it('spins as one movement, not seven races', () => {
+    const driver = new Driver();
+    driver.at(3661);
+    const event = driver.at(999)!;
+    expect(event.durationMs).toBeGreaterThan(0);
+    const start = event.atMs;
+
+    // Sampled without feeding new input, so only the animation advances.
+    // Half way through, every ring in the event is still travelling...
+    const midway = driver.sample(start + event.durationMs / 2);
+    for (const motion of event.motions) {
+      const resting = ringAngleForDigit(motion.toDigit, DIGITS_PER_RING);
+      expect(Math.abs(midway.ringAngles[motion.ring]! - resting)).toBeGreaterThan(1e-6);
+    }
+
+    // ...and they all arrive together, on the one shared duration.
+    const after = driver.sample(start + event.durationMs + 1);
+    for (const motion of event.motions) {
+      const resting = ringAngleForDigit(motion.toDigit, DIGITS_PER_RING);
+      expect(after.ringAngles[motion.ring]!).toBeCloseTo(resting, 6);
+    }
+  });
+
+  it('never spins while motion is off', () => {
+    const driver = new Driver({ motion: false });
+    driver.at(3661);
+    const event = driver.at(999)!;
+
+    // `?nomotion=1` and prefers-reduced-motion share this switch, so a spin
+    // must collapse to a snap rather than becoming a long unskippable turn.
+    expect(event.durationMs).toBe(0);
+    expect(driver.mechanism.digits).toEqual(event.digits);
   });
 
   it('lets an in-flight tick finish instead of re-planning it every frame', () => {
