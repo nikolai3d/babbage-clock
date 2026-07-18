@@ -156,9 +156,12 @@ then `node scripts/report-payload.mjs`):
 | First-load asset | Raw        | Gzipped    | Hashed |
 | ---------------- | ---------- | ---------- | ------ |
 | `index.html`     | 3.0 kB     | 1.3 kB     | n/a    |
-| `index-*.js`     | 659.1 kB   | 179.4 kB   | yes    |
+| `index-*.js`     | 671.0 kB   | 183.0 kB   | yes    |
 | `index-*.css`    | 12.0 kB    | 3.6 kB     | yes    |
-| **Total**        | **674 kB** | **184 kB** | —      |
+| **Total**        | **686 kB** | **188 kB** | —      |
+
+The deploy step summary carries the current numbers for every run; the table
+above is a checkpoint, not a source of truth.
 
 Nearly all of it is three.js plus `temporal-polyfill`, in one chunk.
 
@@ -170,9 +173,19 @@ Notes on what is and is not counted:
 
 - **Source maps (~3.5 MB) are excluded and are not a payload problem.** They are
   shipped deliberately, and browsers fetch them only with devtools open.
-- **Hashed filenames.** Vite emits `assets/index-<hash>.{js,css}`, so those can
-  be cached indefinitely by the CDN; `index.html` is unhashed and revalidated,
-  which is what makes a new deploy visible immediately.
+- **Hashed filenames, but not long-lived caching — and that is GitHub's call,
+  not ours.** Vite emits `assets/index-<hash>.{js,css}`, so the URLs are safe to
+  cache forever. Pages does not: measured on the live site, it serves _every_
+  file — hashed assets included — with `cache-control: max-age=600`, and the
+  header is not configurable. So a returning visitor revalidates after ten
+  minutes rather than getting a free hit.
+
+  The hashing is still doing real work: it makes a deploy atomic from the
+  browser's point of view (new bundle, new URL, no chance of a stale script
+  paired with fresh HTML) and it is what a CDN in front of Pages, or a move to
+  Netlify/Vercel/CloudFront, would immediately exploit. Treat this as a known
+  ceiling of the current host, not as something to work around.
+
 - **Heavy assets must be lazy.** As of this deploy there are none — the clock is
   fully procedural (see [assets.md](assets.md)), so the report shows no deferred
   files. HDR environment maps and any future texture set must be reached through
