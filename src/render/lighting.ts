@@ -85,6 +85,13 @@ export interface EnvironmentControllerOptions {
   readonly renderer: Pick<THREE.WebGLRenderer, 'toneMapping' | 'toneMappingExposure'>;
   readonly scene: THREE.Scene;
   readonly library: EnvironmentSource;
+  /**
+   * Whether the mood may draw its HDR panorama as the background. False on the
+   * low quality tier, which falls back to the mood's authored gradient — see
+   * `app/quality.ts` for why this is the environment lever worth pulling.
+   * Defaults to true, so nothing that does not care changes behaviour.
+   */
+  readonly panoramaBackground?: boolean;
 }
 
 interface CommittedMood {
@@ -127,11 +134,28 @@ export class EnvironmentController {
   private requestId = 0;
   private state: IblStatus = 'none';
   private disposed = false;
+  private panoramaBackground: boolean;
 
-  constructor({ renderer, scene, library }: EnvironmentControllerOptions) {
+  constructor({ renderer, scene, library, panoramaBackground = true }: EnvironmentControllerOptions) {
     this.renderer = renderer;
     this.scene = scene;
     this.library = library;
+    this.panoramaBackground = panoramaBackground;
+  }
+
+  /**
+   * Allows or forbids the panorama background, for a quality-tier change made
+   * while a mood is on screen.
+   *
+   * Goes through `reassert` rather than poking `scene.background`, so the swap
+   * keeps the same atomicity guarantee as everything else here: the background,
+   * its blurriness, rotation and intensity all change in one synchronous pass
+   * or not at all.
+   */
+  setPanoramaBackground(allowed: boolean): void {
+    if (this.disposed || allowed === this.panoramaBackground) return;
+    this.panoramaBackground = allowed;
+    this.reassert();
   }
 
   /** Prefiltered environment maps currently resident. Mirrors `renderer.info`. */
@@ -242,7 +266,9 @@ export class EnvironmentController {
     // Background treatment is deliberately independent of lighting: a scene
     // may be lit by a panorama it never shows. `showAsBackground` on the scene
     // wins over the mood's own default when it is set.
-    const showPanorama = spec?.showAsBackground ?? manifest.background.mode === 'environment';
+    const showPanorama =
+      this.panoramaBackground &&
+      (spec?.showAsBackground ?? manifest.background.mode === 'environment');
 
     if (showPanorama) {
       this.releaseBackdrop();

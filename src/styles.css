@@ -124,7 +124,17 @@ body {
     '.       .' 1fr
     'readout .' auto / 1fr auto;
   gap: 1rem;
-  padding: clamp(0.75rem, 2.2vw, 1.5rem);
+  /*
+   * Safe-area insets: the notch, the home indicator and the curved corners of a
+   * phone. `env()` is 0 everywhere else, so this is the same padding as before
+   * on a desktop — `max()` keeps the design's own breathing room as the floor
+   * rather than letting a zero inset shrink it.
+   */
+  padding:
+    max(clamp(0.75rem, 2.2vw, 1.5rem), env(safe-area-inset-top))
+    max(clamp(0.75rem, 2.2vw, 1.5rem), env(safe-area-inset-right))
+    max(clamp(0.75rem, 2.2vw, 1.5rem), env(safe-area-inset-bottom))
+    max(clamp(0.75rem, 2.2vw, 1.5rem), env(safe-area-inset-left));
   pointer-events: none;
 }
 
@@ -930,12 +940,47 @@ body {
   box-shadow: inset 0 0 0 7px rgb(12 9 6 / 85%);
 }
 
+/*
+ * Small viewports: the drawer becomes a bottom sheet.
+ *
+ * A sheet rising from the bottom is the phone idiom, and it puts the panel
+ * under the thumb rather than under the notch. It also creates the problem this
+ * block exists to solve: the countdown readout lives in the bottom-left corner,
+ * so an open sheet used to cover the very thing the page is for. The readout
+ * therefore moves to the top of the shell while the sheet is open — a layout
+ * change rather than a scroll, so it is never partly hidden.
+ */
 @media (width <= 40rem) {
   .panel {
     inset: auto 0 0;
     width: 100%;
-    max-height: 78dvh;
+    /* Leaves room above for the status strip, the toggle and the readout. */
+    max-height: min(68dvh, calc(100dvh - 9rem));
+    /* The home indicator sits over the last row of controls without this. */
+    padding-bottom: max(1.3rem, calc(env(safe-area-inset-bottom) + 0.8rem));
+    border-right: 0;
+    border-bottom: 0;
+    border-left: 0;
     border-radius: var(--radius) var(--radius) 0 0;
+    /* Reaching the end of the sheet must not start scrolling anything behind it. */
+    overscroll-behavior: contain;
+    animation: sheet-in 220ms ease-out;
+  }
+
+  .hud--settings-open {
+    grid-template:
+      'status  toggle' auto
+      'readout readout' auto
+      '.       .' 1fr / 1fr auto;
+  }
+
+  .hud--settings-open .readout {
+    align-self: start;
+  }
+
+  /* The readout is competing with the sheet for height now, not with nothing. */
+  .hud--settings-open .readout__countdown {
+    font-size: clamp(1.6rem, 8vw, 2.4rem);
   }
 
   .hud__settings-label {
@@ -945,6 +990,47 @@ body {
     overflow: hidden;
     clip-path: inset(50%);
     white-space: nowrap;
+  }
+}
+
+@keyframes sheet-in {
+  from {
+    opacity: 0;
+    transform: translateY(1.5rem);
+  }
+}
+
+/*
+ * Touch input. Everything interactive gets a 44px-square target — the size a
+ * fingertip actually resolves — and inputs get a 16px font, below which iOS
+ * Safari zooms the whole page on focus and leaves the viewer stranded at 1.5x
+ * with no obvious way back.
+ */
+@media (pointer: coarse) {
+  .hud__settings-toggle,
+  .button {
+    min-height: 2.75rem;
+    padding-inline: 1rem;
+  }
+
+  .panel__close {
+    min-width: 2.75rem;
+    min-height: 2.75rem;
+  }
+
+  .field__input {
+    min-height: 2.75rem;
+    font-size: 1rem;
+  }
+
+  .field__checkbox {
+    width: 1.4rem;
+    height: 1.4rem;
+  }
+
+  .tzpicker__option {
+    align-items: center;
+    min-height: 2.75rem;
   }
 }
 
