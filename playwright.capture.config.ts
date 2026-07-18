@@ -3,6 +3,7 @@ import {
   CHROMIUM_GPU_ARGS,
   DETERMINISTIC_CONTEXT,
   E2E_BASE_URL,
+  E2E_LOCAL_BASE_URL,
   E2E_SERVER_COMMAND,
 } from './e2e/support/env';
 
@@ -39,7 +40,7 @@ export default defineConfig({
 
   webServer: {
     command: E2E_SERVER_COMMAND,
-    url: E2E_BASE_URL,
+    url: E2E_LOCAL_BASE_URL,
     reuseExistingServer: true,
     timeout: 120_000,
     stdout: 'ignore',

@@ -1,0 +1,194 @@
+name: Deploy
+
+# Publishing the site, kept as a *reusable* workflow rather than folded into
+# ci.yml or triggered on its own.
+#
+# Why reusable and not `on: push`:
+#   The deploy must be gated on a green CI — unit tests *and* e2e. Only a job
+#   in the same workflow can express that with `needs:`, and `needs:` is the
+#   only gate that cannot be raced or misread. A separate `workflow_run`
+#   workflow would have to re-derive "did CI pass, on which branch, from which
+#   fork" by hand, and gets it wrong quietly. ci.yml therefore calls this file
+#   with `needs: [ci, e2e]`.
+#
+# Why a separate file and not inline in ci.yml:
+#   Everything host-specific lives here. Moving to Netlify/Vercel means
+#   rewriting the `publish` job's three steps and leaving the caller, the gate,
+#   the build and the smoke test untouched.
+
+on:
+  workflow_call:
+    inputs:
+      base-path:
+        description: >-
+          Public base path for the build. GitHub Pages serves this repository as
+          a project page, so the site lives under /babbage-clock/ rather than at
+          a domain root. A root-hosted provider would pass "/".
+        type: string
+        default: /babbage-clock/
+      playwright-image:
+        description: >-
+          Container for the post-deploy smoke run. Keep in step with
+          @playwright/test in package.json and with the e2e job in ci.yml — the
+          "Verify the container matches package.json" step below fails the
+          deploy if it drifts.
+        type: string
+        default: mcr.microsoft.com/playwright:v1.61.1-noble
+    outputs:
+      page-url:
+        description: The URL the site was published to.
+        value: ${{ jobs.publish.outputs.page-url }}
+
+jobs:
+  build:
+    name: build (base ${{ inputs.base-path }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      # `configure-pages` reads the repository's Pages configuration. No
+      # deployment is minted here — that needs `id-token`, which only the
+      # publish job gets.
+      pages: write
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      # Emits `base` into vite.config.ts. Everything Vite can see — the entry
+      # script and stylesheet, dynamic imports, `new URL(..., import.meta.url)`
+      # and CSS `url()` — is rewritten under this prefix and content-hashed.
+      - name: Configure Pages
+        uses: actions/configure-pages@v5
+
+      - name: Build
+        run: npm run build
+        env:
+          VITE_BASE_PATH: ${{ inputs.base-path }}
+
+      # The other half: URLs Vite *cannot* see, because they are only assembled
+      # at runtime. A root-absolute `fetch('/assets/…')` builds and previews
+      # fine and 404s on the deployed project page. Fail here, before publish.
+      - name: Audit asset URLs for the base path
+        run: npm run check:base
+        env:
+          VITE_BASE_PATH: ${{ inputs.base-path }}
+
+      - name: Measure first-load payload
+        run: node scripts/report-payload.mjs >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: dist
+
+  publish:
+    name: publish (GitHub Pages)
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    permissions:
+      # `deploy-pages` mints a Pages deployment; `id-token` is what lets it
+      # prove the artifact came from this workflow run (OIDC).
+      pages: write
+      id-token: write
+
+    # Serialises deployments. `cancel-in-progress: false` is deliberate and the
+    # opposite of ci.yml's setting: cancelling a half-finished publish is how a
+    # site ends up serving a partial artifact. Queue instead.
+    concurrency:
+      group: pages-deploy-${{ github.repository }}
+      cancel-in-progress: false
+
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+
+    outputs:
+      page-url: ${{ steps.deployment.outputs.page_url }}
+
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
+
+  smoke:
+    name: smoke (live site)
+    needs: publish
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+
+    # Same image as the e2e job in ci.yml, for the same reason: it ships the
+    # browsers and a GL stack that SwiftShader can drive headlessly.
+    container:
+      image: ${{ inputs.playwright-image }}
+      options: --ipc=host
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Verify the container matches package.json
+        run: |
+          expected="$(node -p "require('@playwright/test/package.json').version")"
+          actual="$(npx playwright --version | awk '{print $2}')"
+          echo "package.json: ${expected} | container: ${actual}"
+          if [ "${expected}" != "${actual}" ]; then
+            echo "::error::Playwright ${expected} in package.json but ${actual} in the container image."
+            echo "::error::Update playwright-image in .github/workflows/deploy.yml to v${expected}-noble."
+            exit 1
+          fi
+
+      # A Pages deployment reports success the moment the artifact is accepted;
+      # the CDN can serve the previous copy for a few more seconds. Wait for the
+      # published index.html to answer 200 before judging the site, so a slow
+      # edge is not reported as a broken deploy.
+      - name: Wait for the deployment to be servable
+        run: |
+          url='${{ needs.publish.outputs.page-url }}'
+          echo "Polling ${url}"
+          for attempt in $(seq 1 30); do
+            code="$(curl -sS -o /dev/null -w '%{http_code}' --max-time 20 "${url}" || echo 000)"
+            echo "attempt ${attempt}: HTTP ${code}"
+            [ "${code}" = "200" ] && exit 0
+            sleep 10
+          done
+          echo "::error::${url} did not return 200 within ~5 minutes."
+          exit 1
+
+      # The acceptance test for the whole workflow. boot.spec.ts asserts that
+      # no own-origin request returned >= 400 (i.e. no base-path 404s) and that
+      # the page acquired a real WebGL2 context and issued draw calls (i.e. the
+      # scene actually initialised) — against the deployed bundle, not a local
+      # preview. If this fails the run goes red rather than quietly leaving a
+      # broken site published; see docs/deploy.md for the rollback.
+      - name: Boot spec against the live site
+        run: npm run test:e2e:live
+        env:
+          E2E_BASE_URL: ${{ needs.publish.outputs.page-url }}
+
+      - name: Upload failure artifacts
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: live-smoke-artifacts
+          path: test-results/
+          retention-days: 7
+          if-no-files-found: ignore

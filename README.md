@@ -1,7 +1,14 @@
 # babbage-clock
 
+[![CI](https://github.com/nikolai3d/babbage-clock/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/nikolai3d/babbage-clock/actions/workflows/ci.yml)
+
 A web-based 3D HTML clock / countdown — spinning gear mechanisms rendered with
 three.js (WebGL2) and vanilla TypeScript.
+
+**Live: <https://nikolai3d.github.io/babbage-clock/>**
+
+Every green push to `main` publishes automatically, and the deploy is verified
+by booting the live site. See [docs/deploy.md](docs/deploy.md).
 
 ## Quick start
 
@@ -12,17 +19,18 @@ npm run dev      # http://localhost:5173
 
 ## Scripts
 
-| Script                 | What it does                                   |
-| ---------------------- | ---------------------------------------------- |
-| `npm run dev`          | Vite dev server with HMR                       |
-| `npm run build`        | Production build into `dist/`                  |
-| `npm run preview`      | Serve the production build locally             |
-| `npm run lint`         | ESLint + Prettier check                        |
-| `npm run typecheck`    | `tsc --noEmit`                                 |
-| `npm run test`         | Vitest, single run                             |
-| `npm run ci`           | typecheck → lint → test → build (what CI runs) |
-| `npm run test:e2e`     | Playwright end-to-end + screenshot tests       |
-| `npm run capture:demo` | Record a demo video tour into `artifacts/`     |
+| Script                  | What it does                                                     |
+| ----------------------- | ---------------------------------------------------------------- |
+| `npm run dev`           | Vite dev server with HMR                                         |
+| `npm run build`         | Production build into `dist/`                                    |
+| `npm run preview`       | Serve the production build locally                               |
+| `npm run lint`          | ESLint + Prettier check                                          |
+| `npm run typecheck`     | `tsc --noEmit`                                                   |
+| `npm run test`          | Vitest, single run                                               |
+| `npm run ci`            | typecheck → lint → test → build → base-path audit (what CI runs) |
+| `npm run test:e2e`      | Playwright end-to-end + screenshot tests                         |
+| `npm run test:e2e:live` | Boot spec against a deployed site (`E2E_BASE_URL=…`)             |
+| `npm run capture:demo`  | Record a demo video tour into `artifacts/`                       |
 
 Screenshot baselines are Linux/SwiftShader images regenerated with
 `npm run test:e2e:docker:update`. See [docs/testing.md](docs/testing.md).

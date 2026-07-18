@@ -21,7 +21,9 @@
     "test:e2e:docker": "scripts/e2e-docker.sh",
     "test:e2e:docker:update": "scripts/e2e-docker.sh --update-snapshots",
     "capture:demo": "playwright test --config playwright.capture.config.ts --reporter=line",
-    "ci": "npm run typecheck && npm run lint && npm run test && npm run build"
+    "check:base": "node scripts/check-base-path.mjs",
+    "test:e2e:live": "playwright test --config playwright.smoke.config.ts --reporter=line",
+    "ci": "npm run typecheck && npm run lint && npm run test && npm run build && npm run check:base"
   },
   "dependencies": {
     "temporal-polyfill": "^1.0.1",

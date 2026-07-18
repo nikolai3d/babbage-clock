@@ -91,3 +91,22 @@ jobs:
           path: test-results/
           retention-days: 7
           if-no-files-found: ignore
+
+  # Publishes the site to GitHub Pages and then boots the *deployed* bundle.
+  # See .github/workflows/deploy.yml — everything host-specific lives there, so
+  # this stays the quality gate and nothing else.
+  deploy:
+    name: deploy
+    # The gate. `needs` on both jobs means a red unit run or a red e2e run
+    # skips this entirely: there is no path from a failing CI to a publish.
+    needs: [ci, e2e]
+    # And only for commits that have landed on main. Pull requests — including
+    # any from a fork — never match, so an untrusted branch cannot publish.
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    permissions:
+      contents: read
+      # A called workflow cannot hold permissions the caller did not grant, so
+      # the union its jobs need is declared here.
+      pages: write
+      id-token: write
+    uses: ./.github/workflows/deploy.yml

@@ -82,6 +82,22 @@ export default tseslint.config(
     },
   },
   {
+    // Build-time Node scripts (`npm run ci` and the deploy workflow run these).
+    // Plain ESM JavaScript, outside every tsconfig project, so the type-aware
+    // rules have nothing to work from — same situation as eslint.config.js.
+    files: ['scripts/**/*.mjs'],
+    extends: [tseslint.configs.disableTypeChecked],
+    languageOptions: {
+      globals: {
+        ...globals.node,
+      },
+    },
+    rules: {
+      // Their entire job is to print a report to stdout / the CI step summary.
+      'no-console': 'off',
+    },
+  },
+  {
     // The flat config itself is plain JS and lives outside the tsconfig
     // project, so type-aware rules cannot run on it.
     files: ['eslint.config.js'],
