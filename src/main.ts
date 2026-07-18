@@ -207,12 +207,20 @@ function bootstrap(): void {
   // so the clock is never photographed — or first seen — half-skinned. A folder
   // that fails to load still settles the task; the material falls back to a
   // neutral surface rather than holding the loading screen up for ever.
-  void renderer
-    .materialsReady()
-    .catch(() => undefined)
-    .finally(() => {
-      materialTask.done();
-    });
+  //
+  // Settled immediately when there is no renderer at all: without a WebGL
+  // context nothing will ever load a texture, and the loading screen must not
+  // wait for something that is not coming.
+  if (renderer) {
+    void renderer
+      .materialsReady()
+      .catch(() => undefined)
+      .finally(() => {
+        materialTask.done();
+      });
+  } else {
+    materialTask.done();
+  }
 
   const controls: readonly SettingControl[] = [
     defineSelect({
@@ -249,7 +257,7 @@ function bootstrap(): void {
         const materialLook = value === '' ? null : value;
         if (materialLook === store.get().materialLook) return;
         store.set({ materialLook });
-        renderer.setMaterialLook(materialLook);
+        renderer?.setMaterialLook(materialLook);
       },
     }),
     defineSelect({
@@ -342,6 +350,8 @@ function bootstrap(): void {
       running: false,
       drawCalls: 0,
       triangles: 0,
+      textures: 0,
+      geometries: 0,
       width: 0,
       height: 0,
       pixelRatio: 1,
@@ -351,6 +361,15 @@ function bootstrap(): void {
       sceneId: null,
       // No scene was ever built, so no environment map was ever asked for.
       lighting: 'none',
+    }),
+    // Likewise: no slot was ever bound and no folder was ever fetched.
+    getMaterialState: () => ({
+      look: null,
+      slots: {},
+      textures: 0,
+      sources: 0,
+      pending: 0,
+      ktx2: false,
     }),
   };
   const uninstallTestApi = installTestApi(hooks, {
