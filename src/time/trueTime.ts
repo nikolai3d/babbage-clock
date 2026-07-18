@@ -31,6 +31,8 @@ const MIN_SAMPLES = 2;
 export const DEFAULT_SKEW_WARN_MS = 5_000;
 /** Corrections smaller than this are eased in; larger ones are applied at once. */
 export const DEFAULT_MAX_SLEW_MS = 2_000;
+/** Hard ceiling on the slew rate; see the clamp in the constructor. */
+const MAX_SLEW_RATE = 0.5;
 
 export interface TrueTimeStatus {
   /** How the current correction was obtained. `device-clock` means unsynced. */
@@ -231,7 +233,10 @@ export class TrueTimeClock implements TimeSource {
       resyncIntervalMs: options.resyncIntervalMs ?? 45 * 60 * 1_000,
       minResyncIntervalMs: options.minResyncIntervalMs ?? 60_000,
       maxSlewMs: options.maxSlewMs ?? DEFAULT_MAX_SLEW_MS,
-      slewRate: options.slewRate ?? 0.05,
+      // Clamped below 1 rather than trusted: at a rate of 1 or more a backwards
+      // correction would out-run the clock and the readout would tick
+      // backwards, which is the one thing slewing exists to prevent.
+      slewRate: Math.min(MAX_SLEW_RATE, Math.max(0, options.slewRate ?? 0.05)),
       skewWarnMs: options.skewWarnMs ?? DEFAULT_SKEW_WARN_MS,
       monotonic: options.monotonic ?? (() => performance.now()),
       deviceNow: options.deviceNow ?? (() => Date.now()),
@@ -358,6 +363,10 @@ export class TrueTimeClock implements TimeSource {
       this.emit();
       return this.getStatus();
     }
+
+    // Disposed while the chain was in flight: leave the status alone rather
+    // than reporting a failure nobody asked about.
+    if (this.disposed) return this.getStatus();
 
     // Nothing answered. Keep ticking on whatever base we already have and say so.
     this.tier = 'device-clock';

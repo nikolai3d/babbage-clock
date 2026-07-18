@@ -418,6 +418,26 @@ describe('re-sync corrections', () => {
     clock.dispose();
   });
 
+  it('clamps an absurd slew rate so the clock still cannot tick backwards', async () => {
+    const world = new FakeWorld();
+    // A rate of 1 or more would let the correction out-run the clock itself.
+    const clock = makeClock(world, { slewRate: 5, maxSlewMs: 2_000 });
+    await clock.init();
+
+    world.skewServer(-1_500);
+    await clock.sync();
+
+    let previous = clock.now();
+    for (let step = 0; step < 20; step += 1) {
+      world.advance(100);
+      const current = clock.now();
+      expect(current).toBeGreaterThan(previous);
+      previous = current;
+    }
+
+    clock.dispose();
+  });
+
   it('steps a large correction at once', async () => {
     const world = new FakeWorld();
     const clock = makeClock(world, { maxSlewMs: 2_000 });
