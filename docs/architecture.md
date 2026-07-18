@@ -47,7 +47,12 @@ src/
       housing.ts         createHousingParts (case, bezel, studs, lid, shackle)
       escapement.ts      balance, escape wheel, cock, detent lever
     materials.ts         material slot map -> three.js materials
-    lighting.ts          lighting config -> three.js lights
+    lighting.ts          scene lights + EnvironmentController (applies a mood)
+    ibl/                 lighting moods: HDR panorama + rig + grade
+      manifest.ts        preset.json schema and parser (no three.js)
+      presets.ts         discovers assets/ibl/*/ at build time, lazily
+      library.ts         panorama -> PMREM, cached and disposed
+      rig.ts             manifest -> analytic lights and gradient backdrop
   time/                  ── pure, no DOM, no three.js ──
     index.ts             the module's public surface (see docs/timing.md)
     countdown.ts         countdown maths, digit packing, HHH:MM:SS clamp
@@ -269,20 +274,33 @@ detent levers take `arbor`, and the escape wheel takes `gearD`.
 start and duration. Play sound from those rather than from a timer of your own,
 and it is in sync by construction. See **[mechanism.md](mechanism.md)**.
 
-### Lighting / IBL (environment bead)
+### Lighting / IBL (implemented)
 
 `LightingConfig.environment` carries an `EnvironmentSpec` with a `preset` id
 (`day`, `sunny-day`, `night`, `steampunk-workshop`, `busy-street`, or `none`),
-an `intensity` and a `showAsBackground` flag. `SceneLighting` in
-`src/render/lighting.ts` currently warns for any non-`none` preset. The IBL bead
-loads the environment map there and sets `scene.environment` (plus
-`scene.background` when requested). Analytic lights stay as the fallback.
+an `intensity` and a `showAsBackground` flag. Each non-`none` id is a folder
+under `assets/ibl/` holding a `preset.json` and an HDR panorama — content, not
+code, the same as the scene registry. Dropping a folder in adds a mood.
 
-The viewer-facing half of this is already wired: the settings panel's lighting
-mood picker and `?mood=` set `AppState.mood`, and `scene/environment.ts`
-overrides the active scene's preset with it before `setScene`. So the moment the
-loader lands in `SceneLighting`, the picker starts working — until then it
-selects a preset that nothing renders, which the control says on its face.
+`render/ibl/` implements it: `manifest.ts` is the schema and its parser (pure,
+three.js-free), `presets.ts` discovers the folders with `import.meta.glob`,
+`library.ts` decodes and PMREM-prefilters a panorama once per session and caches
+it, and `rig.ts` builds the mood's analytic lights and its gradient backdrop.
+`EnvironmentController` in `render/lighting.ts` applies a mood — environment,
+background, rig, fog and grade — in one synchronous `commit`, so no frame is
+drawn with one mood's map and another's lights. Loading never blocks first
+paint; the previous mood stays whole until the next one is ready.
+
+`SceneLighting` still owns the lights a scene declares for itself. A mood scales
+them by its `sceneLightScale` (0 in every shipped mood) rather than removing
+them, which is what makes reverting to `none` a single-frame operation.
+
+The viewer-facing half was wired earlier: the settings panel's mood picker and
+`?mood=` set `AppState.mood`, and `scene/environment.ts` overrides the active
+scene's preset with it before `setScene`.
+
+See **[docs/lighting.md](lighting.md)** for the manifest schema, how switching
+stays atomic and leak-free, and how to add a mood.
 
 ### Time (implemented)
 
@@ -340,10 +358,18 @@ own. Anything that owns a GPU resource beyond its geometry and material — an
 `InstancedMesh` and its instance-matrix buffer, which the bezel studs use — goes
 into `disposables` as well, and there is a regression test for that too.
 
+Lighting moods are the other repeatedly-swapped resource. `EnvironmentLibrary`
+prefilters each panorama once and disposes every render target it holds;
+`EnvironmentController` disposes the mood's light rig and its generated backdrop
+on every change. Both have their own conservation tests, and the live GPU object
+count was confirmed flat across 80+ mood switches in a real browser. See
+[lighting.md](lighting.md).
+
 ## Renderer decisions
 
 - **WebGL2 via the classic `WebGLRenderer`.** WebGPU is explicitly deferred; do
   not introduce `WebGPURenderer`.
 - **Vanilla TypeScript.** No React/Svelte/Vue.
-- Tone mapping is ACES Filmic; per-scene exposure comes from
-  `lighting.exposure`.
+- Tone mapping and exposure are set by the active lighting mood's `grade`
+  (ACES Filmic by default), multiplied by the scene's own `lighting.exposure`
+  as a per-scene trim. With `mood=none` the scene's exposure applies alone.

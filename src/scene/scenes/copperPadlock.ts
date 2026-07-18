@@ -118,7 +118,12 @@ export const copperPadlockScene: SceneDefinition = {
       { color: 0xfff1dd, intensity: 2.4, position: [4, 5, 6] },
       { color: 0x88a6ff, intensity: 0.9, position: [-5, 2, -4] },
     ],
-    environment: { preset: 'none' },
+    // The default mood. `showAsBackground: false` is the point of the flag:
+    // the workshop panorama lights the copper, but the viewer keeps looking at
+    // this preset's dark vignette rather than a photograph of a fireplace.
+    // The ambient and directional lights above are the no-environment
+    // fallback — a mood scales them to its own `sceneLightScale`.
+    environment: { preset: 'steampunk-workshop', showAsBackground: false },
     exposure: 1.05,
   },
 

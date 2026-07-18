@@ -150,7 +150,7 @@ function bootstrap(): void {
     defineSelect({
       id: 'mood-select',
       label: 'Lighting mood',
-      hint: 'Image-based lighting is not implemented yet, so this has no visible effect.',
+      hint: 'Swaps the environment map, light rig and grade. Independent of the scene.',
       options: [
         { value: '', label: 'Scene default' },
         ...ENVIRONMENT_PRESETS.map((preset) => ({

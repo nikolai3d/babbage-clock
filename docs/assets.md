@@ -5,6 +5,12 @@ this repository and none are planned as a hard dependency. This document records
 that decision, the conventions any future authored asset must follow, and the
 comparison behind the numeral engraving approach.
 
+The one class of binary asset that _is_ shipped is the HDR panoramas behind the
+lighting moods, under `assets/ibl/`: five 1k Radiance files, 1.1-1.8 MB each,
+all CC0 from Poly Haven. Each is lazily loaded — no mood but the one on screen
+is ever fetched — and each preset folder records its own provenance and licence.
+See **[lighting.md](lighting.md)** and `assets/ibl/LICENSES.md`.
+
 ## Procedural vs authored
 
 **Decision: fully procedural for now — gears, rings and housing all generated in

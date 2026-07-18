@@ -1,0 +1,81 @@
+{
+  "id": "busy-street",
+  "name": "Busy street",
+  "description": "Urban evening: neon, shop windows and streetlights at mixed colour temperatures.",
+  "environment": {
+    "file": "hansaplatz_1k.hdr",
+    "format": "rgbe",
+    "intensity": 0.55,
+    "rotation": -1.1
+  },
+  "background": {
+    "mode": "environment",
+    "blurriness": 0.35,
+    "intensity": 0.9,
+    "fallback": {
+      "kind": "gradient",
+      "top": "#181026",
+      "bottom": "#3a1d2c",
+      "power": 1.4
+    }
+  },
+  "grade": {
+    "exposure": 1.2,
+    "toneMapping": "aces"
+  },
+  "sceneLightScale": 0,
+  "lights": [
+    {
+      "type": "point",
+      "name": "neon-magenta",
+      "color": "#ff3a8c",
+      "intensity": 10,
+      "position": [-3.4, 1.2, 3],
+      "distance": 14,
+      "decay": 2
+    },
+    {
+      "type": "point",
+      "name": "neon-cyan",
+      "color": "#35d9ff",
+      "intensity": 9,
+      "position": [3.6, 1.6, 2.4],
+      "distance": 14,
+      "decay": 2
+    },
+    {
+      "type": "point",
+      "name": "streetlight",
+      "color": "#ffb552",
+      "intensity": 24,
+      "position": [0.2, 4.2, -1.8],
+      "distance": 18,
+      "decay": 2
+    },
+    {
+      "type": "point",
+      "name": "shop-window",
+      "color": "#ffe6c2",
+      "intensity": 17,
+      "position": [-1.2, 0.2, 4.4],
+      "distance": 14,
+      "decay": 2
+    },
+    {
+      "type": "directional",
+      "name": "sky-glow",
+      "color": "#4a5a80",
+      "intensity": 0.5,
+      "position": [1, 5, -5]
+    }
+  ],
+  "source": {
+    "title": "Hansaplatz",
+    "authors": ["Greg Zaal"],
+    "provider": "Poly Haven",
+    "url": "https://polyhaven.com/a/hansaplatz",
+    "licence": "CC0-1.0",
+    "resolution": "1k",
+    "notes": "Measured mean radiance 0.97 but median 0.046 and peak 12871 \u2014 almost all of the energy sits in small bright sources, which is what gives the lively speculars. environmentIntensity is held at 0.55 so those sources do not blow the metals out, and the rig supplies the tight speculars the prefiltered map cannot."
+  }
+}

@@ -74,7 +74,11 @@ export class ClockSceneView {
   readonly mechanism: Mechanism;
 
   private readonly materials: MaterialLibrary;
-  private readonly lighting: SceneLighting;
+  /**
+   * The scene's own analytic lights. Public because `EnvironmentController`
+   * dims them while a lighting mood owns the rig; see `render/lighting.ts`.
+   */
+  readonly lighting: SceneLighting;
   private readonly geometries: THREE.BufferGeometry[] = [];
   /**
    * Objects that hold GPU resources of their own beyond their geometry and

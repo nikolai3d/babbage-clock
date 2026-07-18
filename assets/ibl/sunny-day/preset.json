@@ -1,0 +1,59 @@
+{
+  "id": "sunny-day",
+  "name": "Sunny day",
+  "description": "Hard directional sun, warm key against a blue-sky fill, crisp speculars.",
+  "environment": {
+    "file": "kloofendal_48d_partly_cloudy_puresky_1k.hdr",
+    "format": "rgbe",
+    "intensity": 0.9,
+    "rotation": -0.55
+  },
+  "background": {
+    "mode": "environment",
+    "blurriness": 0.08,
+    "intensity": 1,
+    "fallback": {
+      "kind": "gradient",
+      "top": "#3f7fd0",
+      "bottom": "#cfd8dd",
+      "power": 1.1
+    }
+  },
+  "grade": {
+    "exposure": 0.95,
+    "toneMapping": "aces"
+  },
+  "sceneLightScale": 0,
+  "lights": [
+    {
+      "type": "directional",
+      "name": "sun",
+      "color": "#fff2d8",
+      "intensity": 3.4,
+      "position": [6, 7, 4]
+    },
+    {
+      "type": "directional",
+      "name": "sky-fill",
+      "color": "#8fb4ff",
+      "intensity": 0.6,
+      "position": [-4, 3, -6]
+    },
+    {
+      "type": "hemisphere",
+      "name": "ground-bounce",
+      "color": "#bcd6ff",
+      "groundColor": "#6b5b41",
+      "intensity": 0.3
+    }
+  ],
+  "source": {
+    "title": "Kloofendal 48d Partly Cloudy (Pure Sky)",
+    "authors": ["Greg Zaal", "Jarod Guest"],
+    "provider": "Poly Haven",
+    "url": "https://polyhaven.com/a/kloofendal_48d_partly_cloudy_puresky",
+    "licence": "CC0-1.0",
+    "resolution": "1k",
+    "notes": "Measured mean radiance 0.69, R/B 0.79, peak 60687 — a real sun disc, so the rig adds a matching analytic sun for crisp shadows."
+  }
+}

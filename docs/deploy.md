@@ -186,13 +186,16 @@ Notes on what is and is not counted:
   Netlify/Vercel/CloudFront, would immediately exploit. Treat this as a known
   ceiling of the current host, not as something to work around.
 
-- **Heavy assets must be lazy.** As of this deploy there are none — the clock is
-  fully procedural (see [assets.md](assets.md)), so the report shows no deferred
-  files. HDR environment maps and any future texture set must be reached through
-  a dynamic `import()` or a loader call _after_ first paint, so the entry chunk
-  never grows with them. `scripts/report-payload.mjs` lists first-load and
-  deferred assets separately precisely so a regression here is visible in the
-  deploy step summary.
+- **Heavy assets must be lazy.** There are 7.3 MB of them: the five HDR
+  panoramas behind the lighting moods (`assets/ibl/`, see
+  [lighting.md](lighting.md)). None is in the first load. Each panorama and each
+  `preset.json` is reached through `import.meta.glob`, so Vite emits one chunk
+  per mood and the browser fetches only the mood on screen — and the HDR and EXR
+  decoders are dynamically imported too, so a format nobody selected never
+  ships. Any future texture set must follow the same rule: a dynamic `import()`
+  or a loader call _after_ first paint, so the entry chunk never grows with it.
+  `scripts/report-payload.mjs` lists first-load and deferred assets separately
+  precisely so a regression here is visible in the deploy step summary.
 - The loading screen is authored in `index.html` and paints before the module
   graph loads, so perceived first paint does not wait on the 184 kB.
 

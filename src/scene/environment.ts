@@ -6,10 +6,12 @@
  * declares", which is the default and what the picker starts on.
  *
  * Plain data, no three.js: `withEnvironmentPreset` returns a new definition and
- * `render/lighting.ts` is the only thing that turns a preset into pixels. Until
- * the IBL bead lands that module logs a warning for any non-`none` preset and
- * falls back to the analytic lights, so switching moods is wired end to end but
- * has no visible effect yet.
+ * `render/lighting.ts` is the only thing that turns a preset into pixels. Each
+ * id here matches a folder under `assets/ibl/`, which holds the panorama, the
+ * light rig and the grade that make up the mood — see `docs/lighting.md`.
+ *
+ * Moods and scenes are orthogonal: any look renders under any mood, because a
+ * mood only ever replaces lighting, background and grade.
  */
 
 import type { EnvironmentPresetId, SceneDefinition } from './types.js';

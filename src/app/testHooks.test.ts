@@ -126,6 +126,7 @@ describe('installTestApi', () => {
     pixelRatio: 1,
     motion: false,
     sceneId: 'copper-padlock',
+    lighting: 'ready',
   };
 
   function deps(): {
