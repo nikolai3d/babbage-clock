@@ -120,6 +120,15 @@ describe('resolveTimeSource', () => {
   });
 });
 
+describe('advance-mode integrality', () => {
+  it('returns integral epochs even from a fractional monotonic source', () => {
+    // Temporal rejects fractional epochs; the real clock floors at source and
+    // the mock must too, or advance-mode tests crash any Temporal caller.
+    const clock = createMockTimeSource(1_000, 'advance', () => 0.4142 + 16.6667);
+    expect(Number.isInteger(clock.now())).toBe(true);
+  });
+});
+
 describe('mocksync', () => {
   it('is off by default and off when negated', () => {
     expect(readTestHooks('').mockSync).toBe(false);

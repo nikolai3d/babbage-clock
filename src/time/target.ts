@@ -261,6 +261,44 @@ export function defaultTarget(nowMs: number, viewerZone?: string): ResolvedTarge
   });
 }
 
+/**
+ * The wall clock `hours` from now in `zone`, to the minute.
+ *
+ * Seconds are dropped rather than rounded: "in one hour" spoken at 14:23:41
+ * means 15:23, and a seconds-precision target would read as noise in the
+ * input. Written for the quick-target buttons; anything needing an exact
+ * instant should work in instants, not wall clocks.
+ */
+export function wallClockInHours(nowMs: number, hours: number, zone?: string): string {
+  const zoneId = normalizeZone(zone, viewerTimeZone());
+  // Floored: Temporal rejects fractional epochs, and clock seams have leaked
+  // fractions twice now (the real clock, then the advance-mode mock).
+  return Temporal.Instant.fromEpochMilliseconds(Math.floor(nowMs))
+    .toZonedDateTimeISO(zoneId)
+    .add({ hours })
+    .toPlainDateTime()
+    .toString({ smallestUnit: 'minute' });
+}
+
+/**
+ * The next midnight in `zone` — "tonight at midnight" — as a wall clock.
+ *
+ * Always strictly in the future: at 00:00 exactly it returns the following
+ * midnight. Midnight during a DST gap resolves like any other entered wall
+ * clock, through `resolveTarget`'s disambiguation.
+ */
+export function nextMidnightWallClock(nowMs: number, zone?: string): string {
+  const zoneId = normalizeZone(zone, viewerTimeZone());
+  const local = Temporal.Instant.fromEpochMilliseconds(Math.floor(nowMs)).toZonedDateTimeISO(
+    zoneId,
+  );
+  return local
+    .toPlainDate()
+    .add({ days: 1 })
+    .toPlainDateTime()
+    .toString({ smallestUnit: 'minute' });
+}
+
 /** The next 1 January 00:00:00 in `zone`, always strictly in the future. */
 export function nextNewYearZoned(nowMs: number, zone?: string): Temporal.ZonedDateTime {
   const zoneId = normalizeZone(zone, viewerTimeZone());

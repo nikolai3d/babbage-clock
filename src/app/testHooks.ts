@@ -180,7 +180,13 @@ export function createMockTimeSource(
   if (mode === 'frozen') return { now: () => startMs };
 
   const origin = monotonic();
-  return { now: () => startMs + (monotonic() - origin) };
+  // Floored for the same reason TrueTimeClock.now() floors: performance.now()
+  // is fractional, Temporal rejects a fractional epoch with `Expected finite
+  // integer`, and any caller may hand this straight to Temporal. The real
+  // clock learnt that in production (~3% of boots); the mock got the same bug
+  // fixed only when a quick-target helper fed it to Temporal during bootstrap
+  // and killed every advance-mode e2e test at once.
+  return { now: () => Math.floor(startMs + (monotonic() - origin)) };
 }
 
 /**

@@ -32,9 +32,11 @@ import { computeCountdown, computeRemaining } from './time/countdown.js';
 import {
   TargetError,
   defaultTarget,
+  nextMidnightWallClock,
   resolveTarget,
   resolveTargetFromParams,
   viewerTimeZone,
+  wallClockInHours,
 } from './time/target.js';
 import {
   disposeTrueTime,
@@ -416,6 +418,19 @@ async function bootstrap(): Promise<void> {
             : 'That date and time could not be understood.';
         return { ok: false, message };
       }
+    },
+    quickTargets: (zone) => {
+      const nowMs = timeSource.now();
+      return [
+        { id: 'hour', label: 'In 1 hour', value: wallClockInHours(nowMs, 1, zone), zone },
+        {
+          id: 'midnight',
+          label: 'Tonight at midnight',
+          value: nextMidnightWallClock(nowMs, zone),
+          zone,
+        },
+        { id: 'week', label: 'In 7 days', value: wallClockInHours(nowMs, 24 * 7, zone), zone },
+      ];
     },
     onResetTarget: () => {
       store.set({ target: defaultTarget(timeSource.now(), viewerZone) });
