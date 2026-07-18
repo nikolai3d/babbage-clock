@@ -5,6 +5,7 @@ import { computeCountdown, computeRemaining } from '../time/countdown.js';
 import { clockFrame, countdownFrame } from '../mechanism/index.js';
 import type { AppStore } from '../app/store.js';
 import type { SceneDefinition } from '../scene/types.js';
+import type { RemainingTime } from '../time/countdown.js';
 import type { TimeSource } from '../time/target.js';
 
 /** Retina displays gain little above 2x and cost a lot of fill rate. */
@@ -264,7 +265,7 @@ export class ClockRenderer {
    * out the rest, which is what keeps it right across tab sleeps and clock
    * re-syncs.
    */
-  private syncMechanism(nowMs: number): ReturnType<typeof computeRemaining> {
+  private syncMechanism(nowMs: number): RemainingTime {
     const view = this.view;
     const remaining = computeRemaining(this.store.get().target.atMs, nowMs);
     if (!view) return remaining;

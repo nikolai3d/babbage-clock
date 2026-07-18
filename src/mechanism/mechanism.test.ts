@@ -256,6 +256,30 @@ describe('Mechanism — expiry', () => {
     expect(driver.mechanism.expired).toBe(true);
   });
 
+  /**
+   * The real final second, frame by frame. `computeRemaining` floors, so the
+   * readout reaches `000:00:00` a whole second before the target arrives: the
+   * last *tick* and the *expiry* are two separate events, and the expiry turns
+   * no rings at all. The audio bead needs both, in that order.
+   */
+  it('separates the last tick from the expiry a second later', () => {
+    const driver = new Driver();
+    driver.at(1); // 000:00:01, with 1.5 s really left
+
+    const lastTick = driver.at(0)!; // 0.5 s left: the readout hits 000:00:00
+    expect(lastTick.kind).toBe('tick');
+    expect(lastTick.expired).toBe(false);
+    expect(lastTick.motions).toHaveLength(1);
+    expect(lastTick.digits).toEqual([0, 0, 0, 0, 0, 0, 0]);
+
+    const expiry = driver.at(-0.5)!; // the target actually arrives
+    expect(expiry.kind).toBe('expire');
+    expect(expiry.expired).toBe(true);
+    expect(expiry.motions).toEqual([]);
+    expect(expiry.carryDepth).toBe(0);
+    expect(driver.events).toEqual([lastTick, expiry]);
+  });
+
   it('winds the train down to a stop instead of halting it', () => {
     const driver = new Driver();
     driver.at(1);

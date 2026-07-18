@@ -90,6 +90,8 @@ export class ClockSceneView {
   private detents: THREE.InstancedMesh | null = null;
   private readonly detentBases: { position: THREE.Vector3; quaternion: THREE.Quaternion }[] = [];
   private readonly detentAxis = new THREE.Vector3();
+  /** True once the levers have been written to the buffer in their rest pose. */
+  private detentsSeated = false;
 
   private balance: THREE.Object3D | null = null;
   private escapeWheel: THREE.Object3D | null = null;
@@ -315,10 +317,20 @@ export class ClockSceneView {
     this.applyDetents(this.detentBases.map(() => 0));
   }
 
-  /** Rocks each lever about its pivot by the mechanism's lift angle. */
+  /**
+   * Rocks each lever about its pivot by the mechanism's lift angle.
+   *
+   * Skipped entirely while every lever is seated, which is the overwhelming
+   * majority of frames: rewriting and re-uploading the instance matrices 60
+   * times a second to say "nothing moved" is a buffer upload for nothing.
+   */
   private applyDetents(lifts: readonly number[]): void {
     const mesh = this.detents;
     if (!mesh) return;
+
+    const seated = lifts.every((lift) => lift === 0);
+    if (seated && this.detentsSeated) return;
+    this.detentsSeated = seated;
 
     for (let i = 0; i < this.detentBases.length; i += 1) {
       const base = this.detentBases[i]!;
