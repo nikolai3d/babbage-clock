@@ -130,7 +130,12 @@ Baselines live in `e2e/__screenshots__/screenshots.spec.ts/` and are **committed
 
 Every shot is taken in fully deterministic mode: frozen clock, absolute
 `?target=`, `?nomotion=1`, fixed 1280×720 viewport, `deviceScaleFactor: 1`, UTC
-and `en-US`. Comparison allows `maxDiffPixelRatio: 0.02` for raster noise.
+and `en-US`. Comparison allows `maxDiffPixelRatio: 0.005` for raster noise.
+
+That tolerance is calibrated, not guessed: recolouring a single material slot
+moves about 4% of the frame, so 0.5% keeps roughly an order of magnitude of
+margin below the smallest change worth catching. **If a screenshot test fails,
+regenerate the baseline — do not raise the tolerance.**
 
 ### Baselines are Linux/SwiftShader artefacts
 

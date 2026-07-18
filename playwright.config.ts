@@ -36,9 +36,15 @@ export default defineConfig({
   expect: {
     timeout: 10_000,
     toHaveScreenshot: {
-      // SwiftShader is deterministic, but tone mapping and text antialiasing
-      // still leave a few pixels of slack between builds.
-      maxDiffPixelRatio: 0.02,
+      // SwiftShader is a deterministic software rasteriser and CI runs the same
+      // container, so the observed noise floor is ~0. The slack is for CPU
+      // differences between runners, not for real visual change.
+      //
+      // Calibration: recolouring one material slot moves ~4% of the frame, so
+      // 0.5% keeps roughly an order of magnitude of margin below the smallest
+      // change worth catching. Raising this hides regressions — if a legitimate
+      // visual change lands, regenerate the baselines instead.
+      maxDiffPixelRatio: 0.005,
       threshold: 0.2,
       animations: 'disabled',
       caret: 'hide',
