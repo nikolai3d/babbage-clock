@@ -1,4 +1,6 @@
+import { parseQualityPreference } from './quality.js';
 import { parseEnvironmentPreset } from '../scene/environment.js';
+import type { QualityPreference } from './quality.js';
 import type { EnvironmentPresetId } from '../scene/types.js';
 import type { ResolvedTarget } from '../time/target.js';
 
@@ -8,6 +10,7 @@ export const URL_PARAM = {
   target: 'target',
   tz: 'tz',
   mood: 'mood',
+  quality: 'quality',
 } as const;
 
 export interface LaunchParams {
@@ -25,6 +28,17 @@ export interface LaunchParams {
    * rather than as an error, exactly like an unknown `?scene=`.
    */
   readonly mood: EnvironmentPresetId | null;
+  /**
+   * Render-quality override (`?quality=low|high`). `auto` — the default and the
+   * value any unrecognised input maps to — leaves the tier to the device
+   * heuristic in `app/quality.ts`.
+   *
+   * Deliberately **not** part of {@link ShareableState}: a tier is a property of
+   * the device it was chosen on, and sending "low quality" to whoever opens the
+   * link would be nonsense. It is readable so a test, a bug report or a curious
+   * viewer can pin it.
+   */
+  readonly quality: QualityPreference;
 }
 
 export function readLaunchParams(search: string): LaunchParams {
@@ -34,6 +48,7 @@ export function readLaunchParams(search: string): LaunchParams {
     target: params.get(URL_PARAM.target),
     tz: params.get(URL_PARAM.tz),
     mood: parseEnvironmentPreset(params.get(URL_PARAM.mood)),
+    quality: parseQualityPreference(params.get(URL_PARAM.quality)),
   };
 }
 

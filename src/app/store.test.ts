@@ -87,6 +87,7 @@ describe('readLaunchParams', () => {
       target: '2030-01-01',
       tz: null,
       mood: null,
+      quality: 'auto',
     });
   });
 
@@ -96,10 +97,17 @@ describe('readLaunchParams', () => {
       target: '2026-12-31T23:59:59',
       tz: 'Europe/Paris',
       mood: null,
+      quality: 'auto',
     });
   });
 
   it('returns nulls when parameters are absent', () => {
-    expect(readLaunchParams('')).toEqual({ sceneId: null, target: null, tz: null, mood: null });
+    expect(readLaunchParams('')).toEqual({
+      sceneId: null,
+      target: null,
+      tz: null,
+      mood: null,
+      quality: 'auto',
+    });
   });
 });

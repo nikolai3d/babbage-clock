@@ -25,19 +25,32 @@ function roundTrip(state: ShareableState): number {
 describe('readLaunchParams', () => {
   it('reads every parameter', () => {
     const params = readLaunchParams(
-      '?scene=slate-orrery&target=2026-12-31T23:59:59&tz=Europe/Paris&mood=night',
+      '?scene=slate-orrery&target=2026-12-31T23:59:59&tz=Europe/Paris&mood=night&quality=low',
     );
     expect(params).toEqual({
       sceneId: 'slate-orrery',
       target: '2026-12-31T23:59:59',
       tz: 'Europe/Paris',
       mood: 'night',
+      quality: 'low',
     });
   });
 
   it('treats an unknown mood as absent rather than as an error', () => {
     expect(readLaunchParams('?mood=disco').mood).toBeNull();
     expect(readLaunchParams('').mood).toBeNull();
+  });
+
+  it('defaults the quality tier to automatic', () => {
+    // The tier belongs to the device, so a link that says nothing about it must
+    // let the recipient's own device decide.
+    expect(readLaunchParams('').quality).toBe('auto');
+    expect(readLaunchParams('?quality=ultra').quality).toBe('auto');
+  });
+
+  it('keeps the quality tier out of a shared link', () => {
+    const params = buildShareParams(shareState('2026-12-31T23:59:59', 'Europe/Paris'));
+    expect(params.has('quality')).toBe(false);
   });
 });
 

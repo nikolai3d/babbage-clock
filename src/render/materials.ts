@@ -1,15 +1,43 @@
 import * as THREE from 'three';
 import { MATERIAL_SLOTS } from '../scene/types.js';
 import { requiredMaps, sourceForSlot } from '../materials/manifest.js';
-import { sharedMaterialRegistry } from './materialRegistry.js';
+import { MaterialRegistry, sharedMaterialRegistry } from './materialRegistry.js';
 import type { MaterialManifest } from '../materials/manifest.js';
-import type { MaterialRegistry, TextureTransform } from './materialRegistry.js';
+import type { TextureTransform } from './materialRegistry.js';
+import type { TextureSizePreference } from '../app/quality.js';
 import type {
   MaterialBinding,
   MaterialSlot,
   MaterialSlotMap,
   PbrMaterialBinding,
 } from '../scene/types.js';
+
+export interface MaterialLibraryOptions {
+  /**
+   * Texture resolution to prefer for `pbr` bindings.
+   *
+   * **Extension point for the PBR materials bead.** The quality tier already
+   * decides this and threads it here (`app/quality.ts` -> `ClockSceneView` ->
+   * this class), because texture memory is the first thing a mobile browser
+   * kills a WebGL tab for. The loading code that lands later should pick the
+   * authored variant from {@link MaterialLibrary.textureSize} rather than
+   * introducing a second notion of quality.
+   */
+  readonly textureSize?: TextureSizePreference;
+
+  /**
+   * Texture cache to draw from. Defaults to the process-wide shared registry,
+   * which is what makes switching scenes back and forth free of re-downloads.
+   * Tests inject their own so each case starts from an empty cache.
+   */
+  readonly registry?: MaterialRegistry;
+}
+
+function isMaterialRegistry(
+  value: MaterialLibraryOptions | MaterialRegistry,
+): value is MaterialRegistry {
+  return value instanceof MaterialRegistry;
+}
 
 /**
  * Turns a scene's material slot map into concrete three.js materials.
@@ -32,7 +60,30 @@ export class MaterialLibrary {
   private readonly slots = new Map<MaterialSlot, SlotMaterial>();
   private disposed = false;
 
-  constructor(slots: MaterialSlotMap, registry: MaterialRegistry = sharedMaterialRegistry()) {
+  /**
+   * The tier's texture-resolution preference. See {@link MaterialLibraryOptions}.
+   *
+   * Recorded but not yet acted on: `material.json` has no size variants to
+   * choose between, so there is nothing to select. Kept as the single notion of
+   * texture quality — when variants are authored, resolve them here rather than
+   * introducing a second one.
+   */
+  readonly textureSize: TextureSizePreference;
+
+  /**
+   * The second argument accepts a bare registry as well as an options object,
+   * because the material pipeline threads a registry in while the quality tier
+   * threads a texture-size preference in, and both call sites are load-bearing.
+   */
+  constructor(
+    slots: MaterialSlotMap,
+    optionsOrRegistry: MaterialLibraryOptions | MaterialRegistry = {},
+  ) {
+    const options: MaterialLibraryOptions = isMaterialRegistry(optionsOrRegistry)
+      ? { registry: optionsOrRegistry }
+      : optionsOrRegistry;
+    this.textureSize = options.textureSize ?? 'full';
+    const registry = options.registry ?? sharedMaterialRegistry();
     for (const slot of MATERIAL_SLOTS) {
       const material = new SlotMaterial(slot, registry);
       material.apply(slots[slot]);

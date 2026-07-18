@@ -208,6 +208,24 @@ export interface RendererState {
    * three.js-adjacent imports.
    */
   readonly lighting: 'none' | 'loading' | 'ready' | 'error';
+  /** The render-quality tier in force. See `app/quality.ts`. */
+  readonly quality: 'high' | 'low';
+  /** Frame ceiling the tier imposes, or null when the loop runs free. */
+  readonly maxFps: number | null;
+  /**
+   * `whole` when the entire mechanism is in frame, `rings` when the aspect
+   * ratio forced a crop to the digit rings. See `scene/framing.ts`.
+   */
+  readonly framingFit: 'whole' | 'rings';
+  /**
+   * On-screen width of the ring stack's bounding extent, in CSS pixels.
+   *
+   * The mobile project asserts on this: "the reading is legible without
+   * interaction" is a claim about how big the drums are and whether all of them
+   * are on screen, and this is that claim as a number. It is the bounding
+   * sphere's diameter, so it slightly overstates the drums themselves.
+   */
+  readonly ringExtentPx: number;
 }
 
 /** What the material pipeline is currently doing. */

@@ -19,6 +19,7 @@ import {
 import { boxProjectUv } from './geometry/uv.js';
 import { Mechanism, type MechanismEvent, type MechanismInput } from '../mechanism/index.js';
 import type { MaterialRegistry } from './materialRegistry.js';
+import type { TextureSizePreference } from '../app/quality.js';
 import type {
   Axis,
   GearSpec,
@@ -70,6 +71,12 @@ export interface ClockSceneViewOptions {
    * the process-wide registry, which is what the headless unit tests use.
    */
   readonly materials?: MaterialRegistry;
+  /**
+   * Texture resolution the material pipeline should prefer, from the active
+   * quality tier. Threaded through to `MaterialLibrary`; see `app/quality.ts`.
+   * Defaults to `full`.
+   */
+  readonly textureSize?: TextureSizePreference;
 }
 
 /**
@@ -130,10 +137,10 @@ export class ClockSceneView {
     this.definition = definition;
     this.root.name = `scene:${definition.id}`;
 
-    this.materials = new MaterialLibrary(
-      definition.materials,
-      options.materials ?? sharedMaterialRegistry(),
-    );
+    this.materials = new MaterialLibrary(definition.materials, {
+      registry: options.materials ?? sharedMaterialRegistry(),
+      textureSize: options.textureSize ?? 'full',
+    });
     this.lighting = new SceneLighting(scene, definition.lighting);
     this.caseMetrics = measureCase(definition);
     this.mechanism = new Mechanism({
