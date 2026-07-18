@@ -1,0 +1,101 @@
+:root {
+  --hud-fg: #f2e7dc;
+  --hud-dim: #b9a894;
+  --hud-bg: rgb(18 14 12 / 62%);
+  --hud-border: rgb(242 231 220 / 18%);
+  color-scheme: dark;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  height: 100%;
+  margin: 0;
+  background: #0d0a0c;
+  color: var(--hud-fg);
+  font-family:
+    ui-sans-serif,
+    system-ui,
+    -apple-system,
+    'Segoe UI',
+    Roboto,
+    sans-serif;
+  overflow: hidden;
+}
+
+#scene-canvas {
+  display: block;
+  width: 100vw;
+  height: 100vh;
+  touch-action: none;
+}
+
+.hud {
+  position: fixed;
+  inset: auto 0 0 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1rem;
+  align-items: flex-end;
+  justify-content: space-between;
+  padding: clamp(0.75rem, 2vw, 1.5rem);
+  pointer-events: none;
+}
+
+.hud__readout,
+.hud__controls {
+  pointer-events: auto;
+  padding: 0.6rem 0.9rem;
+  border: 1px solid var(--hud-border);
+  border-radius: 0.6rem;
+  background: var(--hud-bg);
+  backdrop-filter: blur(8px);
+}
+
+.hud__countdown {
+  margin: 0;
+  font-size: clamp(1.6rem, 5vw, 2.6rem);
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  line-height: 1.1;
+}
+
+.hud__target {
+  margin: 0.2rem 0 0;
+  font-size: 0.85rem;
+  color: var(--hud-dim);
+}
+
+.hud__controls {
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
+}
+
+.hud__label {
+  font-size: 0.8rem;
+  color: var(--hud-dim);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+.hud__select {
+  padding: 0.35rem 0.5rem;
+  border: 1px solid var(--hud-border);
+  border-radius: 0.4rem;
+  background: rgb(0 0 0 / 35%);
+  color: inherit;
+  font: inherit;
+  font-size: 0.9rem;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .hud__readout,
+  .hud__controls {
+    backdrop-filter: none;
+  }
+}
