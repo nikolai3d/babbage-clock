@@ -199,6 +199,7 @@ interface SceneDefinition {
   mode: 'countdown' | 'clock';
   rings: RingConfig; // count / radius / thickness / spacing / axis / slots
   gears: readonly GearSpec[]; // decorative rotating discs
+  escapement?: EscapementPlacement; // balance centre + escape-wheel offset override
   materials: MaterialSlotMap; // every named slot -> a MaterialBinding
   lighting: LightingConfig; // background, ambient, directionals, environment
   camera: CameraConfig; // placement + OrbitControls framing limits

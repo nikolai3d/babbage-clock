@@ -125,7 +125,8 @@ export interface GearSpec {
  * case. Omitted, placement derives from the case geometry too — tucked into
  * the quadrant the gear train leaves free — which is why no scene so far sets
  * it. Declare it when a scene's case or layout puts that derivation somewhere
- * wrong.
+ * wrong. The case is sized around the rings and gears only — it does not grow
+ * to enclose a declared placement, so keep one inside the case yourself.
  */
 export interface EscapementPlacement {
   /** Centre of the balance wheel; the cock that holds it follows. */

@@ -728,6 +728,8 @@ describe('escapement placement', () => {
     const derived = escapementHolders(derivedView);
     const derivedOffset = derived.wheel.position.clone().sub(derived.balance.position);
     derivedView.dispose();
+    // A zero delta would make the comparisons below pass vacuously.
+    expect(derivedOffset.length()).toBeGreaterThan(0);
 
     const placed: SceneDefinition = {
       ...copperPadlockScene,
@@ -743,6 +745,30 @@ describe('escapement placement', () => {
     expect(offset.x).toBeCloseTo(derivedOffset.x, 9);
     expect(offset.y).toBeCloseTo(derivedOffset.y, 9);
     expect(offset.z).toBeCloseTo(derivedOffset.z, 9);
+    view.dispose();
+  });
+
+  it('falls back per field the other way: a declared offset keeps the derived centre', () => {
+    const derivedView = new ClockSceneView(new THREE.Scene(), copperPadlockScene, {
+      motion: false,
+    });
+    const derivedCentre = escapementHolders(derivedView).balance.position.clone();
+    derivedView.dispose();
+
+    const placed: SceneDefinition = {
+      ...copperPadlockScene,
+      id: 'escapement-offset-probe',
+      escapement: { escapeWheelOffset: [0.12, -0.05, 0.02] },
+    };
+    const view = new ClockSceneView(new THREE.Scene(), placed, { motion: false });
+    const { balance, wheel } = escapementHolders(view);
+
+    // The centre still derives from the case…
+    expect(balance.position.toArray()).toEqual(derivedCentre.toArray());
+    // …while the wheel sits at the declared offset from it.
+    expect(wheel.position.x).toBeCloseTo(derivedCentre.x + 0.12, 9);
+    expect(wheel.position.y).toBeCloseTo(derivedCentre.y - 0.05, 9);
+    expect(wheel.position.z).toBeCloseTo(derivedCentre.z + 0.02, 9);
     view.dispose();
   });
 });
