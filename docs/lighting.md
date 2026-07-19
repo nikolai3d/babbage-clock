@@ -159,7 +159,12 @@ once per session and caches the render target by preset id. It also:
   including when prefiltering throws;
 - shares one load between concurrent callers;
 - throws away — rather than caching — a result that lands after `dispose()`;
-- releases every cached render target and the generator in `dispose()`.
+- releases every cached render target and the generator in `dispose()`;
+- settles a load still in flight when `dispose()` lands by rejecting it with
+  `EnvironmentDisposedError` instead of pending forever — KTX2's terminated
+  worker pool would otherwise drop the job silently;
+- disposes on arrival — never orphans — a texture the decoder delivers after
+  that rejection.
 
 `EnvironmentController` owns the rig, the generated gradient backdrop and the
 grade, and disposes each when the mood changes or the renderer goes away. The

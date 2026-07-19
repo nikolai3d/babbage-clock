@@ -5,6 +5,7 @@ import {
   disposeRig,
   toneMappingConstant,
 } from './ibl/rig.js';
+import { EnvironmentDisposedError } from './ibl/library.js';
 import type { EnvironmentSource, LoadedEnvironment } from './ibl/library.js';
 import type { IblManifest } from './ibl/manifest.js';
 import type { EnvironmentSpec, LightingConfig, SceneDefinition } from '../scene/types.js';
@@ -228,6 +229,14 @@ export class EnvironmentController {
       })
       .catch((error: unknown) => {
         if (this.disposed || request !== this.requestId) return;
+        if (error instanceof EnvironmentDisposedError) {
+          // The library was torn down beneath a still-live controller. That
+          // is teardown, not a broken mood: warning would report it as a
+          // failure, and leaving the status at 'loading' would lie to the
+          // HUD. Settle to what is actually on screen.
+          this.setStatus(this.committed ? 'ready' : 'none');
+          return;
+        }
         // A mood that will not load must not leave a half-applied one behind:
         // the previously committed mood is still whole, so keep showing it.
         console.warn(`[lighting] mood "${requested}" could not be applied:`, error);

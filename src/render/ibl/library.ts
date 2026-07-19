@@ -52,7 +52,7 @@ export interface PanoramaLoader {
    * orphaned. `EnvironmentLibrary.dispose()` relies on this to guarantee its
    * own in-flight promises settle.
    */
-  dispose?(): void;
+  dispose(): void;
 }
 
 /**
@@ -151,6 +151,15 @@ export class EnvironmentLibrary implements EnvironmentSource {
 
     const manifest = await entry.loadManifest();
     const url = await entry.loadPanoramaUrl(manifest.environment.file);
+
+    if (this.disposed) {
+      // Teardown can land during the manifest/URL imports above. The loader
+      // is already disposed, and its contract only settles loads that were in
+      // flight at dispose — starting one now could hang this promise forever,
+      // and would fetch a panorama nobody can use.
+      throw new EnvironmentDisposedError('EnvironmentLibrary was disposed while loading');
+    }
+
     const source = await this.loader.load(url, manifest.environment.format);
 
     if (this.disposed) {
@@ -205,7 +214,7 @@ export class EnvironmentLibrary implements EnvironmentSource {
     this.cache.clear();
     this.inFlight.clear();
     this.prefilter.dispose();
-    this.loader.dispose?.();
+    this.loader.dispose();
   }
 }
 
@@ -381,29 +390,36 @@ export class ThreePanoramaLoader implements PanoramaLoader {
         },
       };
       this.pending.add(entry);
-      loader.load(
-        url,
-        (texture) => {
-          this.pending.delete(entry);
-          if (rejectedByDispose) {
-            // The promise already rejected, so no caller can ever receive
-            // this texture; freeing it here is what stops it being orphaned.
-            // (An HDR fetch cannot be cancelled and may still deliver; a KTX2
-            // result can slip out between its worker's last post and the
-            // pool's termination.)
-            texture.dispose();
-            return;
-          }
-          texture.mapping = THREE.EquirectangularReflectionMapping;
-          resolve(texture);
-        },
-        undefined,
-        (error: unknown) => {
-          this.pending.delete(entry);
-          if (rejectedByDispose) return;
-          reject(error instanceof Error ? error : new Error(`Failed to load ${url}`));
-        },
-      );
+      // A loader that throws synchronously settles the promise through the
+      // executor, but would strand the entry in the registry until dispose.
+      try {
+        loader.load(
+          url,
+          (texture) => {
+            this.pending.delete(entry);
+            if (rejectedByDispose) {
+              // The promise already rejected, so no caller can ever receive
+              // this texture; freeing it here is what stops it being orphaned.
+              // (An HDR fetch cannot be cancelled and may still deliver; a KTX2
+              // result can slip out between its worker's last post and the
+              // pool's termination.)
+              texture.dispose();
+              return;
+            }
+            texture.mapping = THREE.EquirectangularReflectionMapping;
+            resolve(texture);
+          },
+          undefined,
+          (error: unknown) => {
+            this.pending.delete(entry);
+            if (rejectedByDispose) return;
+            reject(error instanceof Error ? error : new Error(`Failed to load ${url}`));
+          },
+        );
+      } catch (error) {
+        this.pending.delete(entry);
+        throw error;
+      }
     });
   }
 }

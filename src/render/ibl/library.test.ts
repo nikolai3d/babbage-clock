@@ -107,6 +107,16 @@ vi.mock('three/examples/jsm/loaders/HDRLoader.js', () => ({
   HDRLoader: hdr.FakeHDRLoader,
 }));
 
+// The mocked loaders' state is module-global, and tests assert across formats
+// (an rgbe test checks no KTX2 transcoder was built). One file-level reset
+// keeps every test independent of which describe ran before it.
+afterEach(() => {
+  ktx2.FakeKTX2Loader.instances.length = 0;
+  ktx2.FakeKTX2Loader.failNextConstruction = false;
+  hdr.FakeHDRLoader.instances.length = 0;
+  vi.unstubAllEnvs();
+});
+
 /**
  * `renderer.info` needs a WebGL context, which these tests deliberately do not
  * have. `liveTargets` and the fakes below track exactly the same thing — how
@@ -325,10 +335,26 @@ describe('EnvironmentLibrary', () => {
   it('throws away a result that lands after disposal instead of caching it', async () => {
     const loader = fakeLoader();
     const prefilter = new FakePrefilter();
+    // Hold the decode open so disposal lands while it is in flight, then let
+    // the texture arrive anyway — the slip a real decoder can make between
+    // its last post and teardown.
+    let deliver: (() => void) | null = null;
+    loader.load = (_url: string, format: IblEnvironmentFormat): Promise<THREE.Texture> => {
+      loader.loads += 1;
+      loader.formats.push(format);
+      const texture = new THREE.Texture();
+      texture.addEventListener('dispose', () => loader.disposedSources.add(texture));
+      loader.sources.push(texture);
+      return new Promise((resolve) => {
+        deliver = () => resolve(texture);
+      });
+    };
     const library = new EnvironmentLibrary({ presets: fakePresets(['day']), loader, prefilter });
 
     const pending = library.load('day');
+    await vi.waitFor(() => expect(deliver).not.toBeNull());
     library.dispose();
+    deliver!();
 
     await expect(pending).rejects.toBeInstanceOf(EnvironmentDisposedError);
     // Disposal is noticed before the prefilter — already torn down by now —
@@ -369,6 +395,66 @@ describe('EnvironmentLibrary', () => {
 
     await expect(pending).rejects.toBeInstanceOf(EnvironmentDisposedError);
     expect(prefilter.compiled).toBe(0);
+    expect(library.liveTargets).toBe(0);
+  });
+
+  it('never asks a disposed loader to decode when teardown lands during the preset imports', async () => {
+    // The manifest and panorama-url imports are async too, so disposal can
+    // land between them and the decode. The loader contract only settles
+    // loads in flight *at* dispose — a decode started afterwards would hang
+    // its promise forever, which is why load() here never resolves.
+    const prefilter = new FakePrefilter();
+    let decodes = 0;
+    const loader: PanoramaLoader = {
+      load: () => {
+        decodes += 1;
+        return new Promise<THREE.Texture>(() => {});
+      },
+      dispose: () => {},
+    };
+    const entry = fakePresets(['day']).get('day')!;
+    let releaseUrl: ((url: string) => void) | null = null;
+    const presets: IblPresetSource = {
+      list: () => ['day'],
+      get: (id) =>
+        id === 'day'
+          ? {
+              ...entry,
+              loadPanoramaUrl: () =>
+                new Promise<string>((resolve) => {
+                  releaseUrl = resolve;
+                }),
+            }
+          : null,
+    };
+    const library = new EnvironmentLibrary({ presets, loader, prefilter });
+
+    const pending = library.load('day');
+    // Wait until the load is genuinely inside the URL import, then dispose
+    // and only afterwards let the import resolve.
+    await vi.waitFor(() => expect(releaseUrl).not.toBeNull());
+    library.dispose();
+    releaseUrl!('/fake/day/day.hdr');
+
+    await expect(pending).rejects.toBeInstanceOf(EnvironmentDisposedError);
+    expect(decodes).toBe(0);
+  });
+
+  it('disposes the freshly compiled target when compile itself disposed the library', async () => {
+    const loader = fakeLoader();
+    const prefilter = new FakePrefilter();
+    const library = new EnvironmentLibrary({ presets: fakePresets(['day']), loader, prefilter });
+    const compile = prefilter.compile.bind(prefilter);
+    prefilter.compile = (source: THREE.Texture): THREE.WebGLRenderTarget => {
+      const target = compile(source);
+      // Teardown from inside compile, after the target exists: caching it
+      // now would leak a render target nothing will ever dispose.
+      library.dispose();
+      return target;
+    };
+
+    await expect(library.load('day')).rejects.toBeInstanceOf(EnvironmentDisposedError);
+    expect(prefilter.live.size).toBe(0);
     expect(library.liveTargets).toBe(0);
   });
 
@@ -427,12 +513,6 @@ describe('EnvironmentLibrary', () => {
 });
 
 describe('ThreePanoramaLoader (ktx2)', () => {
-  afterEach(() => {
-    ktx2.FakeKTX2Loader.instances.length = 0;
-    ktx2.FakeKTX2Loader.failNextConstruction = false;
-    vi.unstubAllEnvs();
-  });
-
   const fakeRenderer = (): THREE.WebGLRenderer => ({}) as unknown as THREE.WebGLRenderer;
 
   it('routes a .ktx2 panorama through a transcoder served under the app base', async () => {
@@ -606,10 +686,6 @@ describe('ThreePanoramaLoader (ktx2)', () => {
 });
 
 describe('ThreePanoramaLoader (rgbe)', () => {
-  afterEach(() => {
-    hdr.FakeHDRLoader.instances.length = 0;
-  });
-
   const fakeRenderer = (): THREE.WebGLRenderer => ({}) as unknown as THREE.WebGLRenderer;
 
   it('rejects a decode in flight at disposal and frees a texture that arrives late', async () => {
@@ -638,6 +714,10 @@ describe('ThreePanoramaLoader (rgbe)', () => {
   });
 
   it('ignores a failure that lands after disposal already rejected the decode', async () => {
+    // Executable documentation more than a regression net: rejecting a
+    // promise that has already settled is inert, so deleting the guard in
+    // onError would not fail this test. It pins the intended flow, not an
+    // externally observable effect.
     const loader = new ThreePanoramaLoader(fakeRenderer());
 
     const pending = loader.load('/fake/mood.hdr', 'rgbe');
@@ -650,6 +730,22 @@ describe('ThreePanoramaLoader (rgbe)', () => {
     // an unhandled rejection or clobber the disposal error.
     hdr.FakeHDRLoader.instances[0]!.requests[0]!.onError(new Error('network gave up'));
     await expect(pending).rejects.toBeInstanceOf(EnvironmentDisposedError);
+  });
+
+  it('rejects when disposal lands while the decoder module import is in flight', async () => {
+    const loader = new ThreePanoramaLoader(fakeRenderer());
+
+    // No waitFor before the dispose: it lands between load()'s entry check
+    // and the decoder module import resolving.
+    const pending = loader.load('/fake/x.hdr', 'rgbe');
+    loader.dispose();
+
+    await expect(pending).rejects.toBeInstanceOf(EnvironmentDisposedError);
+    // Even if the import's microtask already constructed a decoder, no fetch
+    // may start for a renderer that no longer exists.
+    for (const instance of hdr.FakeHDRLoader.instances) {
+      expect(instance.requests).toHaveLength(0);
+    }
   });
 
   it('rejects a load requested after disposal without creating a decoder', async () => {
@@ -667,5 +763,47 @@ describe('ThreePanoramaLoader (rgbe)', () => {
     // transcoder worker pool is built for a renderer that no longer exists.
     expect(hdr.FakeHDRLoader.instances).toHaveLength(0);
     expect(ktx2.FakeKTX2Loader.instances).toHaveLength(0);
+  });
+});
+
+describe('ThreePanoramaLoader (across formats)', () => {
+  const fakeRenderer = (): THREE.WebGLRenderer => ({}) as unknown as THREE.WebGLRenderer;
+
+  it('settles and frees every format still decoding on a single dispose', async () => {
+    // The pending registry spans formats. One dispose must reject an rgbe and
+    // a ktx2 decode both in flight, and free whatever either path delivers
+    // afterwards — a per-format registry would pass every single-format test
+    // above and still hang one of these.
+    const loader = new ThreePanoramaLoader(fakeRenderer());
+
+    const viaHdr = loader.load('/fake/mood.hdr', 'rgbe');
+    const viaKtx2 = loader.load('/fake/night.ktx2', 'ktx2');
+    await vi.waitFor(() => {
+      expect(hdr.FakeHDRLoader.instances[0]?.requests).toHaveLength(1);
+      expect(ktx2.FakeKTX2Loader.instances[0]?.requests).toHaveLength(1);
+    });
+
+    loader.dispose();
+
+    await expect(viaHdr).rejects.toBeInstanceOf(EnvironmentDisposedError);
+    await expect(viaKtx2).rejects.toBeInstanceOf(EnvironmentDisposedError);
+
+    // Both promises already rejected, so nobody can ever receive these late
+    // textures; the loader is the only owner left to free each of them.
+    const lateHdr = new THREE.Texture();
+    let hdrFreed = false;
+    lateHdr.addEventListener('dispose', () => {
+      hdrFreed = true;
+    });
+    hdr.FakeHDRLoader.instances[0]!.requests[0]!.onLoad(lateHdr);
+    expect(hdrFreed).toBe(true);
+
+    const lateKtx2 = new THREE.Texture();
+    let ktx2Freed = false;
+    lateKtx2.addEventListener('dispose', () => {
+      ktx2Freed = true;
+    });
+    ktx2.FakeKTX2Loader.instances[0]!.requests[0]!.onLoad(lateKtx2);
+    expect(ktx2Freed).toBe(true);
   });
 });
