@@ -377,6 +377,36 @@ describe('ClockSceneView motion', () => {
     view.dispose();
   });
 
+  it('mirrors the group rotations through appliedRingAngles, mid-flight and at rest', () => {
+    // The `?testApi` travel probe trusts `appliedRingAngles` as "what the
+    // viewer sees" (see `getRingAngles` in renderer.ts). That is only honest
+    // while the cached array and the actual group rotations are written
+    // together in `update` — this pins them to each other so splitting them
+    // apart cannot pass unnoticed.
+    const view = new ClockSceneView(scene, copperPadlockScene);
+    show(view, [0, 0, 0, 0, 0, 0, 0], 0);
+
+    const event = view.setFrame(
+      { digits: [5, 5, 5, 5, 5, 5, 5], sequence: 1, expired: false, direction: 'down' },
+      1000,
+    )!;
+
+    view.update(1000 + event.durationMs * 0.5);
+    expect(view.appliedRingAngles).toEqual(ringAngles(view));
+    // Genuinely mid-flight, so the mirror above is tested against a moving
+    // ring and not just a settled one — a view that snapped on the first frame
+    // would otherwise satisfy every other assertion here.
+    expect(view.appliedRingAngles[0]).not.toBe(ringAngleForDigit(5));
+
+    view.update(1000 + event.durationMs + 1);
+    expect(view.appliedRingAngles).toEqual(ringAngles(view));
+    // At rest the mechanism holds the canonical digit angle *exactly* — the
+    // invariant the travel e2e spec's exact-equality assertions lean on.
+    expect(view.appliedRingAngles[0]).toBe(ringAngleForDigit(5));
+
+    view.dispose();
+  });
+
   it('snaps rings to their digit in a single frame with motion off', () => {
     const view = new ClockSceneView(scene, copperPadlockScene, { motion: false });
     show(view, [0, 0, 0, 0, 0, 0, 0], 0);

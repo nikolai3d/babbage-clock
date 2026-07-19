@@ -18,6 +18,7 @@
 import type { CountdownParts, RemainingTime } from '../time/countdown.js';
 import type { TrueTimeStatus } from '../time/trueTime.js';
 import type { CountdownTarget, TimeSource } from '../time/target.js';
+import type { MechanismEvent } from '../mechanism/index.js';
 
 /** Canonical test-hook query-parameter names, kept beside the app's own. */
 export const TEST_URL_PARAM = {
@@ -307,6 +308,28 @@ export interface MaterialState {
  */
 export interface RendererProbe {
   getDigits(): readonly number[];
+  /**
+   * The ring rotations last written to the scene graph, in radians.
+   *
+   * A travel — the drums spinning to a new reading rather than cutting to it —
+   * exists only here: the digits update the instant the target is applied, and
+   * the whole animation is in the angles. Sampling these per frame is what
+   * lets an e2e spec assert "it travelled" without screenshots, which under
+   * SwiftShader are too slow to catch a 1.1 s spin reliably.
+   */
+  getRingAngles(): readonly number[];
+  /**
+   * The most recent tick / seek / expire the mechanism planned, or null before
+   * the first one.
+   *
+   * This is the unmissable form of "did it travel": events are created at most
+   * once per rendered frame and each stays here until the next frame replaces
+   * it, so a spec reading this every animation frame sees every event no
+   * matter how slowly SwiftShader renders — where an *angle* sampled per frame
+   * can watch two consecutive frames bracket an entire spin. A teleport is a
+   * seek with `durationMs` 0, or no seek at all.
+   */
+  getLastMechanismEvent(): MechanismEvent | null;
   getRenderState(): RendererState;
   getMaterialState(): MaterialState;
 }
@@ -334,6 +357,10 @@ export interface ClockTestApi {
   readonly version: 1;
   /** The digits the rings are currently displaying, most significant first. */
   digits(): readonly number[];
+  /** The ring rotations last written to the scene, radians. Empty with no renderer. */
+  ringAngles(): readonly number[];
+  /** The mechanism's most recent event. See {@link RendererProbe.getLastMechanismEvent}. */
+  lastMechanismEvent(): MechanismEvent | null;
   sceneId(): string;
   countdown(): CountdownParts;
   /** What the rings actually display, including whether the hours are pinned. */
@@ -378,6 +405,8 @@ export function installTestApi(
   const api: ClockTestApi = {
     version: 1,
     digits: () => renderer.getDigits(),
+    ringAngles: () => renderer.getRingAngles(),
+    lastMechanismEvent: () => renderer.getLastMechanismEvent(),
     sceneId: () => store.get().sceneId,
     countdown: () => store.get().countdown,
     remaining: () => store.get().remaining,

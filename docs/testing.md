@@ -192,6 +192,8 @@ Specs assert on **state, not pixels**, wherever they can. `?testApi=1` installs
 
 ```ts
 window.__clock.digits(); // number[] currently on the rings
+window.__clock.ringAngles(); // radians last applied to the ring groups
+window.__clock.lastMechanismEvent(); // most recent tick/seek/expire, or null
 window.__clock.sceneId(); // active scene id
 window.__clock.countdown(); // CountdownParts
 window.__clock.target(); // CountdownTarget
@@ -477,5 +479,17 @@ pull request down.
   the right number of digits". Add a screenshot baseline if it deserves one.
 - **New time behaviour?** Prefer a unit test in `src/time/`. Keep e2e assertions
   about time loose.
+- **New animation?** Assert from mechanism events and applied state
+  (`lastMechanismEvent()`, `ringAngles()`), never from pixels or per-frame
+  angle sampling. A contended CI runner can render under 1 fps, so two
+  consecutive frames can bracket an entire animation — no sampler can observe
+  what was never drawn, but the event is created on a rendered frame and stays
+  current until the next, so it cannot be missed. The travel spec in
+  `e2e/countdown.spec.ts` is the worked example. That one-per-frame guarantee
+  holds only while the mechanism is driven by the frame loop: a scene swap, a
+  motion toggle or a WebGL context restore syncs it out of band, and an event
+  raised there can be replaced within the same frame. A collector spanning one
+  of those — `fallback.spec.ts` drives exactly that path — cannot assume it saw
+  every event.
 - **New rendering?** Add a screenshot only if a state assertion cannot express
   it. State assertions say why they failed; images only say that they did.

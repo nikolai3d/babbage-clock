@@ -118,6 +118,17 @@ export class ClockSceneView {
   private readonly ringGroups: THREE.Group[] = [];
   private readonly gears: GearView[] = [];
 
+  /**
+   * The ring rotations most recently written to the scene graph, in radians.
+   *
+   * Kept for the `?testApi` observation surface: a travel (a seek that spins
+   * the drums to a new reading) exists only in these angles — the logical
+   * digits update the instant the target changes — so an e2e spec asserting
+   * "the rings travelled rather than teleporting" needs the per-frame angle,
+   * not a screenshot. See `app/testHooks.ts`.
+   */
+  private lastAppliedRingAngles: readonly number[] = [];
+
   /** Detent levers, one instance per ring, drawn in a single call. */
   private detents: THREE.InstancedMesh | null = null;
   private readonly detentBases: { position: THREE.Vector3; quaternion: THREE.Quaternion }[] = [];
@@ -231,6 +242,11 @@ export class ClockSceneView {
     return this.mechanism.digits;
   }
 
+  /** The ring rotations last applied by {@link update}, in radians. */
+  get appliedRingAngles(): readonly number[] {
+    return this.lastAppliedRingAngles;
+  }
+
   /**
    * Hands the mechanism one frame of the clock. Returns the event it started,
    * or null — which is almost every frame.
@@ -263,6 +279,7 @@ export class ClockSceneView {
     for (let i = 0; i < this.ringGroups.length; i += 1) {
       this.ringGroups[i]!.rotation[axis] = sample.ringAngles[i] ?? 0;
     }
+    this.lastAppliedRingAngles = sample.ringAngles;
 
     this.applyDetents(sample.detentAngles);
 
