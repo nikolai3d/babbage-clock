@@ -19,13 +19,17 @@
  */
 
 import * as THREE from 'three';
+import { BASIS_TRANSCODER_PATH, resolveAssetUrl } from '../../materials/paths.js';
 import { iblPresets } from './presets.js';
+import type { KTX2Loader } from 'three/examples/jsm/loaders/KTX2Loader.js';
 import type { IblEnvironmentFormat, IblManifest } from './manifest.js';
 import type { IblPresetSource } from './presets.js';
 
 /** Decodes a panorama URL into a texture ready for prefiltering. */
 export interface PanoramaLoader {
   load(url: string, format: IblEnvironmentFormat): Promise<THREE.Texture>;
+  /** Releases anything the loader holds beyond the textures it handed out. */
+  dispose?(): void;
 }
 
 /**
@@ -158,6 +162,7 @@ export class EnvironmentLibrary implements EnvironmentSource {
     this.cache.clear();
     this.inFlight.clear();
     this.prefilter.dispose();
+    this.loader.dispose?.();
   }
 }
 
@@ -165,7 +170,7 @@ export class EnvironmentLibrary implements EnvironmentSource {
 export function createEnvironmentLibrary(renderer: THREE.WebGLRenderer): EnvironmentLibrary {
   return new EnvironmentLibrary({
     presets: iblPresets,
-    loader: new ThreePanoramaLoader(),
+    loader: new ThreePanoramaLoader(renderer),
     prefilter: new PmremPrefilter(renderer),
   });
 }
@@ -199,6 +204,16 @@ export class PmremPrefilter implements EnvironmentPrefilter {
  * decoder.
  */
 export class ThreePanoramaLoader implements PanoramaLoader {
+  private readonly renderer: THREE.WebGLRenderer;
+  private ktx2Loader: KTX2Loader | null = null;
+  private ktx2: Promise<KTX2Loader> | null = null;
+  private disposed = false;
+
+  /** The renderer is what `KTX2Loader.detectSupport` reads GPU formats off. */
+  constructor(renderer: THREE.WebGLRenderer) {
+    this.renderer = renderer;
+  }
+
   async load(url: string, format: IblEnvironmentFormat): Promise<THREE.Texture> {
     switch (format) {
       case 'rgbe': {
@@ -210,22 +225,69 @@ export class ThreePanoramaLoader implements PanoramaLoader {
         return this.decode(new EXRLoader(), url);
       }
       case 'ktx2':
-        // KTX2/UASTC-HDR needs the Basis transcoder shipped alongside the
-        // bundle and a renderer handed to KTX2Loader.detectSupport(). No
-        // shipped preset uses it; wiring it is a follow-up, and failing
-        // loudly beats silently rendering the wrong mood.
-        throw new Error(
-          'KTX2 environment maps are declared in the schema but the transcoder is not wired ' +
-            'up yet; ship the preset as a 1k .hdr or .exr for now.',
-        );
+        return this.decode(await this.transcoder(), url);
     }
+  }
+
+  /**
+   * The KTX2/Basis transcoder, created on the first `.ktx2` panorama.
+   *
+   * The wasm binaries are synced into `public/basis/` from `three` at build
+   * time (`scripts/sync-basis-transcoder.mjs`, shared with the material
+   * pipeline) and fetched at runtime, so the URL must be joined onto
+   * `import.meta.env.BASE_URL` by hand — a root-absolute path 404s on the
+   * GitHub Pages project page, and `scripts/check-base-path.mjs` fails the
+   * build on exactly that.
+   *
+   * Unlike the material registry there is no uncompressed fallback to prefer:
+   * the preset names exactly one panorama, so a transcoder that cannot load
+   * rejects — and that rejection surfaces through the environment controller,
+   * which keeps the previous mood whole. Failing loudly beats silently
+   * rendering the wrong mood.
+   */
+  private transcoder(): Promise<KTX2Loader> {
+    if (this.ktx2) return this.ktx2;
+
+    const attempt = import('three/examples/jsm/loaders/KTX2Loader.js').then(({ KTX2Loader }) => {
+      const loader = new KTX2Loader()
+        .setTranscoderPath(resolveAssetUrl(BASIS_TRANSCODER_PATH))
+        .detectSupport(this.renderer);
+      if (this.disposed) {
+        // The renderer went away while the module was on the network. Caching
+        // the loader now would leak its worker pool for the rest of the tab.
+        loader.dispose();
+        throw new Error('ThreePanoramaLoader was disposed while loading the KTX2 transcoder');
+      }
+      this.ktx2Loader = loader;
+      return loader;
+    });
+
+    this.ktx2 = attempt;
+    void attempt.catch(() => {
+      // Only successes stay memoised — the same rule the library applies to
+      // panorama loads. A transient chunk-fetch failure that stuck around
+      // would poison every later ktx2 mood for the session, and the mood
+      // picker is a natural retry surface. (After dispose() the memo is
+      // already null, so this leaves the disposed rejection alone.)
+      if (this.ktx2 === attempt) this.ktx2 = null;
+    });
+    return attempt;
+  }
+
+  dispose(): void {
+    this.disposed = true;
+    // The KTX2 loader owns a worker pool; terminating it is what this method
+    // exists for. Decoded textures are the library's to dispose, not ours.
+    this.ktx2Loader?.dispose();
+    this.ktx2Loader = null;
+    this.ktx2 = null;
   }
 
   private decode(
     loader: {
       load: (
         url: string,
-        onLoad: (t: THREE.DataTexture) => void,
+        onLoad: (t: THREE.Texture) => void,
         onProgress: undefined,
         onError: (e: unknown) => void,
       ) => void;
