@@ -150,6 +150,17 @@ export class ClockRenderer {
 
   /** Last digits handed to the scene; read by the `?testApi` observation surface. */
   private frameCount = 0;
+  /**
+   * Frames actually drawn, as opposed to loop passes.
+   *
+   * `frameCount` counts passes and `renderer.info.render.calls` keeps its last
+   * non-zero value when a draw is skipped, so neither can tell a held frame
+   * from a renderer that has stopped drawing entirely. This can: it advances
+   * only next to the `render` call itself, which is what lets the e2e suite
+   * assert both halves of the held-frame contract — that it holds under a
+   * frozen clock, and that it resumes for everything that changes the picture.
+   */
+  private drawCount = 0;
 
   private readonly resizeObserver: ResizeObserver;
   /** The viewer has taken the camera; automatic framing stops moving it. */
@@ -428,6 +439,8 @@ export class ClockRenderer {
   getRenderState(): {
     webgl2: boolean;
     frames: number;
+    /** Frames actually drawn. See `drawCount` — `frames` counts loop passes. */
+    draws: number;
     fps: number;
     running: boolean;
     drawCalls: number;
@@ -455,6 +468,7 @@ export class ClockRenderer {
     return {
       webgl2: this.renderer.capabilities.isWebGL2,
       frames: this.frameCount,
+      draws: this.drawCount,
       fps: Math.round(this.fps),
       running: this.frameHandle !== null,
       drawCalls: this.renderer.info.render.calls,
@@ -845,6 +859,15 @@ export class ClockRenderer {
   private resume(): void {
     if (this.disposed || this.contextLost || this.frameHandle !== null) return;
     this.lastFrameMs = performance.now();
+    // The loop was stopped, so nothing observed whatever changed while it was:
+    // an async commit that both started and settled inside the gap leaves the
+    // status polls agreeing across it, and the drawing buffer itself is not
+    // preserved — a compositor layer dropped while the tab was hidden comes
+    // back undefined. A mechanism at a fixed point (reduced motion between
+    // digits, or after the wind-down) would then never ask for a draw and the
+    // canvas would stay blank. Every restart funnels through here — visibility,
+    // un-suspend, context restore — so one request covers them all.
+    this.renderRequested = true;
     this.frameHandle = requestAnimationFrame(this.frame);
   }
 
@@ -920,6 +943,7 @@ export class ClockRenderer {
 
     if (this.renderRequested) {
       this.renderRequested = false;
+      this.drawCount += 1;
       this.renderer.render(this.scene, this.camera);
     }
   };

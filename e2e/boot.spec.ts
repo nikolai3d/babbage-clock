@@ -2,10 +2,12 @@ import { expect, test } from '@playwright/test';
 import {
   appUrl,
   blockExternalRequests,
+  deterministicOptions,
   SELECTOR,
   gotoApp,
   readRendererState,
   waitForFrames,
+  waitForLighting,
   watchConsole,
 } from './support/app.js';
 
@@ -91,6 +93,47 @@ test.describe('boot', () => {
     expect(initial.height).toBeGreaterThan(0);
 
     await waitForFrames(page, 5);
+    // A live clock moves the drive phase every frame, so every pass draws.
+    const later = await readRendererState(page);
+    expect(later.draws).toBeGreaterThan(initial.draws);
+  });
+
+  /**
+   * The held-frame contract, both halves.
+   *
+   * `frames` counts loop passes and `drawCalls` keeps its last value when a
+   * draw is skipped, so neither can tell a deliberately held frame from a
+   * renderer that has stopped drawing for good. `draws` can, and this is the
+   * only place the optimisation that makes captures bit-stable is asserted.
+   */
+  test('holds the frame under a frozen clock, and redraws when the picture changes', async ({
+    page,
+  }) => {
+    await gotoApp(page, deterministicOptions());
+    await waitForLighting(page);
+
+    // Let the async mood and material commits finish asking for their draws.
+    await waitForFrames(page, 10);
+    const settled = await readRendererState(page);
+    await waitForFrames(page, 10);
+    const held = await readRendererState(page);
+
+    expect(held.frames, 'the loop itself must keep running').toBeGreaterThan(settled.frames);
+    expect(
+      held.draws,
+      'a frozen clock reached a fixed point but the renderer kept drawing — captures cannot settle',
+    ).toBe(settled.draws);
+
+    // Resize clears the drawing buffer, so a held frame must be redrawn: the
+    // negative half of the contract, and the one that catches a gate with no
+    // way back out of the held state.
+    await page.setViewportSize({ width: 1100, height: 640 });
+    await waitForFrames(page, 10);
+    const resized = await readRendererState(page);
+    expect(
+      resized.draws,
+      'the picture changed but no frame was drawn — the canvas is now stale',
+    ).toBeGreaterThan(held.draws);
   });
 
   /**

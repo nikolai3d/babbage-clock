@@ -685,26 +685,54 @@ function wrapAngle(radians: number): number {
 }
 
 /**
+ * How each field of a `MechanismSample` is compared.
+ *
+ * `satisfies Record<keyof MechanismSample, …>` is the point: adding a field to
+ * the sample without classifying it here fails to compile. Without that, a new
+ * field would simply go uncompared, and the held frame would silently stop
+ * redrawing when only that field moved — a visual bug with no obvious cause.
+ */
+const SAMPLE_FIELDS = {
+  drivePhaseSeconds: 'scalar',
+  driveFactor: 'scalar',
+  escapement: 'scalar',
+  tickPulse: 'scalar',
+  running: 'scalar',
+  expired: 'scalar',
+  ringAngles: 'array',
+  detentAngles: 'array',
+  digits: 'array',
+} as const satisfies Record<keyof MechanismSample, 'scalar' | 'array'>;
+
+/**
+ * The same table, split once at module load.
+ *
+ * `sampleEquals` runs every frame and this file keeps the frame loop free of
+ * allocation (see the scratch objects above), so the entries cannot be built
+ * per call.
+ */
+const SAMPLE_ENTRIES = Object.entries(SAMPLE_FIELDS) as ReadonlyArray<
+  readonly [keyof MechanismSample, 'scalar' | 'array']
+>;
+
+/**
  * Whether two samples would put the scene graph in the same pose.
  *
- * Exact float equality on purpose: the mechanism is a pure function of the
- * instant, so a frozen clock reproduces bit-identical samples, and anything
- * short of bit-identical must be drawn. Every field is compared — including
- * ones `update` does not read today — so a future use of, say, `driveFactor`
- * cannot silently break the held-frame optimisation.
+ * Exact equality on purpose: the mechanism is a pure function of the instant,
+ * so a frozen clock reproduces bit-identical samples, and anything short of
+ * bit-identical must be drawn. Every field is compared — including ones
+ * `update` does not read today — so a future use of, say, `driveFactor` cannot
+ * silently break the held-frame optimisation.
  */
 function sampleEquals(a: MechanismSample, b: MechanismSample): boolean {
-  return (
-    a.drivePhaseSeconds === b.drivePhaseSeconds &&
-    a.driveFactor === b.driveFactor &&
-    a.escapement === b.escapement &&
-    a.tickPulse === b.tickPulse &&
-    a.running === b.running &&
-    a.expired === b.expired &&
-    numbersEqual(a.ringAngles, b.ringAngles) &&
-    numbersEqual(a.detentAngles, b.detentAngles) &&
-    numbersEqual(a.digits, b.digits)
-  );
+  for (const [key, kind] of SAMPLE_ENTRIES) {
+    if (kind === 'array') {
+      if (!numbersEqual(a[key] as readonly number[], b[key] as readonly number[])) return false;
+    } else if (a[key] !== b[key]) {
+      return false;
+    }
+  }
+  return true;
 }
 
 function numbersEqual(a: readonly number[], b: readonly number[]): boolean {

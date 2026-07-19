@@ -154,6 +154,7 @@ describe('installTestApi', () => {
   const rendererState: RendererState = {
     webgl2: true,
     frames: 42,
+    draws: 39,
     fps: 60,
     running: true,
     drawCalls: 17,

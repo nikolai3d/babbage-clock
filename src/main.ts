@@ -612,6 +612,7 @@ async function bootstrap(): Promise<void> {
     getRenderState: () => ({
       webgl2: false,
       frames: 0,
+      draws: 0,
       fps: 0,
       running: false,
       drawCalls: 0,

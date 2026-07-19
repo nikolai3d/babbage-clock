@@ -464,6 +464,44 @@ describe('hot swap', () => {
     registry.dispose();
   });
 
+  it('reports busy for exactly as long as an apply is in flight', async () => {
+    // `busy` is what makes the render loop redraw a held frame when a texture
+    // commit lands. Flipping false a tick early would leave a frozen clock
+    // showing a permanently untextured frame, so the edges are the contract.
+    const { registry } = harness();
+    const library = new MaterialLibrary(slots(), registry);
+
+    expect(library.busy).toBe(false);
+
+    library.apply({ ring: { kind: 'pbr', textureSet: 'copper-plate' } });
+    expect(library.busy).toBe(true);
+
+    await library.ready();
+    expect(library.busy).toBe(false);
+    // The commit landed before busy dropped, so the frame drawn on the falling
+    // edge shows the finished material rather than the one before it.
+    expect(library.get('ring').map).not.toBeNull();
+
+    library.dispose();
+    registry.dispose();
+  });
+
+  it('is not busy for a placeholder binding, which commits synchronously', async () => {
+    // The reason `setMaterialLook` has to request a draw itself: no slot ever
+    // reads busy on this path, so the poll cannot catch it.
+    const { registry } = harness();
+    const library = new MaterialLibrary(slots(), registry);
+
+    library.apply({ ring: { kind: 'placeholder', color: 0x445566, metalness: 0, roughness: 1 } });
+    expect(library.busy).toBe(false);
+
+    await library.ready();
+    expect(library.busy).toBe(false);
+
+    library.dispose();
+    registry.dispose();
+  });
+
   it('keeps the old surface on screen until the new one is ready', async () => {
     const { registry } = harness();
     const library = new MaterialLibrary(
