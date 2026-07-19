@@ -81,6 +81,16 @@ test.describe('countdown readout', () => {
   });
 
   test('applying a new target travels rather than teleporting', async ({ page }) => {
+    // Three polls below budget 15 s + 15 s + 20 s, and `waitForFrames` carries
+    // its own 30 s — more than the suite's 45 s default (`playwright.config.ts`)
+    // allows once boot is paid for. On a green run they all resolve in well
+    // under a second, so this buys no time; it buys *diagnosis*. Under the
+    // default the outer timeout fires first and reports a bare "test timeout",
+    // burying the `message:` strings that say which stage never happened —
+    // exactly the uninformative failure this deflake exists to remove. It also
+    // stops a slow-but-correct runner from being reported as a flake again.
+    test.setTimeout(120_000);
+
     // The rings should spin to a new value, not cut to it — and the travel is
     // entirely in the ring *angles*: the logical digits update the instant the
     // target is applied.
@@ -109,10 +119,13 @@ test.describe('countdown readout', () => {
     // hours reading holds 021 for the rest of the hour — so every angle change
     // on this ring belongs to the travel.
     const TRAVEL_RING = 1;
+    // Exact, for the same reason as the arrival assertions below: an idle ring
+    // holds the canonical angle exactly, so a tolerance here would only hide a
+    // ring that was still drifting when the travel began.
     expect(
       (await readRingAngles(page))[TRAVEL_RING],
       'expected the tens-of-hours ring at rest on 1 before the apply',
-    ).toBeCloseTo(ringAngleForDigit(1), 5);
+    ).toBe(ringAngleForDigit(1));
 
     // Collect every seek the mechanism plans, from before the apply so none
     // can slip past. Reading `lastMechanismEvent` once per animation frame is
@@ -171,23 +184,31 @@ test.describe('countdown readout', () => {
       )
       .toBe(true);
 
-    const seek = (await page.evaluate(
+    const seek = await page.evaluate(
       (ring) =>
         (window.__travelSeeks ?? []).find((candidate) =>
           candidate.motions.some((motion) => motion.ring === ring),
         ),
       TRAVEL_RING,
-    )) as MechanismEvent;
+    );
+    // The poll above already proved this exists; asserting it keeps that an
+    // enforced invariant rather than a cast, so a future divergence between
+    // the two predicates fails with a message instead of a TypeError.
+    expect(seek, 'the collected seek touching the tens-of-hours ring vanished').toBeDefined();
 
     // The travel itself: the correction turns the ring over a real duration.
     // A teleport is exactly this duration being zero.
-    expect(seek.durationMs, 'the rings cut straight to the new value').toBeGreaterThan(0);
-    const travelMotion = seek.motions.find((motion) => motion.ring === TRAVEL_RING);
+    expect(seek!.durationMs, 'the rings cut straight to the new value').toBeGreaterThan(0);
+    const travelMotion = seek!.motions.find((motion) => motion.ring === TRAVEL_RING);
     expect(travelMotion?.toDigit, 'the seek did not aim the tens-of-hours ring at 2').toBe(2);
+    // More than half a turn, which is what `durationFor` itself uses to tell a
+    // spin from a glide. Without this the assertions still pass if the apply
+    // is downgraded to a 420 ms single-step glide — travel of a sort, but not
+    // the two-turn spin a multi-ring correction is supposed to produce.
     expect(
       Math.abs(travelMotion?.deltaAngle ?? 0),
-      'the seek planned no rotation for the tens-of-hours ring',
-    ).toBeGreaterThan(0);
+      'the seek planned a glide, not a spin, for the tens-of-hours ring',
+    ).toBeGreaterThan(Math.PI);
 
     // And the rendered rings actually arrive: the angle written to the scene
     // graph comes to rest exactly on the new digit and stays there.
@@ -199,6 +220,11 @@ test.describe('countdown readout', () => {
     // wobble passes within a few µrad of the canonical angle while still
     // moving, so a tolerant poll could latch a transient mid-flight sample
     // that the stay-at-rest check below would then flag as movement.
+    //
+    // This does lean on the resting digit not being 0: `ringAngleForDigit(0)`
+    // is `-0`, which comes back from the page as `0`, and `toBe` compares with
+    // `Object.is`. Retarget this spec at a ring that rests on 0 and the exact
+    // comparisons have to become `toBeCloseTo` again.
     await expect
       .poll(async () => (await readDigits(page))[TRAVEL_RING], {
         message: 'the tens-of-hours ring never took the new reading',

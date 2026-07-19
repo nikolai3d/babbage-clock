@@ -376,6 +376,10 @@ describe('ClockSceneView motion', () => {
 
     view.update(1000 + event.durationMs * 0.5);
     expect(view.appliedRingAngles).toEqual(ringAngles(view));
+    // Genuinely mid-flight, so the mirror above is tested against a moving
+    // ring and not just a settled one — a view that snapped on the first frame
+    // would otherwise satisfy every other assertion here.
+    expect(view.appliedRingAngles[0]).not.toBe(ringAngleForDigit(5));
 
     view.update(1000 + event.durationMs + 1);
     expect(view.appliedRingAngles).toEqual(ringAngles(view));

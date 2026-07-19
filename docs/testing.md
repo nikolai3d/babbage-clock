@@ -485,6 +485,11 @@ pull request down.
   consecutive frames can bracket an entire animation — no sampler can observe
   what was never drawn, but the event is created on a rendered frame and stays
   current until the next, so it cannot be missed. The travel spec in
-  `e2e/countdown.spec.ts` is the worked example.
+  `e2e/countdown.spec.ts` is the worked example. That one-per-frame guarantee
+  holds only while the mechanism is driven by the frame loop: a scene swap, a
+  motion toggle or a WebGL context restore syncs it out of band, and an event
+  raised there can be replaced within the same frame. A collector spanning one
+  of those — `fallback.spec.ts` drives exactly that path — cannot assume it saw
+  every event.
 - **New rendering?** Add a screenshot only if a state assertion cannot express
   it. State assertions say why they failed; images only say that they did.
