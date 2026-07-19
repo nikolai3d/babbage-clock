@@ -6,11 +6,13 @@
  * 1. **PMREM once per map.** Prefiltering a panorama is the expensive part of
  *    switching moods; the result is cached by preset id and reused for the rest
  *    of the session, so going back to a mood is a synchronous swap.
- * 2. **Nothing is orphaned.** The decoded panorama is disposed the moment PMREM
- *    has consumed it, a result that arrives after `dispose()` is thrown away
- *    rather than cached, and every render target the cache holds is released in
- *    `dispose()`. Scene and mood switching are both supported runtime actions,
- *    so a leak here compounds for as long as the tab is open.
+ * 2. **Nothing is orphaned, nothing hangs.** The decoded panorama is disposed
+ *    the moment PMREM has consumed it, a result that arrives after `dispose()`
+ *    is thrown away rather than cached, every render target the cache holds is
+ *    released in `dispose()`, and any load still in flight at `dispose()`
+ *    settles with `EnvironmentDisposedError` instead of pending forever. Scene
+ *    and mood switching are both supported runtime actions, so a leak here
+ *    compounds for as long as the tab is open.
  *
  * The loader and the prefilter are injected so the cache logic is testable in a
  * plain Node environment: `renderer.info` cannot be consulted without a WebGL
@@ -25,11 +27,32 @@ import type { KTX2Loader } from 'three/examples/jsm/loaders/KTX2Loader.js';
 import type { IblEnvironmentFormat, IblManifest } from './manifest.js';
 import type { IblPresetSource } from './presets.js';
 
+/**
+ * The rejection every in-flight load settles with when teardown wins the race.
+ *
+ * Recognizable as a class so callers (and tests) can tell "the renderer went
+ * away" from "this mood is broken" without matching on message strings.
+ */
+export class EnvironmentDisposedError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'EnvironmentDisposedError';
+  }
+}
+
 /** Decodes a panorama URL into a texture ready for prefiltering. */
 export interface PanoramaLoader {
   load(url: string, format: IblEnvironmentFormat): Promise<THREE.Texture>;
-  /** Releases anything the loader holds beyond the textures it handed out. */
-  dispose?(): void;
+  /**
+   * Releases anything the loader holds beyond the textures it handed out.
+   *
+   * Contract: any `load` still in flight must settle — rejecting with
+   * `EnvironmentDisposedError` — rather than hang, and a texture the
+   * underlying decoder delivers after that rejection must be disposed, not
+   * orphaned. `EnvironmentLibrary.dispose()` relies on this to guarantee its
+   * own in-flight promises settle.
+   */
+  dispose(): void;
 }
 
 /**
@@ -105,7 +128,9 @@ export class EnvironmentLibrary implements EnvironmentSource {
 
   /** Loads, prefilters and caches a mood. Concurrent calls share one load. */
   load(id: string): Promise<LoadedEnvironment> {
-    if (this.disposed) return Promise.reject(new Error('EnvironmentLibrary is disposed'));
+    if (this.disposed) {
+      return Promise.reject(new EnvironmentDisposedError('EnvironmentLibrary is disposed'));
+    }
 
     const cached = this.peek(id);
     if (cached) return Promise.resolve(cached);
@@ -126,7 +151,24 @@ export class EnvironmentLibrary implements EnvironmentSource {
 
     const manifest = await entry.loadManifest();
     const url = await entry.loadPanoramaUrl(manifest.environment.file);
+
+    if (this.disposed) {
+      // Teardown can land during the manifest/URL imports above. The loader
+      // is already disposed, and its contract only settles loads that were in
+      // flight at dispose — starting one now could hang this promise forever,
+      // and would fetch a panorama nobody can use.
+      throw new EnvironmentDisposedError('EnvironmentLibrary was disposed while loading');
+    }
+
     const source = await this.loader.load(url, manifest.environment.format);
+
+    if (this.disposed) {
+      // The renderer went away while the panorama was decoding. The prefilter
+      // is already disposed, so compiling would touch dead GPU state; the
+      // decoded texture is the only live resource, and it dies here.
+      source.dispose();
+      throw new EnvironmentDisposedError('EnvironmentLibrary was disposed while loading');
+    }
 
     // A second caller may have finished while this one was on the network.
     // Prefiltering again would double the GPU cost for an identical result.
@@ -146,23 +188,33 @@ export class EnvironmentLibrary implements EnvironmentSource {
     }
 
     if (this.disposed) {
-      // The renderer went away mid-load. Caching this would leak a render
-      // target that nothing will ever dispose.
+      // Only reachable if compile() reentrantly disposed the library — kept
+      // because caching now would leak a render target that nothing will
+      // ever dispose.
       target.dispose();
-      throw new Error('EnvironmentLibrary was disposed while loading');
+      throw new EnvironmentDisposedError('EnvironmentLibrary was disposed while loading');
     }
 
     this.cache.set(id, { manifest, target });
     return { manifest, texture: target.texture };
   }
 
+  /**
+   * Idempotent: renderer teardown and controller teardown may both land here,
+   * and a second pass must not re-dispose GPU objects it no longer owns.
+   *
+   * Disposing the loader is what settles any decode still in flight — its
+   * `dispose` contract rejects pending loads, which is how every promise this
+   * library has handed out comes to rest instead of hanging forever.
+   */
   dispose(): void {
+    if (this.disposed) return;
     this.disposed = true;
     for (const { target } of this.cache.values()) target.dispose();
     this.cache.clear();
     this.inFlight.clear();
     this.prefilter.dispose();
-    this.loader.dispose?.();
+    this.loader.dispose();
   }
 }
 
@@ -208,6 +260,13 @@ export class ThreePanoramaLoader implements PanoramaLoader {
   private ktx2Loader: KTX2Loader | null = null;
   private ktx2: Promise<KTX2Loader> | null = null;
   private disposed = false;
+  /**
+   * One reject per decode still waiting on its loader callback, across all
+   * formats. `KTX2Loader.dispose()` terminates a worker pool that simply
+   * drops its pending jobs — neither callback ever fires — so without this
+   * registry a decode in flight at disposal would hang its promise forever.
+   */
+  private readonly pending = new Set<{ url: string; reject: (error: Error) => void }>();
 
   /** The renderer is what `KTX2Loader.detectSupport` reads GPU formats off. */
   constructor(renderer: THREE.WebGLRenderer) {
@@ -215,6 +274,11 @@ export class ThreePanoramaLoader implements PanoramaLoader {
   }
 
   async load(url: string, format: IblEnvironmentFormat): Promise<THREE.Texture> {
+    if (this.disposed) {
+      // Refusing up front keeps a post-teardown request from fetching a
+      // decoder chunk (or building a transcoder) nothing will ever use.
+      throw new EnvironmentDisposedError(`ThreePanoramaLoader was disposed before decoding ${url}`);
+    }
     switch (format) {
       case 'rgbe': {
         const { HDRLoader } = await import('three/examples/jsm/loaders/HDRLoader.js');
@@ -256,7 +320,9 @@ export class ThreePanoramaLoader implements PanoramaLoader {
         // The renderer went away while the module was on the network. Caching
         // the loader now would leak its worker pool for the rest of the tab.
         loader.dispose();
-        throw new Error('ThreePanoramaLoader was disposed while loading the KTX2 transcoder');
+        throw new EnvironmentDisposedError(
+          'ThreePanoramaLoader was disposed while loading the KTX2 transcoder',
+        );
       }
       this.ktx2Loader = loader;
       return loader;
@@ -274,8 +340,20 @@ export class ThreePanoramaLoader implements PanoramaLoader {
     return attempt;
   }
 
+  /** Idempotent; the worker pool and each pending decode settle exactly once. */
   dispose(): void {
+    if (this.disposed) return;
     this.disposed = true;
+    // Settle every decode still waiting on a loader callback *before* the
+    // worker pool goes down and takes the callbacks with it.
+    for (const entry of this.pending) {
+      entry.reject(
+        new EnvironmentDisposedError(
+          `ThreePanoramaLoader was disposed while decoding ${entry.url}`,
+        ),
+      );
+    }
+    this.pending.clear();
     // The KTX2 loader owns a worker pool; terminating it is what this method
     // exists for. Decoded textures are the library's to dispose, not ours.
     this.ktx2Loader?.dispose();
@@ -294,18 +372,54 @@ export class ThreePanoramaLoader implements PanoramaLoader {
     },
     url: string,
   ): Promise<THREE.Texture> {
-    return new Promise((resolve, reject) => {
-      loader.load(
-        url,
-        (texture) => {
-          texture.mapping = THREE.EquirectangularReflectionMapping;
-          resolve(texture);
-        },
-        undefined,
-        (error: unknown) => {
-          reject(error instanceof Error ? error : new Error(`Failed to load ${url}`));
-        },
+    if (this.disposed) {
+      // Disposal can land while the decoder module import above is still in
+      // flight; by the time it settles there is nothing left to decode for,
+      // and starting the fetch would only produce a texture nobody owns.
+      return Promise.reject(
+        new EnvironmentDisposedError(`ThreePanoramaLoader was disposed before decoding ${url}`),
       );
+    }
+    return new Promise((resolve, reject) => {
+      let rejectedByDispose = false;
+      const entry = {
+        url,
+        reject: (error: Error) => {
+          rejectedByDispose = true;
+          reject(error);
+        },
+      };
+      this.pending.add(entry);
+      // A loader that throws synchronously settles the promise through the
+      // executor, but would strand the entry in the registry until dispose.
+      try {
+        loader.load(
+          url,
+          (texture) => {
+            this.pending.delete(entry);
+            if (rejectedByDispose) {
+              // The promise already rejected, so no caller can ever receive
+              // this texture; freeing it here is what stops it being orphaned.
+              // (An HDR fetch cannot be cancelled and may still deliver; a KTX2
+              // result can slip out between its worker's last post and the
+              // pool's termination.)
+              texture.dispose();
+              return;
+            }
+            texture.mapping = THREE.EquirectangularReflectionMapping;
+            resolve(texture);
+          },
+          undefined,
+          (error: unknown) => {
+            this.pending.delete(entry);
+            if (rejectedByDispose) return;
+            reject(error instanceof Error ? error : new Error(`Failed to load ${url}`));
+          },
+        );
+      } catch (error) {
+        this.pending.delete(entry);
+        throw error;
+      }
     });
   }
 }

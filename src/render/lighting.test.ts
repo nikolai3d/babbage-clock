@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { EnvironmentController, SceneLighting } from './lighting.js';
+import { EnvironmentDisposedError } from './ibl/library.js';
 import { parseIblManifest } from './ibl/manifest.js';
 import { copperPadlockScene } from '../scene/scenes/copperPadlock.js';
 import type { EnvironmentSource, LoadedEnvironment } from './ibl/library.js';
@@ -337,6 +338,28 @@ describe('EnvironmentController', () => {
     expect(scene.environment?.name).toBe('env:cool');
     expect(rigLights().every((light) => light.name.startsWith('ibl:cool'))).toBe(true);
     stubborn.dispose();
+  });
+
+  it('settles the status quietly when the library is disposed beneath a load', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    library.cached.add('cool');
+    rebuildScene(sceneWith('cool'));
+
+    const tornDown = {
+      ...library,
+      load: () => Promise.reject(new EnvironmentDisposedError('EnvironmentLibrary is disposed')),
+    };
+    const survivor = new EnvironmentController({ renderer, scene, library: tornDown });
+    survivor.apply(sceneWith('warm'), lightings.at(-1)!);
+    await vi.waitFor(() => expect(survivor.status).toBe('none'));
+
+    // The library going away is teardown, not a broken mood: no warning in
+    // the console, and the status settles instead of reporting 'loading'
+    // forever. What was committed before stays whole on screen.
+    expect(warn).not.toHaveBeenCalled();
+    expect(scene.environment?.name).toBe('env:cool');
+    expect(rigLights().every((light) => light.name.startsWith('ibl:cool'))).toBe(true);
+    survivor.dispose();
   });
 
   it('hands the scene back to its own lighting when the mood becomes "none"', () => {
