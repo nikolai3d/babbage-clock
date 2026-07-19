@@ -4,6 +4,7 @@ import { BASIS_TRANSCODER_PATH, resolveAssetUrl } from '../../materials/paths.js
 import { EnvironmentLibrary, ThreePanoramaLoader } from './library.js';
 import { parseIblManifest } from './manifest.js';
 import type { EnvironmentPrefilter, PanoramaLoader } from './library.js';
+import type { IblEnvironmentFormat } from './manifest.js';
 import type { IblPresetEntry, IblPresetSource } from './presets.js';
 
 /**
@@ -16,6 +17,8 @@ import type { IblPresetEntry, IblPresetSource } from './presets.js';
 const ktx2 = vi.hoisted(() => {
   class FakeKTX2Loader {
     static instances: FakeKTX2Loader[] = [];
+    /** Makes the next construction throw, as a failed chunk fetch would. */
+    static failNextConstruction = false;
 
     transcoderPath: string | null = null;
     detectedWith: unknown = null;
@@ -27,6 +30,10 @@ const ktx2 = vi.hoisted(() => {
     }[] = [];
 
     constructor() {
+      if (FakeKTX2Loader.failNextConstruction) {
+        FakeKTX2Loader.failNextConstruction = false;
+        throw new Error('chunk failed to fetch');
+      }
       FakeKTX2Loader.instances.push(this);
     }
 
@@ -94,6 +101,7 @@ class FakePrefilter implements EnvironmentPrefilter {
 interface FakeLoader extends PanoramaLoader {
   loads: number;
   disposedCalls: number;
+  readonly formats: IblEnvironmentFormat[];
   readonly sources: THREE.Texture[];
   readonly disposedSources: Set<THREE.Texture>;
 }
@@ -105,10 +113,12 @@ function fakeLoader(): FakeLoader {
   return {
     loads: 0,
     disposedCalls: 0,
+    formats: [],
     sources,
     disposedSources,
-    load(_url: string): Promise<THREE.Texture> {
+    load(_url: string, format: IblEnvironmentFormat): Promise<THREE.Texture> {
       this.loads += 1;
+      this.formats.push(format);
       const texture = new THREE.Texture();
       texture.addEventListener('dispose', () => disposedSources.add(texture));
       sources.push(texture);
@@ -120,7 +130,10 @@ function fakeLoader(): FakeLoader {
   };
 }
 
-function fakePresets(ids: readonly string[]): IblPresetSource {
+function fakePresets(
+  ids: readonly string[],
+  format: IblEnvironmentFormat = 'rgbe',
+): IblPresetSource {
   const entries = new Map<string, IblPresetEntry>(
     ids.map((id) => [
       id,
@@ -132,7 +145,7 @@ function fakePresets(ids: readonly string[]): IblPresetSource {
               {
                 id,
                 name: id,
-                environment: { file: `${id}.hdr`, format: 'rgbe' },
+                environment: { file: `${id}.${format === 'rgbe' ? 'hdr' : format}`, format },
                 background: { mode: 'environment', fallback: { kind: 'color', color: '#000000' } },
                 grade: { exposure: 1, toneMapping: 'aces' },
                 lights: [{ type: 'ambient', color: '#ffffff' }],
@@ -296,11 +309,30 @@ describe('EnvironmentLibrary', () => {
     // loader, so tearing the library down must tear that down too.
     expect(loader.disposedCalls).toBe(1);
   });
+
+  it('hands the manifest format to the panorama loader', async () => {
+    const loader = fakeLoader();
+    const prefilter = new FakePrefilter();
+    const library = new EnvironmentLibrary({
+      presets: fakePresets(['day'], 'ktx2'),
+      loader,
+      prefilter,
+    });
+
+    await library.load('day');
+
+    // The format is what routes a panorama to the right decoder; a preset
+    // declaring ktx2 must not silently fall through to the rgbe path.
+    expect(loader.formats).toEqual(['ktx2']);
+    library.dispose();
+  });
 });
 
 describe('ThreePanoramaLoader (ktx2)', () => {
   afterEach(() => {
     ktx2.FakeKTX2Loader.instances.length = 0;
+    ktx2.FakeKTX2Loader.failNextConstruction = false;
+    vi.unstubAllEnvs();
   });
 
   const fakeRenderer = (): THREE.WebGLRenderer => ({}) as unknown as THREE.WebGLRenderer;
@@ -365,6 +397,57 @@ describe('ThreePanoramaLoader (ktx2)', () => {
     ktx2.FakeKTX2Loader.instances[0]!.requests[0]!.onError('not an Error instance');
     await expect(pending).rejects.toThrow('Failed to load /fake/broken.ktx2');
 
+    loader.dispose();
+  });
+
+  it('passes a transcoder Error through unwrapped', async () => {
+    const loader = new ThreePanoramaLoader(fakeRenderer());
+
+    const pending = loader.load('/fake/broken.ktx2', 'ktx2');
+    await vi.waitFor(() => expect(ktx2.FakeKTX2Loader.instances[0]?.requests).toHaveLength(1));
+
+    // The transcoder's own message is the diagnosable one; wrapping it would
+    // bury which of the fetch, the wasm or the transcode actually failed.
+    const failure = new Error('transcoder said no');
+    ktx2.FakeKTX2Loader.instances[0]!.requests[0]!.onError(failure);
+    await expect(pending).rejects.toBe(failure);
+
+    loader.dispose();
+  });
+
+  it('joins the transcoder path onto a sub-path base URL', async () => {
+    // The GitHub Pages deployment serves from /babbage-clock/, not the site
+    // root; under Vitest BASE_URL defaults to '/', which would let a
+    // hardcoded root-absolute path pass unnoticed.
+    vi.stubEnv('BASE_URL', '/babbage-clock/');
+    const loader = new ThreePanoramaLoader(fakeRenderer());
+
+    const pending = loader.load('/fake/a.ktx2', 'ktx2');
+    await vi.waitFor(() => expect(ktx2.FakeKTX2Loader.instances).toHaveLength(1));
+    const instance = ktx2.FakeKTX2Loader.instances[0]!;
+    expect(instance.transcoderPath).toBe('/babbage-clock/basis/');
+
+    await vi.waitFor(() => expect(instance.requests).toHaveLength(1));
+    instance.requests[0]!.onLoad(new THREE.Texture());
+    await pending;
+    loader.dispose();
+  });
+
+  it('retries the transcoder import after a transient failure', async () => {
+    ktx2.FakeKTX2Loader.failNextConstruction = true;
+    const loader = new ThreePanoramaLoader(fakeRenderer());
+
+    await expect(loader.load('/fake/a.ktx2', 'ktx2')).rejects.toThrow('chunk failed to fetch');
+
+    // Only successes stay memoised: re-picking the mood must try again, not
+    // replay a cached rejection for the rest of the session.
+    const retry = loader.load('/fake/a.ktx2', 'ktx2');
+    await vi.waitFor(() => expect(ktx2.FakeKTX2Loader.instances).toHaveLength(1));
+    const instance = ktx2.FakeKTX2Loader.instances[0]!;
+    await vi.waitFor(() => expect(instance.requests).toHaveLength(1));
+
+    instance.requests[0]!.onLoad(new THREE.Texture());
+    await expect(retry).resolves.toBeInstanceOf(THREE.Texture);
     loader.dispose();
   });
 

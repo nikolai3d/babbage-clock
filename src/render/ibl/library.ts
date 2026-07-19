@@ -246,7 +246,9 @@ export class ThreePanoramaLoader implements PanoramaLoader {
    * rendering the wrong mood.
    */
   private transcoder(): Promise<KTX2Loader> {
-    this.ktx2 ??= import('three/examples/jsm/loaders/KTX2Loader.js').then(({ KTX2Loader }) => {
+    if (this.ktx2) return this.ktx2;
+
+    const attempt = import('three/examples/jsm/loaders/KTX2Loader.js').then(({ KTX2Loader }) => {
       const loader = new KTX2Loader()
         .setTranscoderPath(resolveAssetUrl(BASIS_TRANSCODER_PATH))
         .detectSupport(this.renderer);
@@ -259,7 +261,17 @@ export class ThreePanoramaLoader implements PanoramaLoader {
       this.ktx2Loader = loader;
       return loader;
     });
-    return this.ktx2;
+
+    this.ktx2 = attempt;
+    void attempt.catch(() => {
+      // Only successes stay memoised — the same rule the library applies to
+      // panorama loads. A transient chunk-fetch failure that stuck around
+      // would poison every later ktx2 mood for the session, and the mood
+      // picker is a natural retry surface. (After dispose() the memo is
+      // already null, so this leaves the disposed rejection alone.)
+      if (this.ktx2 === attempt) this.ktx2 = null;
+    });
+    return attempt;
   }
 
   dispose(): void {

@@ -216,9 +216,14 @@ rejects loudly and the previous mood stays applied.
 
 The shipped moods are still 1k `.hdr`; converting them to KTX2/UASTC-HDR to cut
 the payload is a follow-up. Encode with `toktx --encode uastc --uastc_quality 3
---zcmp 19 --assign_oetf linear` (or `basisu -uastc_hdr`) and set
-`"format": "ktx2"` in the manifest — and check the mood by eye afterwards:
-UASTC HDR is lossy where `.hdr` was not.
+--zcmp 19 --assign_oetf linear` (or `basisu -uastc_hdr`; exact flags vary
+across KTX-Software/basisu releases, so re-verify against the version you run)
+and set `"format": "ktx2"` in the manifest — then check the mood by eye. Two
+things to look for: UASTC HDR is lossy where `.hdr` was not, and a KTX2
+container's orientation cannot be flipped at load time (the same rule
+`scripts/compress-material.mjs` bakes in for materials), so a naively converted
+panorama can come out vertically flipped against its `.hdr` source — a sun
+below the horizon is this bug, not a grading choice.
 
 ## Provenance and licences
 

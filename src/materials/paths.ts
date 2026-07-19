@@ -22,6 +22,11 @@ export const MANIFEST_FILENAME = 'material.json';
  *
  * Populated from `node_modules/three` by `scripts/sync-basis-transcoder.mjs`
  * (wired to `predev`/`prebuild`), so the binaries are never committed.
+ *
+ * Shared by both compressed-texture consumers — material maps
+ * (`render/materialRegistry.ts`) and environment panoramas
+ * (`render/ibl/library.ts`) — each of which lazily creates its own
+ * `KTX2Loader` against this path.
  */
 export const BASIS_TRANSCODER_PATH = 'basis/';
 
