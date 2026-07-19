@@ -2,7 +2,7 @@ import * as THREE from 'three';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ClockSceneView } from './clockScene.js';
 import { MaterialLibrary } from './materials.js';
-import { ringAngleForDigit } from '../geometry/ringLayout.js';
+import { ringAngleForDigit, ringAxisOffset, ringStackSlots } from '../geometry/ringLayout.js';
 import { copperPadlockScene } from '../scene/scenes/copperPadlock.js';
 import { slateOrreryScene } from '../scene/scenes/slateOrrery.js';
 import { MATERIAL_SLOTS, type SceneDefinition } from '../scene/types.js';
@@ -871,6 +871,98 @@ describe('escapement placement', () => {
     expect(wheel.position.x).toBeCloseTo(derivedCentre.x + 0.12, 9);
     expect(wheel.position.y).toBeCloseTo(derivedCentre.y - 0.05, 9);
     expect(wheel.position.z).toBeCloseTo(derivedCentre.z + 0.02, 9);
+    view.dispose();
+  });
+});
+
+describe('separator rings', () => {
+  const separatorGroups = (view: ClockSceneView): THREE.Object3D[] =>
+    view.root.children.filter((child) => child.name.startsWith('separator:'));
+
+  const meshesOf = (object: THREE.Object3D): THREE.Mesh<THREE.BufferGeometry, THREE.Material>[] =>
+    object.children.filter((child) => child instanceof THREE.Mesh) as THREE.Mesh<
+      THREE.BufferGeometry,
+      THREE.Material
+    >[];
+
+  it('adds a static colon drum at each declared boundary, uncounted as a digit ring', () => {
+    const view = new ClockSceneView(scene, copperPadlockScene);
+
+    // The default scene declares two colons: HHH|MM and MM|SS.
+    expect(separatorGroups(view)).toHaveLength(2);
+    // The mechanism still sees exactly `count` rings — no extra digit ring.
+    expect(view.ringCount).toBe(copperPadlockScene.rings.count);
+    expect(view.root.children.filter((child) => child.name.startsWith('ring:'))).toHaveLength(
+      copperPadlockScene.rings.count,
+    );
+    view.dispose();
+  });
+
+  it('renders a separator like a ring: a drum and a mark, sharing the digit buffers', () => {
+    const view = new ClockSceneView(scene, copperPadlockScene);
+
+    const [drum, mark] = meshesOf(view.root.getObjectByName('ring:0')!);
+    const separators = separatorGroups(view);
+    const [sepDrum, sepMark] = meshesOf(separators[0]!);
+
+    // Same two-mesh shape as a digit ring: a drum plus a colon.
+    expect(meshesOf(separators[0]!)).toHaveLength(2);
+    // Shares the drum buffer with the digit rings; only the mark differs.
+    expect(sepDrum!.geometry).toBe(drum!.geometry);
+    // Same materials as the digit rings, so a separator matches the wheel style.
+    expect(sepDrum!.material).toBe(drum!.material);
+    expect(sepMark!.material).toBe(mark!.material);
+    // Both colons come off one shared buffer, distinct from the numerals.
+    const [, otherMark] = meshesOf(separators[1]!);
+    expect(otherMark!.geometry).toBe(sepMark!.geometry);
+    expect(sepMark!.geometry).not.toBe(mark!.geometry);
+    view.dispose();
+  });
+
+  it('seats digit rings and separators at their physical slots', () => {
+    const view = new ClockSceneView(scene, copperPadlockScene);
+    const { count, spacing, separators, axis } = copperPadlockScene.rings;
+    const slots = ringStackSlots(count, separators ?? []);
+
+    slots.forEach((slot, slotIndex) => {
+      const name = slot.kind === 'digit' ? `ring:${slot.digitIndex}` : `separator:${slotIndex}`;
+      const group = view.root.getObjectByName(name)!;
+      expect(group.position[axis]).toBeCloseTo(ringAxisOffset(slotIndex, slots.length, spacing), 9);
+    });
+    view.dispose();
+  });
+
+  it('never rotates a separator, whatever the reading does', () => {
+    const view = new ClockSceneView(scene, copperPadlockScene);
+    const axis = copperPadlockScene.rings.axis;
+    const separators = separatorGroups(view);
+
+    show(view, [1, 2, 3, 4, 5, 6, 7], 0);
+    view.update(0);
+    // A wholesale re-read spins the digit drums; the colons must not follow.
+    show(view, [9, 8, 7, 6, 5, 4, 3], 5000, 5);
+    view.update(5200);
+
+    for (const separator of separators) expect(separator.rotation[axis]).toBe(0);
+    view.dispose();
+  });
+
+  it('gives a separator no detent lever — only digit rings turn', () => {
+    const view = new ClockSceneView(scene, copperPadlockScene);
+    const detents = view.root.getObjectByName('detents') as THREE.InstancedMesh;
+
+    // One lever per digit ring, none for the two static colons.
+    expect(detents.count).toBe(copperPadlockScene.rings.count);
+    view.dispose();
+  });
+
+  it('leaves a scene that declares no separators unchanged', () => {
+    const view = new ClockSceneView(scene, slateOrreryScene);
+
+    expect(separatorGroups(view)).toHaveLength(0);
+    expect(view.root.children.filter((child) => child.name.startsWith('ring:'))).toHaveLength(
+      slateOrreryScene.rings.count,
+    );
     view.dispose();
   });
 });

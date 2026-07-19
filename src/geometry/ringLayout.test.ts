@@ -4,10 +4,12 @@ import {
   digitAngle,
   digitStepAngle,
   numeralLayout,
+  physicalRingCount,
   readingAngleForAxis,
   ringAngleForDigit,
   ringAxisOffset,
   ringPlaneAxes,
+  ringStackSlots,
   ringStackSpan,
   validateRingGeometry,
 } from './ringLayout.js';
@@ -80,6 +82,60 @@ describe('ring stack layout', () => {
   it('measures the span from the outer faces, not the centres', () => {
     expect(ringStackSpan({ count: 7, spacing: 0.5, thickness: 0.42 })).toBeCloseTo(3.42, 12);
     expect(ringStackSpan({ count: 1, spacing: 0.5, thickness: 0.42 })).toBeCloseTo(0.42, 12);
+  });
+
+  it('counts separators as physical positions in the span', () => {
+    const separators = [{ afterRing: 3 }, { afterRing: 5 }];
+    expect(physicalRingCount({ count: 7 })).toBe(7);
+    expect(physicalRingCount({ count: 7, separators })).toBe(9);
+    // Nine positions now: (9 - 1) * 0.5 + 0.42.
+    expect(ringStackSpan({ count: 7, spacing: 0.5, thickness: 0.42, separators })).toBeCloseTo(
+      4.42,
+      12,
+    );
+  });
+});
+
+describe('ringStackSlots', () => {
+  it('is every digit ring, in order, when no separators are declared', () => {
+    const slots = ringStackSlots(7);
+    expect(slots).toHaveLength(7);
+    expect(slots.flatMap((slot) => (slot.kind === 'digit' ? [slot.digitIndex] : []))).toEqual([
+      0, 1, 2, 3, 4, 5, 6,
+    ]);
+  });
+
+  it('interleaves colons at the HHH:MM:SS boundaries without shifting digit indices', () => {
+    const slots = ringStackSlots(7, [{ afterRing: 3 }, { afterRing: 5 }]);
+    expect(slots.map((slot) => slot.kind)).toEqual([
+      'digit',
+      'digit',
+      'digit',
+      'separator',
+      'digit',
+      'digit',
+      'separator',
+      'digit',
+      'digit',
+    ]);
+    // The seven digit rings still carry indices 0..6 in order, so the mechanism
+    // ring a drum is driven by is unchanged by the separators around it.
+    expect(slots.flatMap((slot) => (slot.kind === 'digit' ? [slot.digitIndex] : []))).toEqual([
+      0, 1, 2, 3, 4, 5, 6,
+    ]);
+  });
+
+  it('defaults a separator to a colon', () => {
+    const slots = ringStackSlots(2, [{ afterRing: 1 }]);
+    expect(slots.find((slot) => slot.kind === 'separator')).toEqual({
+      kind: 'separator',
+      glyph: 'colon',
+    });
+  });
+
+  it('places a separator at either end when asked (afterRing 0 or count)', () => {
+    const slots = ringStackSlots(2, [{ afterRing: 0 }, { afterRing: 2 }]);
+    expect(slots.map((slot) => slot.kind)).toEqual(['separator', 'digit', 'digit', 'separator']);
   });
 });
 

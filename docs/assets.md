@@ -69,13 +69,18 @@ Measured on the shipped scenes (`copper-padlock`, 7 rings, 4 gears, escapement):
 | Escapement          | ~3,000      | balance, escape wheel, cock                 |
 | Detent levers (x7)  | ~700        | one buffer, one InstancedMesh               |
 | Arbor and bosses    | ~600        |                                             |
-| **Whole scene**     | **~40,400** | copper-padlock at default parameters        |
+| Separators (x2)     | ~1,800      | two static colon drums, sharing the buffers |
+| **Whole scene**     | **~44,800** | copper-padlock at default parameters        |
 
 Budget: **under 150k triangles per scene** and **under 40 draw calls**. The
-copper preset currently uses 35 draw calls: 7 drums + 7 numeral meshes (each a
-separate mesh only because rings rotate independently), 4 gears + 4 pins, 1
-arbor, 2 bosses, 5 housing parts, 3 escapement parts and 2 instanced meshes (the
-bezel studs and the detent levers). `clockScene.test.ts` asserts both budgets
+copper preset currently uses 39 draw calls: 7 drums and 7 numeral meshes (each a
+separate mesh only because rings rotate independently), two static separator
+drums and two separator colons at the `HHH:MM:SS` group boundaries, 4 gears and
+4 pins, 1 arbor, 2 bosses, 5 housing parts, 3 escapement parts, and 2 instanced
+meshes (the bezel studs and the detent levers). The separators mirror the digit
+rings — a group per stack position, sharing the one drum buffer and one colon
+buffer — rather than merging, so a scene reads its stack the same way whether a
+position carries a numeral or a colon. `clockScene.test.ts` asserts both budgets
 for every registered scene, so a scene that blows them fails the suite rather
 than the frame rate.
 

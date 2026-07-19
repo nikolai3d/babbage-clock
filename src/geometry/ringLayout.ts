@@ -16,6 +16,40 @@ export const DIGITS_PER_RING = 10;
 
 const TWO_PI = Math.PI * 2;
 
+/**
+ * The glyph a static separator ring carries. Only a colon exists today — the
+ * mark between the `HHH:MM:SS` groups — but the field is named so a later mark
+ * (a decimal point, a slash) is a data change rather than a new boolean.
+ */
+export type SeparatorGlyph = 'colon';
+
+/**
+ * A static separator in the physical ring stack.
+ *
+ * It is a drum like the digit rings — same materials and style — but it carries
+ * a fixed glyph, does not rotate, and reads no time component. It marks a group
+ * boundary in the `HHH:MM:SS` readout, so a scene lists its separators alongside
+ * the digit-ring count rather than hardcoding them in the renderer.
+ */
+export interface RingSeparator {
+  /**
+   * How many digit rings precede this separator, in `[0, count]`. The colon at
+   * the hours|minutes boundary of a seven-ring `HHH:MM:SS` readout is
+   * `afterRing: 3`; the one at minutes|seconds is `afterRing: 5`.
+   */
+  readonly afterRing: number;
+  /** The glyph the separator carries. Defaults to a colon. */
+  readonly glyph?: SeparatorGlyph;
+}
+
+/**
+ * One physical position in the ring stack: a rotating digit ring driven by the
+ * mechanism, or a static separator.
+ */
+export type RingStackSlot =
+  | { readonly kind: 'digit'; readonly digitIndex: number }
+  | { readonly kind: 'separator'; readonly glyph: SeparatorGlyph };
+
 /** Angle between adjacent digits: 36 degrees for the usual ten. */
 export function digitStepAngle(digitsPerRing: number = DIGITS_PER_RING): number {
   if (!Number.isInteger(digitsPerRing) || digitsPerRing < 1) {
@@ -84,9 +118,53 @@ export function ringAxisOffset(index: number, count: number, spacing: number): n
   return (index - (count - 1) / 2) * spacing;
 }
 
+/**
+ * The physical order of the ring stack: `count` digit rings interleaved with any
+ * static separators, in reading order.
+ *
+ * A slot at index `k` sits at `ringAxisOffset(k, slots.length, spacing)`. A
+ * digit slot carries the `digitIndex` of the mechanism ring that drives it —
+ * always its position among the digit rings, never among the physical slots —
+ * so inserting a separator never shifts which time component a ring reads. That
+ * decoupling is the whole point: the mechanism still sees exactly `count` rings.
+ */
+export function ringStackSlots(
+  count: number,
+  separators: readonly RingSeparator[] = [],
+): RingStackSlot[] {
+  const sorted = [...separators].sort((a, b) => a.afterRing - b.afterRing);
+  const slots: RingStackSlot[] = [];
+  let next = 0;
+  const flushSeparatorsAt = (boundary: number): void => {
+    while (next < sorted.length && sorted[next]!.afterRing === boundary) {
+      slots.push({ kind: 'separator', glyph: sorted[next]!.glyph ?? 'colon' });
+      next += 1;
+    }
+  };
+  for (let digit = 0; digit < count; digit += 1) {
+    flushSeparatorsAt(digit);
+    slots.push({ kind: 'digit', digitIndex: digit });
+  }
+  flushSeparatorsAt(count);
+  // Any separator whose `afterRing` fell outside `[0, count]` is invalid data —
+  // `scene/validate.ts` rejects it — but emit it anyway so the physical slot
+  // count can never silently disagree with the number of separators declared.
+  for (; next < sorted.length; next += 1) {
+    slots.push({ kind: 'separator', glyph: sorted[next]!.glyph ?? 'colon' });
+  }
+  return slots;
+}
+
+/** How many physical positions the stack occupies, separators included. */
+export function physicalRingCount(config: Pick<RingConfig, 'count' | 'separators'>): number {
+  return config.count + (config.separators?.length ?? 0);
+}
+
 /** Total extent of the ring stack along the layout axis, including ring width. */
-export function ringStackSpan(config: Pick<RingConfig, 'count' | 'spacing' | 'thickness'>): number {
-  return (config.count - 1) * config.spacing + config.thickness;
+export function ringStackSpan(
+  config: Pick<RingConfig, 'count' | 'spacing' | 'thickness' | 'separators'>,
+): number {
+  return (physicalRingCount(config) - 1) * config.spacing + config.thickness;
 }
 
 export interface NumeralLayout {

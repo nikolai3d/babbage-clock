@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   DEFAULT_STROKE_WIDTH,
   GLYPH_EM_WIDTH,
+  colonGlyph,
   digitGlyph,
   digitGlyphs,
   glyphBounds,
@@ -81,6 +82,47 @@ describe('digitGlyph', () => {
     expect(() => digitGlyph(10)).toThrow(/0-9/);
     expect(() => digitGlyph(-1)).toThrow(/0-9/);
     expect(() => digitGlyph(1.5)).toThrow(/0-9/);
+  });
+});
+
+describe('colonGlyph', () => {
+  it('is two solid dots, no holes', () => {
+    const glyph = colonGlyph();
+    expect(glyph).toHaveLength(2);
+    for (const outline of glyph) {
+      // Solid, so it reads as a colon rather than a pair of tiny hollow zeros.
+      expect(outline.holes).toHaveLength(0);
+      // Wound counter-clockwise like the digit contours, so the extruder faces
+      // it the same way.
+      expect(signedArea(outline.contour)).toBeGreaterThan(0);
+    }
+  });
+
+  it('stacks the dots symmetrically inside the em box', () => {
+    const [top, bottom] = colonGlyph();
+    const t = glyphBounds([top!]);
+    const b = glyphBounds([bottom!]);
+
+    // Mirror images about the em-box midline.
+    expect(t.maxY).toBeCloseTo(-b.minY, 9);
+    expect(t.minY).toBeCloseTo(-b.maxY, 9);
+    // A colon, not a stacked blob: the dots are clear of each other.
+    expect(t.minY).toBeGreaterThan(b.maxY);
+    // Both dots stay inside the 1 em box the digits share.
+    expect(t.maxY).toBeLessThanOrEqual(0.5);
+    expect(b.minY).toBeGreaterThanOrEqual(-0.5);
+  });
+
+  it('takes its weight from the stroke width, like the numerals', () => {
+    const thin = glyphBounds([colonGlyph({ strokeWidth: 0.08 })[0]!]);
+    const thick = glyphBounds([colonGlyph({ strokeWidth: 0.24 })[0]!]);
+    expect(thick.maxX - thick.minX).toBeGreaterThan(thin.maxX - thin.minX);
+  });
+
+  it('spends more points on the dots when asked for finer arcs', () => {
+    const coarse = colonGlyph({ arcSegments: 2 })[0]!.contour.length;
+    const fine = colonGlyph({ arcSegments: 12 })[0]!.contour.length;
+    expect(fine).toBeGreaterThan(coarse);
   });
 });
 

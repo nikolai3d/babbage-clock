@@ -32,6 +32,19 @@ export function validateSceneDefinition(scene: SceneDefinition): string[] {
     }
   }
 
+  for (const separator of rings.separators ?? []) {
+    if (
+      !Number.isInteger(separator.afterRing) ||
+      separator.afterRing < 0 ||
+      separator.afterRing > rings.count
+    ) {
+      errors.push(
+        `${where}: ring separator afterRing must be an integer in [0, ${rings.count}], ` +
+          `got ${separator.afterRing}`,
+      );
+    }
+  }
+
   const gearIds = new Set<string>();
   for (const gear of scene.gears) {
     if (gearIds.has(gear.id)) errors.push(`${where}: duplicate gear id "${gear.id}"`);

@@ -8,7 +8,12 @@
  */
 
 import * as THREE from 'three';
-import { digitGlyph, transformGlyph, type GlyphOptions } from '../../geometry/digitGlyphs.js';
+import {
+  colonGlyph,
+  digitGlyph,
+  transformGlyph,
+  type GlyphOptions,
+} from '../../geometry/digitGlyphs.js';
 import {
   digitAngle,
   numeralLayout,
@@ -16,6 +21,7 @@ import {
   ringPlaneAxes,
   validateRingGeometry,
   type NumeralLayoutOptions,
+  type SeparatorGlyph,
 } from '../../geometry/ringLayout.js';
 import {
   deformPositions,
@@ -25,6 +31,7 @@ import {
 } from './extrude.js';
 import { SURFACE_UNIT_METRES, latheUvToSurface } from './uv.js';
 import { subdivideOutlineY } from '../../geometry/subdivide.js';
+import type { Outline } from '../../geometry/types.js';
 import type { Axis, RingConfig } from '../../scene/types.js';
 
 export interface RingBodyOptions {
@@ -120,17 +127,86 @@ export function createRingNumeralsGeometry(
   }
 
   const layout = numeralLayout(config, layoutOptions);
-  const relief = options.relief ?? Math.max(config.radius * 0.012, layout.glyphHeight * 0.06);
-  const sink = relief * (options.sinkFraction ?? DEFAULT_SINK_FRACTION);
+  const bend = drumBendFor(config, layout.glyphHeight, options);
   const readingAngle = readingAngleForAxis(config.axis);
-  const [uAxis, vAxis] = ringPlaneAxes(config.axis);
-  const axis = config.axis;
-  const radius = config.radius;
 
   const glyphOptions: GlyphOptions = {
     ...(options.strokeWidth === undefined ? {} : { strokeWidth: options.strokeWidth }),
     ...(options.arcSegments === undefined ? {} : { arcSegments: options.arcSegments }),
   };
+
+  const parts: THREE.BufferGeometry[] = [];
+  for (let index = 0; index < digits.length; index += 1) {
+    const digit = digits[index]!;
+    const outlines = transformGlyph(digitGlyph(digit, glyphOptions), layout.glyphHeight);
+    const angle = digitAngle(index, digits.length, readingAngle);
+    parts.push(engraveGlyphOntoDrum(outlines, angle, bend));
+  }
+
+  const merged = mergeAndDispose(parts);
+  merged.name = 'ring:numerals';
+  return merged;
+}
+
+/**
+ * The static separator glyph — a colon — engraved once at the reading line.
+ *
+ * A separator is a drum like the digit rings and carries the same relief mark,
+ * but it never rotates, so only this one reading-line glyph is ever seen and it
+ * is engraved at the reading angle rather than around the whole circumference.
+ * It sizes the colon with the ring's default (ten-digit) numeral layout so the
+ * mark matches the numerals on the drums beside it, and runs through the same
+ * bend as the numerals so it shades and tiles identically.
+ */
+export function createSeparatorGlyphGeometry(
+  config: RingConfig,
+  glyph: SeparatorGlyph = 'colon',
+  options: RingNumeralOptions = {},
+): THREE.BufferGeometry {
+  if (glyph !== 'colon') {
+    throw new Error(`createSeparatorGlyphGeometry: unsupported separator glyph "${String(glyph)}"`);
+  }
+
+  const layoutOptions: NumeralLayoutOptions = {
+    ...(options.heightFraction === undefined ? {} : { heightFraction: options.heightFraction }),
+    ...(options.widthFraction === undefined ? {} : { widthFraction: options.widthFraction }),
+  };
+  const layout = numeralLayout(config, layoutOptions);
+  const bend = drumBendFor(config, layout.glyphHeight, options);
+  const readingAngle = readingAngleForAxis(config.axis);
+
+  const glyphOptions: GlyphOptions = {
+    ...(options.strokeWidth === undefined ? {} : { strokeWidth: options.strokeWidth }),
+    ...(options.arcSegments === undefined ? {} : { arcSegments: options.arcSegments }),
+  };
+
+  const outlines = transformGlyph(colonGlyph(glyphOptions), layout.glyphHeight);
+  const geometry = engraveGlyphOntoDrum(outlines, readingAngle, bend);
+  geometry.name = 'ring:separator';
+  return geometry;
+}
+
+/** How a flat glyph is bent onto one drum: relief, sink, radius, axes and the sag bound. */
+interface DrumBend {
+  readonly relief: number;
+  readonly sink: number;
+  readonly radius: number;
+  readonly axis: Axis;
+  readonly uAxis: Axis;
+  readonly vAxis: Axis;
+  readonly maxSpanY: number;
+}
+
+/** Resolves the drum-bend parameters shared by the numerals and the separators. */
+function drumBendFor(
+  config: RingConfig,
+  glyphHeight: number,
+  options: Pick<RingNumeralOptions, 'relief' | 'sinkFraction'>,
+): DrumBend {
+  const radius = config.radius;
+  const relief = options.relief ?? Math.max(radius * 0.012, glyphHeight * 0.06);
+  const sink = relief * (options.sinkFraction ?? DEFAULT_SINK_FRACTION);
+  const [uAxis, vAxis] = ringPlaneAxes(config.axis);
 
   // Glyph y becomes arc length when the glyph is bent onto the drum, and the
   // bend is exact only at vertices — a segment spanning too much y becomes a
@@ -140,55 +216,61 @@ export function createRingNumeralsGeometry(
   // relief, which sank the middles of 1, 7 and 4 below the drum.)
   const maxSag = relief * 0.08;
   const maxBendAngle = 2 * Math.acos(Math.max(0, 1 - maxSag / radius));
-  const maxSpanY = radius * maxBendAngle;
 
-  const parts: THREE.BufferGeometry[] = [];
-  for (let index = 0; index < digits.length; index += 1) {
-    const digit = digits[index]!;
-    const outlines = transformGlyph(digitGlyph(digit, glyphOptions), layout.glyphHeight).map(
-      (outline) => subdivideOutlineY(outline, maxSpanY),
-    );
-    // Outline subdivision bounds the walls; the triangle pass bounds the cap
-    // diagonals earcut keeps regardless of how finely the outline is divided.
-    const geometry = subdivideTrianglesY(extrudeOutlines(outlines, { depth: relief }), maxSpanY);
-    const angle = digitAngle(index, digits.length, readingAngle);
+  return { relief, sink, radius, axis: config.axis, uAxis, vAxis, maxSpanY: radius * maxBendAngle };
+}
 
-    // Flat glyph -> cylinder: glyph width runs along the ring axis, glyph
-    // height runs around the circumference (so digits scroll past the reading
-    // line), glyph depth becomes radial relief.
-    //
-    // The UVs are restated in the same breath, and that is not tidiness. The
-    // extruder writes UVs for the *flat* profile — the glyph as it was before
-    // it was bent — so a texture applied to the `numerals` slot would be
-    // stretched around the curve and sheared across the extrusion walls. What
-    // is wanted is the cylindrical frame the drum itself lives in: `u` is arc
-    // length around the drum, `v` is distance along the ring axis. Because
-    // `theta` is known analytically here, that is exact rather than fitted, and
-    // it is continuous with `createRingBodyGeometry` — the numerals and the
-    // drum under them share one unbroken cylindrical parameterisation, so a
-    // material tiled across both lines up.
-    deformPositions(geometry, (point, uv) => {
-      const along = point.x;
-      const height = point.y;
-      const depth = point.z;
-      const theta = angle - height / radius;
-      const r = radius - sink + depth;
-      point.set(0, 0, 0);
-      point[axis] = along;
-      point[uAxis] = r * Math.cos(theta);
-      point[vAxis] = r * Math.sin(theta);
-      // Arc length at the drum surface, not at `r`: the relief is a fraction of
-      // a percent of the radius, and measuring at the surface keeps the glyph
-      // faces and their side walls on one consistent density.
-      uv.set((theta * radius) / SURFACE_UNIT_METRES, along / SURFACE_UNIT_METRES);
-    });
+/**
+ * Extrudes one flat glyph — outlines already scaled to metres — and bends it
+ * onto the drum surface at `angle`, returning owned geometry.
+ *
+ * `angle` is where the glyph's baseline centre lands around the circumference:
+ * the reading angle plus, for a numeral, its per-digit offset. Shared by the
+ * numerals and the static separators so both engrave the same way.
+ */
+function engraveGlyphOntoDrum(
+  outlinesInMetres: readonly Outline[],
+  angle: number,
+  bend: DrumBend,
+): THREE.BufferGeometry {
+  const { relief, sink, radius, axis, uAxis, vAxis, maxSpanY } = bend;
 
-    parts.push(geometry);
-  }
+  const outlines = outlinesInMetres.map((outline) => subdivideOutlineY(outline, maxSpanY));
+  // Outline subdivision bounds the walls; the triangle pass bounds the cap
+  // diagonals earcut keeps regardless of how finely the outline is divided.
+  const geometry = subdivideTrianglesY(extrudeOutlines(outlines, { depth: relief }), maxSpanY);
 
-  const merged = mergeAndDispose(parts);
-  merged.name = 'ring:numerals';
-  return merged;
+  // Flat glyph -> cylinder: glyph width runs along the ring axis, glyph height
+  // runs around the circumference (so digits scroll past the reading line),
+  // glyph depth becomes radial relief.
+  //
+  // The UVs are restated in the same breath, and that is not tidiness. The
+  // extruder writes UVs for the *flat* profile — the glyph as it was before it
+  // was bent — so a texture applied to the `numerals` slot would be stretched
+  // around the curve and sheared across the extrusion walls. What is wanted is
+  // the cylindrical frame the drum itself lives in: `u` is arc length around
+  // the drum, `v` is distance along the ring axis. Because `theta` is known
+  // analytically here, that is exact rather than fitted, and it is continuous
+  // with `createRingBodyGeometry` — the marks and the drum under them share one
+  // unbroken cylindrical parameterisation, so a material tiled across both lines
+  // up.
+  deformPositions(geometry, (point, uv) => {
+    const along = point.x;
+    const height = point.y;
+    const depth = point.z;
+    const theta = angle - height / radius;
+    const r = radius - sink + depth;
+    point.set(0, 0, 0);
+    point[axis] = along;
+    point[uAxis] = r * Math.cos(theta);
+    point[vAxis] = r * Math.sin(theta);
+    // Arc length at the drum surface, not at `r`: the relief is a fraction of a
+    // percent of the radius, and measuring at the surface keeps the glyph faces
+    // and their side walls on one consistent density.
+    uv.set((theta * radius) / SURFACE_UNIT_METRES, along / SURFACE_UNIT_METRES);
+  });
+
+  return geometry;
 }
 
 /** Rotates a Y-aligned primitive so its length runs along `axis`. */
