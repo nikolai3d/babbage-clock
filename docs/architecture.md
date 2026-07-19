@@ -49,7 +49,8 @@ src/
     renderer.ts          WebGL context, camera, OrbitControls, frame loop
     clockScene.ts        SceneDefinition -> three.js objects
     geometry/            outlines and configs -> BufferGeometry
-      extrude.ts         Outline -> Shape -> ExtrudeGeometry, merging, bending
+      extrude.ts         Outline -> Shape -> ExtrudeGeometry, merging, bending,
+                         and the attribute passes that follow (subdivision, normals)
       gear.ts            createGearGeometry
       ring.ts            createRingBodyGeometry / createRingNumeralsGeometry
       housing.ts         createHousingParts (case, bezel, studs, lid, shackle)

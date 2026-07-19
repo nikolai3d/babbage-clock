@@ -264,9 +264,15 @@ describe('createRingNumeralsGeometry', () => {
     }
 
     // Flat triangles remain — the extrusion has genuinely planar regions and
-    // sharp corners — but they must no longer be the whole geometry.
+    // sharp corners — but they must no longer be the whole geometry. Before the
+    // fix every triangle was flat (fraction 1.0); after it the fraction is 0.27%
+    // (5 of 1878 triangles on this config), the residue of genuinely planar facets.
+    // The bound is set at 5% — roughly 18x that observation, so a handful of
+    // extra planar triangles from a benign glyph tweak stays green, while any
+    // shading regression drives the fraction back toward 1.0 and fails it by a
+    // wide margin. A loose bound like 0.6 would let a half-regressed mesh pass.
     expect(total).toBeGreaterThan(100);
-    expect(flat / total).toBeLessThan(0.6);
+    expect(flat / total).toBeLessThan(0.05);
     geometry.dispose();
   });
 

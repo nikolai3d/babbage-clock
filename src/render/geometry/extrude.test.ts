@@ -98,7 +98,8 @@ describe('computeCreasedVertexNormals', () => {
 
     const smooth = triangles(...FLAT_QUAD, ...hingedQuad(angle));
     computeCreasedVertexNormals(smooth, Math.PI / 3); // 60 degree threshold
-    expect(normalAt(smooth, 0).z).toBeLessThan(1);
+    const bisector = new THREE.Vector3(0, Math.sin(angle / 2), Math.cos(angle / 2));
+    expect(normalAt(smooth, 0).dot(bisector)).toBeCloseTo(1, 6);
 
     sharp.dispose();
     smooth.dispose();
@@ -131,9 +132,42 @@ describe('computeCreasedVertexNormals', () => {
     );
     computeCreasedVertexNormals(geometry);
 
-    const normals = geometry.getAttribute('normal').array;
-    for (const value of normals) expect(Number.isFinite(value)).toBe(true);
+    // Finite is not enough: a zero-length normal is finite but normalises to
+    // NaN in the shader. Every corner must carry a genuine direction, the
+    // sliver's included — it inherits the quad's from the shared positions.
+    for (let i = 0; i < 9; i += 1) {
+      expect(normalAt(geometry, i).length()).toBeCloseTo(1, 5);
+    }
+    // The real quad is unaffected by the sliver hanging off it.
+    expect(normalAt(geometry, 0).dot(new THREE.Vector3(0, 0, 1))).toBeCloseTo(1, 6);
     geometry.dispose();
+  });
+
+  it('emits unit-length normals across a creased mesh', () => {
+    // The cheapest strong invariant on this function, asserted on a mesh that
+    // exercises both branches: a smoothed seam and a sharp one.
+    const geometry = triangles(
+      ...FLAT_QUAD,
+      ...hingedQuad(Math.PI / 6),
+      ...hingedQuad(Math.PI / 2),
+    );
+    computeCreasedVertexNormals(geometry);
+
+    const normal = geometry.getAttribute('normal');
+    for (let i = 0; i < normal.count; i += 1) {
+      expect(normalAt(geometry, i).length()).toBeCloseTo(1, 5);
+    }
+    geometry.dispose();
+  });
+
+  it('rejects a crease angle that is not a usable number', () => {
+    // NaN would compare false against every alignment, silently welding the
+    // whole mesh smooth — rounding off the relief edge this exists to keep.
+    for (const bad of [Number.NaN, Infinity, -1]) {
+      const geometry = triangles(...FLAT_QUAD);
+      expect(() => computeCreasedVertexNormals(geometry, bad)).toThrow(/creaseAngle/);
+      geometry.dispose();
+    }
   });
 
   it('rejects indexed geometry, which cannot carry per-corner normals', () => {
