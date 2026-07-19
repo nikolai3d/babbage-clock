@@ -69,6 +69,14 @@ test('the KTX2/UASTC-HDR environment path decodes and commits in a real browser'
     } | null;
     return ext !== null && ext !== undefined && ext.getSupportedProfiles().includes('hdr');
   });
+  // On CI the gate must never be the reason this spec passes. SwiftShader
+  // reports ASTC profiles `["ldr"]` and no `hdr`, so the transcoder branch is
+  // always the one taken there — and this spec exists for no other reason than
+  // to take it. Without this line, a container whose GPU stack started
+  // advertising native ASTC HDR would skip the assertions and still go green,
+  // silently retiring the only end-to-end coverage the transcoder has.
+  if (process.env.CI) expect(astcHdrNative).toBe(false);
+
   if (!astcHdrNative) {
     const transcoder = requested.filter((url) => url.includes('basis_transcoder'));
     expect(transcoder.some((url) => url.endsWith('basis_transcoder.js'))).toBe(true);
