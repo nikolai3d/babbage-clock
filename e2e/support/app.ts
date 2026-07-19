@@ -361,7 +361,28 @@ export async function tabTo(page: Page, id: string, maxSteps = 30): Promise<void
   expect(await focusedId(page), `#${id} was not reachable with Tab`).toBe(id);
 }
 
-/** Waits until `count` further frames have been drawn since now. */
+/**
+ * Waits until no material load is in flight.
+ *
+ * A texture commit changes the picture without moving the mechanism, so under
+ * a frozen clock it is the one thing that can still ask for a frame after the
+ * mechanism has settled. Anything asserting on a settled `draws` count has to
+ * gate on this first, or a late-landing commit races the measurement.
+ */
+export async function waitForMaterials(page: Page): Promise<void> {
+  await expect
+    .poll(
+      async () =>
+        page.evaluate(() => {
+          const api = window.__clock;
+          if (!api) throw new Error('window.__clock is not installed — is ?testApi set?');
+          return api.materials().pending;
+        }),
+      { message: 'material loads never settled', timeout: 15_000 },
+    )
+    .toBe(0);
+}
+
 /**
  * Waits until `count` further frames have been drawn since now.
  *

@@ -7,7 +7,7 @@ import {
   gotoApp,
   readRendererState,
   waitForFrames,
-  waitForLighting,
+  waitForMaterials,
   watchConsole,
 } from './support/app.js';
 
@@ -110,9 +110,11 @@ test.describe('boot', () => {
     page,
   }) => {
     await gotoApp(page, deterministicOptions());
-    await waitForLighting(page);
-
-    // Let the async mood and material commits finish asking for their draws.
+    // `gotoApp` already waits the mood out, but not the ten material folders
+    // the default scene binds. A texture commit landing between the two
+    // readings below would show up as a draw and fail the hold — the very
+    // race this test exists to pin down, so it has to be excluded first.
+    await waitForMaterials(page);
     await waitForFrames(page, 10);
     const settled = await readRendererState(page);
     await waitForFrames(page, 10);
@@ -134,6 +136,60 @@ test.describe('boot', () => {
       resized.draws,
       'the picture changed but no frame was drawn — the canvas is now stale',
     ).toBeGreaterThan(held.draws);
+  });
+
+  /**
+   * Coming back from a hidden tab must draw.
+   *
+   * The loop is stopped while hidden, so nothing observes what changed across
+   * the gap, and the drawing buffer is not preserved — a compositor layer
+   * dropped while backgrounded returns undefined. With the mechanism at a
+   * fixed point (here a frozen clock; in production reduced motion between
+   * digits, or any time after the wind-down) nothing would ask for a frame and
+   * the canvas would stay blank. The context-restore path happens to be
+   * covered by the `resize` it does on the way back, so this is the only test
+   * that actually pins `resume`.
+   */
+  test('draws again after the tab comes back from hidden', async ({ page }) => {
+    await gotoApp(page, deterministicOptions());
+    await waitForMaterials(page);
+    await waitForFrames(page, 10);
+
+    // Drive the real handler: it reads `document.hidden`, so overriding the
+    // property and firing the event is the page-level truth it responds to.
+    const setHidden = async (hidden: boolean): Promise<void> => {
+      await page.evaluate((value) => {
+        Object.defineProperty(document, 'hidden', { value, configurable: true });
+        Object.defineProperty(document, 'visibilityState', {
+          value: value ? 'hidden' : 'visible',
+          configurable: true,
+        });
+        document.dispatchEvent(new Event('visibilitychange'));
+      }, hidden);
+    };
+
+    await setHidden(true);
+    await expect
+      .poll(async () => (await readRendererState(page)).running, {
+        message: 'the loop kept running with the tab hidden',
+      })
+      .toBe(false);
+
+    const hiddenState = await readRendererState(page);
+
+    await setHidden(false);
+    await expect
+      .poll(async () => (await readRendererState(page)).running, {
+        message: 'the loop never restarted when the tab came back',
+      })
+      .toBe(true);
+    await waitForFrames(page, 5);
+
+    const back = await readRendererState(page);
+    expect(
+      back.draws,
+      'the tab came back but no frame was drawn — the canvas may be blank',
+    ).toBeGreaterThan(hiddenState.draws);
   });
 
   /**

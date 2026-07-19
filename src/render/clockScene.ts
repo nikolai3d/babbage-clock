@@ -704,10 +704,13 @@ function wrapAngle(radians: number): number {
 /**
  * How each field of a `MechanismSample` is compared.
  *
- * `satisfies Record<keyof MechanismSample, …>` is the point: adding a field to
- * the sample without classifying it here fails to compile. Without that, a new
- * field would simply go uncompared, and the held frame would silently stop
- * redrawing when only that field moved — a visual bug with no obvious cause.
+ * The mapped `satisfies` is the point, and it checks both directions: adding a
+ * field to the sample without classifying it here fails to compile, and so
+ * does classifying one wrongly. Both matter. An uncompared field would leave
+ * the held frame refusing to redraw when only that field moved; a scalar
+ * mislabelled `'array'` would be worse, because `numbersEqual` would read
+ * `.length` as undefined on both numbers, pass its own length guard, never
+ * enter the loop, and report every pair equal — freezing the frame for good.
  */
 const SAMPLE_FIELDS = {
   drivePhaseSeconds: 'scalar',
@@ -719,18 +722,23 @@ const SAMPLE_FIELDS = {
   ringAngles: 'array',
   detentAngles: 'array',
   digits: 'array',
-} as const satisfies Record<keyof MechanismSample, 'scalar' | 'array'>;
+} as const satisfies {
+  [K in keyof MechanismSample]: MechanismSample[K] extends readonly number[] ? 'array' : 'scalar';
+};
 
 /**
  * The same table, split once at module load.
  *
- * `sampleEquals` runs every frame and this file keeps the frame loop free of
- * allocation (see the scratch objects above), so the entries cannot be built
- * per call.
+ * `sampleEquals` runs every frame, so the entries are built once here rather
+ * than per call. The `for…of` below still walks an iterator over these nine
+ * fixed elements; that is a deliberate line to draw, since the allocation this
+ * file actually cares about is the per-frame garbage the scratch objects above
+ * exist to avoid, not a loop V8 escape-analyses away.
  */
-const SAMPLE_ENTRIES = Object.entries(SAMPLE_FIELDS) as ReadonlyArray<
-  readonly [keyof MechanismSample, 'scalar' | 'array']
->;
+const SAMPLE_ENTRIES: ReadonlyArray<readonly [keyof MechanismSample, 'scalar' | 'array']> =
+  Object.entries(SAMPLE_FIELDS) as ReadonlyArray<
+    readonly [keyof MechanismSample, 'scalar' | 'array']
+  >;
 
 /**
  * Whether two samples would put the scene graph in the same pose.
