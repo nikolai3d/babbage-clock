@@ -29,6 +29,7 @@ export function parseBackgroundPreference(
   return value === 'panorama' || value === 'backdrop' ? value : null;
 }
 import { parseEnvironmentPreset } from '../scene/environment.js';
+import { resolveTarget } from '../time/target.js';
 import type { QualityPreference } from './quality.js';
 import type { EnvironmentPresetId } from '../scene/types.js';
 import type { ResolvedTarget } from '../time/target.js';
@@ -114,13 +115,15 @@ export interface ShareableState {
  * readable and it round-trips exactly: re-resolving the pair yields the same
  * instant, including across a DST gap (the echoed wall clock is the adjusted
  * one) and an overlap (re-resolution picks the same earlier instant again).
+ * The one exception — a target pinned to the *later* side of an overlap — is
+ * handled in {@link shareTargetValue}.
  *
  * The target is always written, even when it is the default New Year, so a
  * recipient in another zone sees the sender's countdown rather than their own.
  */
 export function buildShareParams(state: ShareableState): URLSearchParams {
   const params = new URLSearchParams();
-  params.set(URL_PARAM.target, state.target.enteredZone.wallClock);
+  params.set(URL_PARAM.target, shareTargetValue(state.target));
   params.set(URL_PARAM.tz, state.target.zone);
   params.set(URL_PARAM.scene, state.sceneId);
   if (state.mood !== null) params.set(URL_PARAM.mood, state.mood);
@@ -130,6 +133,37 @@ export function buildShareParams(state: ShareableState): URLSearchParams {
   if (state.mode !== null) params.set(URL_PARAM.mode, state.mode);
   if (state.hours12) params.set(URL_PARAM.hours12, '1');
   return params;
+}
+
+/**
+ * The `?target=` value that reproduces `target.atMs` exactly.
+ *
+ * Normally the bare wall clock in the entered zone — the readable form. The
+ * one pair that cannot round-trip that way is a target pinned to the *later*
+ * side of a DST fall-back overlap, where re-resolving the wall clock takes
+ * the earlier instant, an hour off. That state is reachable: the clock-mode
+ * zone control re-anchors the existing instant into an arbitrary zone
+ * (`retargetZone`), and an offset-carrying launch URL can land there too.
+ * Exactly then the UTC offset is appended, which the resolver reads as an
+ * absolute instant; `?tz=` still names the zone for display. Slightly less
+ * pretty, never wrong.
+ */
+function shareTargetValue(target: ResolvedTarget): string {
+  const { wallClock, offset } = target.enteredZone;
+  try {
+    // The probe only consults `atMs`, but its inputs are pinned anyway so the
+    // check is hermetic — no ambient clock or machine zone even incidentally.
+    const probe = resolveTarget({
+      value: wallClock,
+      zone: target.zone,
+      nowMs: target.atMs,
+      viewerZone: target.zone,
+    });
+    if (probe.atMs === target.atMs) return wallClock;
+  } catch {
+    // A pair that cannot re-resolve at all cannot use the readable form.
+  }
+  return `${wallClock}${offset}`;
 }
 
 /**

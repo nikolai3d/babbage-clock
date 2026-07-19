@@ -760,3 +760,87 @@ describe('gear spoke styles', () => {
     expect(styledTriangles).not.toBe(derivedTriangles);
   });
 });
+
+describe('escapement placement', () => {
+  function escapementHolders(view: ClockSceneView) {
+    return {
+      balance: view.root.getObjectByName('escapement:balance')!,
+      cock: view.root.getObjectByName('escapement:cock')!,
+      wheel: view.root.getObjectByName('escapement:escape-wheel')!,
+    };
+  }
+
+  it('honours a scene-declared placement over the case derivation', () => {
+    const placed: SceneDefinition = {
+      ...copperPadlockScene,
+      id: 'escapement-placement-probe',
+      escapement: {
+        position: [0.4, 0.55, -0.6],
+        escapeWheelOffset: [0.12, -0.05, 0.02],
+      },
+    };
+
+    const view = new ClockSceneView(new THREE.Scene(), placed, { motion: false });
+    const { balance, cock, wheel } = escapementHolders(view);
+
+    expect(balance.position.toArray()).toEqual([0.4, 0.55, -0.6]);
+    // The cock holds the balance, so it follows the same centre.
+    expect(cock.position.toArray()).toEqual([0.4, 0.55, -0.6]);
+    // The escape wheel offset is relative to that centre.
+    expect(wheel.position.x).toBeCloseTo(0.4 + 0.12, 9);
+    expect(wheel.position.y).toBeCloseTo(0.55 - 0.05, 9);
+    expect(wheel.position.z).toBeCloseTo(-0.6 + 0.02, 9);
+    view.dispose();
+  });
+
+  it('falls back per field: a declared centre keeps the derived wheel offset', () => {
+    const derivedView = new ClockSceneView(new THREE.Scene(), copperPadlockScene, {
+      motion: false,
+    });
+    const derived = escapementHolders(derivedView);
+    const derivedOffset = derived.wheel.position.clone().sub(derived.balance.position);
+    derivedView.dispose();
+    // A zero delta would make the comparisons below pass vacuously.
+    expect(derivedOffset.length()).toBeGreaterThan(0);
+
+    const placed: SceneDefinition = {
+      ...copperPadlockScene,
+      id: 'escapement-centre-probe',
+      escapement: { position: [0.4, 0.55, -0.6] },
+    };
+    const view = new ClockSceneView(new THREE.Scene(), placed, { motion: false });
+    const { balance, wheel } = escapementHolders(view);
+    const offset = wheel.position.clone().sub(balance.position);
+
+    expect(balance.position.toArray()).toEqual([0.4, 0.55, -0.6]);
+    // Same delta the derivation dealt out for this scene's case.
+    expect(offset.x).toBeCloseTo(derivedOffset.x, 9);
+    expect(offset.y).toBeCloseTo(derivedOffset.y, 9);
+    expect(offset.z).toBeCloseTo(derivedOffset.z, 9);
+    view.dispose();
+  });
+
+  it('falls back per field the other way: a declared offset keeps the derived centre', () => {
+    const derivedView = new ClockSceneView(new THREE.Scene(), copperPadlockScene, {
+      motion: false,
+    });
+    const derivedCentre = escapementHolders(derivedView).balance.position.clone();
+    derivedView.dispose();
+
+    const placed: SceneDefinition = {
+      ...copperPadlockScene,
+      id: 'escapement-offset-probe',
+      escapement: { escapeWheelOffset: [0.12, -0.05, 0.02] },
+    };
+    const view = new ClockSceneView(new THREE.Scene(), placed, { motion: false });
+    const { balance, wheel } = escapementHolders(view);
+
+    // The centre still derives from the case…
+    expect(balance.position.toArray()).toEqual(derivedCentre.toArray());
+    // …while the wheel sits at the declared offset from it.
+    expect(wheel.position.x).toBeCloseTo(derivedCentre.x + 0.12, 9);
+    expect(wheel.position.y).toBeCloseTo(derivedCentre.y - 0.05, 9);
+    expect(wheel.position.z).toBeCloseTo(derivedCentre.z + 0.02, 9);
+    view.dispose();
+  });
+});

@@ -177,10 +177,11 @@ passes it to `ClockSceneView` and on to the mechanism. See
 
 ## Where the numbers live
 
-| Thing                                | Where                                   |
-| ------------------------------------ | --------------------------------------- |
-| Tick durations, overshoot, wind-down | `MechanismOptions` defaults             |
-| Digit -> angle mapping               | `geometry/ringLayout.ts`                |
-| Which digits a reading produces      | `time/countdown.ts` (`remainingDigits`) |
-| Gear placement and speeds            | scene definitions (`GearSpec`)          |
-| Escapement placement and size        | `clockScene.ts`, derived from the case  |
+| Thing                                | Where                                                        |
+| ------------------------------------ | ------------------------------------------------------------ |
+| Tick durations, overshoot, wind-down | `MechanismOptions` defaults                                  |
+| Digit -> angle mapping               | `geometry/ringLayout.ts`                                     |
+| Which digits a reading produces      | `time/countdown.ts` (`remainingDigits`)                      |
+| Gear placement and speeds            | scene definitions (`GearSpec`)                               |
+| Escapement size                      | `clockScene.ts`, derived from the case                       |
+| Escapement placement                 | scene definitions (`escapement`), else derived from the case |

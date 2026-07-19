@@ -29,10 +29,16 @@ export const SELECTOR = {
   sceneSelect: '#scene-select',
   moodSelect: '#mood-select',
   qualitySelect: '#quality-select',
+  targetForm: '#target-form',
   targetInput: '#target-input',
   targetApply: '#target-apply',
+  targetLabel: '#target-label',
   tzInput: '#tz-input',
   tzListbox: '#tz-input-listbox',
+  /** Clock mode's reading-zone field — the target form's replacement. */
+  clockZoneField: '#clock-zone-field',
+  clockZoneInput: '#clock-zone-input',
+  clockZoneListbox: '#clock-zone-input-listbox',
   shareButton: '#share-button',
   toastRegion: '.toast-region',
   /** The throttled live region that mirrors the countdown as text. */

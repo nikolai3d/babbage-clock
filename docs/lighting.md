@@ -186,7 +186,12 @@ once per session and caches the render target by preset id. It also:
   including when prefiltering throws;
 - shares one load between concurrent callers;
 - throws away — rather than caching — a result that lands after `dispose()`;
-- releases every cached render target and the generator in `dispose()`.
+- releases every cached render target and the generator in `dispose()`;
+- settles a load still in flight when `dispose()` lands by rejecting it with
+  `EnvironmentDisposedError` instead of pending forever — KTX2's terminated
+  worker pool would otherwise drop the job silently;
+- disposes on arrival — never orphans — a texture the decoder delivers after
+  that rejection.
 
 `EnvironmentController` owns the rig, the generated gradient backdrop and the
 grade, and disposes each when the mood changes or the renderer goes away. The
@@ -232,10 +237,25 @@ line too dark to read.
 
 ### Formats
 
-`rgbe` (`.hdr`) and `exr` are implemented; the decoders are dynamically imported
-so a mood nobody selects costs nothing. `ktx2` is in the schema and throws a
-clear error if used — the Basis transcoder is not shipped yet. Use 1k `.hdr`
-until that follow-up lands.
+`rgbe` (`.hdr`), `exr` and `ktx2` (UASTC HDR) are implemented; every decoder is
+dynamically imported so a mood nobody selects costs nothing. The `ktx2` path
+uses the same Basis transcoder as the material pipeline — synced from `three`
+into `public/basis/` by `scripts/sync-basis-transcoder.mjs` on `predev` and
+`prebuild`, fetched at runtime from a URL joined onto `import.meta.env.BASE_URL`
+(see `docs/materials.md`). Unlike materials there is no uncompressed fallback: a
+preset names exactly one panorama, so a `.ktx2` that cannot be transcoded
+rejects loudly and the previous mood stays applied.
+
+The shipped moods are still 1k `.hdr`; converting them to KTX2/UASTC-HDR to cut
+the payload is a follow-up. Encode with `toktx --encode uastc --uastc_quality 3
+--zcmp 19 --assign_oetf linear` (or `basisu -uastc_hdr`; exact flags vary
+across KTX-Software/basisu releases, so re-verify against the version you run)
+and set `"format": "ktx2"` in the manifest — then check the mood by eye. Two
+things to look for: UASTC HDR is lossy where `.hdr` was not, and a KTX2
+container's orientation cannot be flipped at load time (the same rule
+`scripts/compress-material.mjs` bakes in for materials), so a naively converted
+panorama can come out vertically flipped against its `.hdr` source — a sun
+below the horizon is this bug, not a grading choice.
 
 ## Provenance and licences
 

@@ -201,6 +201,7 @@ interface SceneDefinition {
   mode: 'countdown' | 'clock';
   rings: RingConfig; // count / radius / thickness / spacing / axis / slots
   gears: readonly GearSpec[]; // decorative rotating discs
+  escapement?: EscapementPlacement; // balance centre + escape-wheel offset override
   materials: MaterialSlotMap; // every named slot -> a MaterialBinding
   lighting: LightingConfig; // background, ambient, directionals, environment
   camera: CameraConfig; // placement + OrbitControls framing limits
@@ -234,8 +235,10 @@ reads:
   is sized to enclose whatever the scene contains.
 - **Escapement** — `createEscapementParts` returns the balance wheel, its escape
   wheel and the cock that holds them; `createDetentLeverGeometry` returns the
-  pawl that rides on each ring. These are placed from the case rather than from
-  scene data, so every scene gets a movement without editing a scene file.
+  pawl that rides on each ring. These are sized from the case and, by default,
+  placed from it too, so every scene gets a movement without editing a scene
+  file; a scene whose layout wants them elsewhere declares the optional
+  `escapement` placement in its definition.
 
 Conventions (units, origin, axes, polygon budgets, the material-slot contract
 for authored glTF) live in **[assets.md](assets.md)**.
@@ -286,6 +289,9 @@ p#canvas-help.sr-only
                               .tzpicker > input#tz-input[role=combobox] + ul#tz-input-listbox[role=listbox]
                               p#target-error[role=alert]
                               button#target-apply, button#target-reset
+      .field#clock-zone-field .tzpicker > input#clock-zone-input[role=combobox] + ul[role=listbox]
+                              p#clock-zone-error[role=alert]
+                              (clock mode only — swaps in for the target form)
       .echo#target-echo       dl.echo__rows, p.echo__adjustment, ul.echo__notes, p.echo__origin
       .panel__group           one .field per SettingControl descriptor
       .field--share           input#share-url[readonly], button#share-button
