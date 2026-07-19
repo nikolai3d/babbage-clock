@@ -219,6 +219,15 @@ into `public/basis/` by `scripts/sync-basis-transcoder.mjs` on `predev` and
 preset names exactly one panorama, so a `.ktx2` that cannot be transcoded
 rejects loudly and the previous mood stays applied.
 
+The `.ktx2` path is exercised in CI end to end: `assets/ibl/test-uastc-hdr/`
+holds a 1.3 kB genuine UASTC-HDR container (a three.js r182 sample, MIT), and
+`e2e/ibl.spec.ts` boots the app with the `?moodOverride=` test hook pointing at
+it, asserting the transcoder is fetched and the mood commits. Folders prefixed
+`test-` are fixtures, not moods — the picker and `?mood=` exclude them, and
+`src/render/ibl/manifest.test.ts` holds them to fixture rules (tiny, honest
+provenance, genuinely the format they claim) instead of the shipped-mood rules
+above.
+
 The shipped moods are still 1k `.hdr`; converting them to KTX2/UASTC-HDR to cut
 the payload is a follow-up. Encode with `toktx --encode uastc --uastc_quality 3
 --zcmp 19 --assign_oetf linear` (or `basisu -uastc_hdr`; exact flags vary

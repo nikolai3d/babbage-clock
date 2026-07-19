@@ -65,6 +65,21 @@ describe('readTestHooks', () => {
     expect(readTestHooks('?nosync=1')).toEqual({ ...DEFAULT_TEST_HOOKS, timeSync: false });
     expect(readTestHooks('?nomotion=1')).toEqual({ ...DEFAULT_TEST_HOOKS, motion: false });
     expect(readTestHooks('?testApi=1')).toEqual({ ...DEFAULT_TEST_HOOKS, testApi: true });
+    expect(readTestHooks('?moodOverride=test-uastc-hdr')).toEqual({
+      ...DEFAULT_TEST_HOOKS,
+      moodOverride: 'test-uastc-hdr',
+    });
+  });
+
+  it('passes a mood override through raw, and treats an empty one as absent', () => {
+    // The value is deliberately unvalidated — it names preset folders the
+    // picker whitelist excludes on purpose, so there is no list to check
+    // against. Whitespace and emptiness are authoring slips, not ids.
+    expect(readTestHooks('?moodOverride=test-uastc-hdr').moodOverride).toBe('test-uastc-hdr');
+    expect(readTestHooks('?moodOverride=%20test-x%20').moodOverride).toBe('test-x');
+    expect(readTestHooks('?moodOverride=').moodOverride).toBeNull();
+    expect(readTestHooks('?moodOverride=%20%20').moodOverride).toBeNull();
+    expect(readTestHooks('').moodOverride).toBeNull();
   });
 });
 
@@ -169,6 +184,7 @@ describe('installTestApi', () => {
     cameraPosition: [0, 0, 6],
     sceneId: 'copper-padlock',
     lighting: 'ready',
+    mood: 'steampunk-workshop',
     quality: 'high',
     maxFps: null,
     framingFit: 'whole',
@@ -276,6 +292,10 @@ describe('installTestApi', () => {
     expect(api?.sceneId()).toBe('copper-padlock');
     expect(api?.renderer().webgl2).toBe(true);
     expect(api?.renderer().drawCalls).toBe(17);
+    // `mood` reaches the test API intact: `e2e/ibl.spec.ts` reads it to tell
+    // the fixture apart from a fallback to the scene's own mood, and proving
+    // the passthrough here costs microseconds instead of a browser boot.
+    expect(api?.renderer().mood).toBe('steampunk-workshop');
     expect(api?.materials().slots['housing']).toBe('pbr:copper-plate');
     expect(api?.countdown().seconds).toBe(1);
     expect(api?.target().label).toBe('New Year 2027');

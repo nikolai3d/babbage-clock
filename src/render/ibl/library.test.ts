@@ -629,6 +629,28 @@ describe('ThreePanoramaLoader (ktx2)', () => {
     loader.dispose();
   });
 
+  it('keeps the transcoder memo when a decode fails', async () => {
+    // The complement of the retry test above: dropping the memo is for a
+    // transcoder that never *loaded*. A decode failure is the file's fault,
+    // not the transcoder's — rebuilding the worker pool for the next mood
+    // would re-fetch the wasm and pay the pool's start-up cost for nothing.
+    const loader = new ThreePanoramaLoader(fakeRenderer());
+
+    const failing = loader.load('/fake/broken.ktx2', 'ktx2');
+    await vi.waitFor(() => expect(ktx2.FakeKTX2Loader.instances[0]?.requests).toHaveLength(1));
+    ktx2.FakeKTX2Loader.instances[0]!.requests[0]!.onError(new Error('bad container'));
+    await expect(failing).rejects.toThrow('bad container');
+
+    const next = loader.load('/fake/fine.ktx2', 'ktx2');
+    await vi.waitFor(() => expect(ktx2.FakeKTX2Loader.instances[0]?.requests).toHaveLength(2));
+    // Same instance, no second construction: the memo survived the failure.
+    expect(ktx2.FakeKTX2Loader.instances).toHaveLength(1);
+
+    ktx2.FakeKTX2Loader.instances[0]!.requests[1]!.onLoad(new THREE.Texture());
+    await expect(next).resolves.toBeInstanceOf(THREE.Texture);
+    loader.dispose();
+  });
+
   it('tears down a transcoder that finishes loading after disposal', async () => {
     const loader = new ThreePanoramaLoader(fakeRenderer());
 

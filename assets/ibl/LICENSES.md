@@ -21,3 +21,12 @@ All five are the **1k Radiance (`.hdr`) variant**, between 1.1 MB and 1.7 MB
 each. That is the smallest tier Poly Haven publishes that still holds up as a
 reflection source on brass, and it keeps every preset inside the 2-3 MB budget.
 Nothing here is loaded until a mood asks for it — see `docs/lighting.md`.
+
+## Test fixtures
+
+Folders prefixed `test-` are CI fixtures, not moods: they never appear in the
+picker and `?mood=` rejects them. They follow the same provenance rules.
+
+| Preset           | File                   | Title                      | Author(s)        | Licence | Source                                                                                   |
+| ---------------- | ---------------------- | -------------------------- | ---------------- | ------- | ---------------------------------------------------------------------------------------- |
+| `test-uastc-hdr` | `2d_uastc_hdr4x4.ktx2` | Basis UASTC HDR 4x4 sample | three.js authors | MIT     | https://github.com/mrdoob/three.js/blob/r182/examples/textures/ktx2/2d_uastc_hdr4x4.ktx2 |

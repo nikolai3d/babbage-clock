@@ -77,6 +77,12 @@ export interface AppOptions {
   readonly mockSync?: boolean;
   /** Lighting mood for `?mood=`. Omit for the scene's own. */
   readonly mood?: string;
+  /**
+   * Raw preset-folder id for `?moodOverride=` — the test hook that bypasses
+   * the picker whitelist. This is how a spec reaches the CI fixture moods
+   * (`assets/ibl/test-*`) that `?mood=` deliberately rejects.
+   */
+  readonly moodOverride?: string;
   /** Readout override for `?mode=`. */
   readonly mode?: 'clock' | 'countdown';
   /** Zone for `?tz=` — the target's zone, and the clock's reading zone. */
@@ -120,6 +126,7 @@ export function appUrl(options: AppOptions = {}): string {
   const params = new URLSearchParams();
   if (options.scene !== undefined) params.set('scene', options.scene);
   if (options.mood !== undefined) params.set('mood', options.mood);
+  if (options.moodOverride !== undefined) params.set('moodOverride', options.moodOverride);
   if (options.mode !== undefined) params.set('mode', options.mode);
   if (options.tz !== undefined) params.set('tz', options.tz);
   if (options.h12) params.set('h12', '1');

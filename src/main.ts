@@ -52,6 +52,7 @@ import { defineSelect, defineToggle } from './ui/settings.js';
 import { AudioEngine } from './audio/engine.js';
 import type { AppState } from './app/store.js';
 import type { RendererProbe } from './app/testHooks.js';
+import type { EnvironmentPresetId } from './scene/types.js';
 import type { ShareableState } from './app/urlParams.js';
 import type { FallbackReason } from './ui/fallbackClock.js';
 import type { SettingControl } from './ui/settings.js';
@@ -282,7 +283,16 @@ async function bootstrap(): Promise<void> {
   /** Rebuilds the three.js scene for the current scene id and lighting mood. */
   const applyScene = (): void => {
     const state = store.get();
-    renderer?.setScene(withEnvironmentPreset(sceneRegistry.resolve(state.sceneId), state.mood));
+    // `?moodOverride=` (test hook) wins over the store: it names a raw preset
+    // folder so CI can exercise fixture moods (`assets/ibl/test-*`) that the
+    // picker whitelist deliberately excludes. The cast is the hook's admission
+    // that it bypasses the `EnvironmentPresetId` union on purpose — the preset
+    // registry resolves any folder on disk, and an id with no folder lands on
+    // the same mood-error path a broken download would. Absent the parameter
+    // this is exactly `state.mood`.
+    const mood =
+      hooks.moodOverride !== null ? (hooks.moodOverride as EnvironmentPresetId) : state.mood;
+    renderer?.setScene(withEnvironmentPreset(sceneRegistry.resolve(state.sceneId), mood));
   };
 
   // The audio engine exists only while sound is on. Constructing the
@@ -629,6 +639,7 @@ async function bootstrap(): Promise<void> {
       sceneId: null,
       // No scene was ever built, so no environment map was ever asked for.
       lighting: 'none',
+      mood: null,
       // The tier was still chosen — it describes the device, not the context —
       // but nothing is being framed or drawn against it.
       quality: qualityTier,
