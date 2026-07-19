@@ -17,7 +17,12 @@ import {
   ringStackSpan,
 } from '../geometry/ringLayout.js';
 import { boxProjectUv } from './geometry/uv.js';
-import { Mechanism, type MechanismEvent, type MechanismInput } from '../mechanism/index.js';
+import {
+  Mechanism,
+  type MechanismEvent,
+  type MechanismInput,
+  type MechanismSample,
+} from '../mechanism/index.js';
 import type { MaterialRegistry } from './materialRegistry.js';
 import type { TextureSizePreference } from '../app/quality.js';
 import type {
@@ -123,6 +128,14 @@ export class ClockSceneView {
   private balance: THREE.Object3D | null = null;
   private escapeWheel: THREE.Object3D | null = null;
 
+  /**
+   * The sample whose transforms the graph currently shows. `update` compares
+   * against it so a frame where the mechanism did not move — a frozen test
+   * clock, a wound-down countdown — reports that nothing changed and the
+   * renderer can hold the frame it already drew. See `ClockRenderer.frame`.
+   */
+  private appliedSample: MechanismSample | null = null;
+
   /** Scratch objects, so the frame loop allocates nothing. */
   private readonly scratchMatrix = new THREE.Matrix4();
   private readonly scratchQuaternion = new THREE.Quaternion();
@@ -194,6 +207,15 @@ export class ClockSceneView {
     return this.materials.ready();
   }
 
+  /**
+   * True while any material slot is still loading. Polled by the render loop:
+   * an async texture commit changes what a frame looks like without moving the
+   * mechanism, so a held frame must be redrawn when one lands.
+   */
+  get materialsBusy(): boolean {
+    return this.materials.busy;
+  }
+
   /** The binding currently in force for a slot. Read by the test API. */
   bindingFor(slot: MaterialSlot): MaterialBinding {
     return this.materials.bindingFor(slot);
@@ -223,9 +245,19 @@ export class ClockSceneView {
    * Takes an instant rather than a delta on purpose: every transform below is a
    * function of the clock, so a tab that slept for an hour is correct on its
    * first frame back and nothing can drift out of step with real time.
+   *
+   * Returns whether anything moved. A live clock moves every frame (the drive
+   * phase is continuous), but under a frozen test clock the sample reaches a
+   * fixed point — and reporting that lets the renderer stop redrawing an
+   * unchanged frame, which is what makes a deterministic capture bit-stable
+   * however slow or contended the machine taking it is.
    */
-  update(nowMs: number): void {
+  update(nowMs: number): boolean {
     const sample = this.mechanism.sample(nowMs);
+    if (this.appliedSample !== null && sampleEquals(this.appliedSample, sample)) {
+      return false;
+    }
+    this.appliedSample = sample;
     const axis = this.definition.rings.axis;
 
     for (let i = 0; i < this.ringGroups.length; i += 1) {
@@ -252,6 +284,7 @@ export class ClockSceneView {
         -ESCAPE_WHEEL_RATE * sample.drivePhaseSeconds - kick * 3,
       );
     }
+    return true;
   }
 
   dispose(): void {
@@ -639,4 +672,35 @@ function unitVector(axis: Axis): THREE.Vector3 {
  */
 function wrapAngle(radians: number): number {
   return radians % TWO_PI;
+}
+
+/**
+ * Whether two samples would put the scene graph in the same pose.
+ *
+ * Exact float equality on purpose: the mechanism is a pure function of the
+ * instant, so a frozen clock reproduces bit-identical samples, and anything
+ * short of bit-identical must be drawn. Every field is compared — including
+ * ones `update` does not read today — so a future use of, say, `driveFactor`
+ * cannot silently break the held-frame optimisation.
+ */
+function sampleEquals(a: MechanismSample, b: MechanismSample): boolean {
+  return (
+    a.drivePhaseSeconds === b.drivePhaseSeconds &&
+    a.driveFactor === b.driveFactor &&
+    a.escapement === b.escapement &&
+    a.tickPulse === b.tickPulse &&
+    a.running === b.running &&
+    a.expired === b.expired &&
+    numbersEqual(a.ringAngles, b.ringAngles) &&
+    numbersEqual(a.detentAngles, b.detentAngles) &&
+    numbersEqual(a.digits, b.digits)
+  );
+}
+
+function numbersEqual(a: readonly number[], b: readonly number[]): boolean {
+  if (a.length !== b.length) return false;
+  for (let i = 0; i < a.length; i += 1) {
+    if (a[i] !== b[i]) return false;
+  }
+  return true;
 }

@@ -497,6 +497,15 @@ count was confirmed flat across 80+ mood switches in a real browser. See
 
 - **WebGL2 via the classic `WebGLRenderer`.** WebGPU is explicitly deferred; do
   not introduce `WebGPURenderer`.
+- **A frame is drawn only when something changed.** The rAF loop always runs —
+  it keeps the mechanism and the store current — but the GL work is skipped
+  when the mechanism reports no motion (`ClockSceneView.update` returns
+  false), the camera did not move, and no async mood or material commit is in
+  flight. A live clock moves the drive phase continuously, so production draws
+  every frame; a frozen `?mockNow` clock reaches a fixed point and holds the
+  last frame, which is what makes screenshot captures bit-stable on a starved
+  CI runner. Anything new that changes the picture without moving the
+  mechanism must set `renderRequested` (see `ClockRenderer`).
 - **Vanilla TypeScript.** No React/Svelte/Vue.
 - Tone mapping and exposure are set by the active lighting mood's `grade`
   (ACES Filmic by default), multiplied by the scene's own `lighting.exposure`
