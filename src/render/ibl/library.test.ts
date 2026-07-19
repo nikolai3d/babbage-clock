@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { BASIS_TRANSCODER_PATH, resolveAssetUrl } from '../../materials/paths.js';
-import { EnvironmentLibrary, ThreePanoramaLoader } from './library.js';
+import { EnvironmentDisposedError, EnvironmentLibrary, ThreePanoramaLoader } from './library.js';
 import { parseIblManifest } from './manifest.js';
 import type { EnvironmentPrefilter, PanoramaLoader } from './library.js';
 import type { IblEnvironmentFormat } from './manifest.js';
@@ -23,6 +23,7 @@ const ktx2 = vi.hoisted(() => {
     transcoderPath: string | null = null;
     detectedWith: unknown = null;
     disposed = false;
+    disposeCalls = 0;
     readonly requests: {
       url: string;
       onLoad: (t: unknown) => void;
@@ -58,6 +59,7 @@ const ktx2 = vi.hoisted(() => {
 
     dispose(): void {
       this.disposed = true;
+      this.disposeCalls += 1;
     }
   }
 
@@ -66,6 +68,43 @@ const ktx2 = vi.hoisted(() => {
 
 vi.mock('three/examples/jsm/loaders/KTX2Loader.js', () => ({
   KTX2Loader: ktx2.FakeKTX2Loader,
+}));
+
+/**
+ * `HDRLoader` would hit the network under Node; like the KTX2 mock above it is
+ * replaced with a hand that holds the callbacks, so a test can dispose the
+ * panorama loader while a decode is mid-flight and then deliver (or fail) the
+ * request afterwards — the exact teardown race the registry exists for.
+ */
+const hdr = vi.hoisted(() => {
+  class FakeHDRLoader {
+    static instances: FakeHDRLoader[] = [];
+
+    readonly requests: {
+      url: string;
+      onLoad: (t: unknown) => void;
+      onError: (e: unknown) => void;
+    }[] = [];
+
+    constructor() {
+      FakeHDRLoader.instances.push(this);
+    }
+
+    load(
+      url: string,
+      onLoad: (t: unknown) => void,
+      _onProgress: unknown,
+      onError: (e: unknown) => void,
+    ): void {
+      this.requests.push({ url, onLoad, onError });
+    }
+  }
+
+  return { FakeHDRLoader };
+});
+
+vi.mock('three/examples/jsm/loaders/HDRLoader.js', () => ({
+  HDRLoader: hdr.FakeHDRLoader,
 }));
 
 /**
@@ -79,6 +118,7 @@ vi.mock('three/examples/jsm/loaders/KTX2Loader.js', () => ({
 class FakePrefilter implements EnvironmentPrefilter {
   compiled = 0;
   disposedGenerator = false;
+  disposeCalls = 0;
   readonly live = new Set<THREE.WebGLRenderTarget>();
 
   compile(_source: THREE.Texture): THREE.WebGLRenderTarget {
@@ -95,6 +135,7 @@ class FakePrefilter implements EnvironmentPrefilter {
 
   dispose(): void {
     this.disposedGenerator = true;
+    this.disposeCalls += 1;
   }
 }
 
@@ -289,11 +330,68 @@ describe('EnvironmentLibrary', () => {
     const pending = library.load('day');
     library.dispose();
 
-    await expect(pending).rejects.toThrow(/disposed/);
-    // The target was created before disposal noticed. Dropping the promise on
-    // the floor would have leaked it, because nothing else holds a reference.
+    await expect(pending).rejects.toBeInstanceOf(EnvironmentDisposedError);
+    // Disposal is noticed before the prefilter — already torn down by now —
+    // is asked for anything, and the decoded panorama dies with the load
+    // instead of being orphaned.
+    expect(prefilter.compiled).toBe(0);
+    expect(loader.disposedSources.has(loader.sources[0]!)).toBe(true);
     expect(prefilter.live.size).toBe(0);
     expect(library.liveTargets).toBe(0);
+  });
+
+  it('settles an in-flight load through the loader contract when disposed mid-decode', async () => {
+    // A KTX2 worker pool never calls back once terminated, so left alone the
+    // decode promise would pend forever. `PanoramaLoader.dispose` is required
+    // to reject what it still owes; this pins that the library's own promise
+    // comes to rest through that rejection.
+    const prefilter = new FakePrefilter();
+    const pendingRejects = new Set<(error: Error) => void>();
+    const loader: PanoramaLoader = {
+      load: () =>
+        new Promise<THREE.Texture>((_resolve, reject) => {
+          pendingRejects.add(reject);
+        }),
+      dispose: () => {
+        for (const reject of pendingRejects) {
+          reject(new EnvironmentDisposedError('loader disposed while decoding'));
+        }
+        pendingRejects.clear();
+      },
+    };
+    const library = new EnvironmentLibrary({ presets: fakePresets(['day']), loader, prefilter });
+
+    const pending = library.load('day');
+    // Wait until the decode is genuinely in flight — past the manifest and
+    // URL imports — so disposal races the decoder, not the preset source.
+    await vi.waitFor(() => expect(pendingRejects.size).toBe(1));
+    library.dispose();
+
+    await expect(pending).rejects.toBeInstanceOf(EnvironmentDisposedError);
+    expect(prefilter.compiled).toBe(0);
+    expect(library.liveTargets).toBe(0);
+  });
+
+  it('rejects a load requested after disposal', async () => {
+    const { library } = build();
+    library.dispose();
+    await expect(library.load('day')).rejects.toBeInstanceOf(EnvironmentDisposedError);
+  });
+
+  it('tears everything down exactly once however often dispose is called', async () => {
+    const { library, loader, prefilter } = build();
+    await library.load('day');
+
+    library.dispose();
+    library.dispose();
+
+    // A second dispose must not re-release GPU objects the first one already
+    // gave back — double-freeing a shared generator or worker pool is how a
+    // teardown ordering bug in one owner corrupts the other.
+    expect(loader.disposedCalls).toBe(1);
+    expect(prefilter.disposeCalls).toBe(1);
+    expect(library.liveTargets).toBe(0);
+    expect(prefilter.live.size).toBe(0);
   });
 
   it('rejects for a mood with no folder under assets/ibl', async () => {
@@ -460,8 +558,114 @@ describe('ThreePanoramaLoader (ktx2)', () => {
     // the tab, because nothing would ever dispose it again.
     loader.dispose();
 
-    await expect(pending).rejects.toThrow(/disposed/);
+    await expect(pending).rejects.toBeInstanceOf(EnvironmentDisposedError);
     expect(ktx2.FakeKTX2Loader.instances).toHaveLength(1);
     expect(ktx2.FakeKTX2Loader.instances[0]!.disposed).toBe(true);
+  });
+
+  it('rejects a decode in flight at disposal and frees a texture that arrives late', async () => {
+    const loader = new ThreePanoramaLoader(fakeRenderer());
+
+    const pending = loader.load('/fake/inflight.ktx2', 'ktx2');
+    await vi.waitFor(() => expect(ktx2.FakeKTX2Loader.instances[0]?.requests).toHaveLength(1));
+    const instance = ktx2.FakeKTX2Loader.instances[0]!;
+
+    loader.dispose();
+
+    // Terminating the worker pool silently dropped the job — neither callback
+    // will ever fire from the pool's side. The pending registry is the only
+    // thing standing between this promise and pending forever.
+    await expect(pending).rejects.toBeInstanceOf(EnvironmentDisposedError);
+    await expect(pending).rejects.toThrow('/fake/inflight.ktx2');
+    expect(instance.disposed).toBe(true);
+
+    // A result can still slip out between the worker's last post and the
+    // pool's termination. The promise already rejected, so nobody else can
+    // ever receive this texture; the loader must free it, not orphan it.
+    const late = new THREE.Texture();
+    let freed = false;
+    late.addEventListener('dispose', () => {
+      freed = true;
+    });
+    instance.requests[0]!.onLoad(late);
+    expect(freed).toBe(true);
+  });
+
+  it('tears the worker pool down exactly once however often dispose is called', async () => {
+    const loader = new ThreePanoramaLoader(fakeRenderer());
+
+    const pending = loader.load('/fake/a.ktx2', 'ktx2');
+    await vi.waitFor(() => expect(ktx2.FakeKTX2Loader.instances[0]?.requests).toHaveLength(1));
+
+    loader.dispose();
+    loader.dispose();
+
+    expect(ktx2.FakeKTX2Loader.instances[0]!.disposeCalls).toBe(1);
+    await expect(pending).rejects.toBeInstanceOf(EnvironmentDisposedError);
+  });
+});
+
+describe('ThreePanoramaLoader (rgbe)', () => {
+  afterEach(() => {
+    hdr.FakeHDRLoader.instances.length = 0;
+  });
+
+  const fakeRenderer = (): THREE.WebGLRenderer => ({}) as unknown as THREE.WebGLRenderer;
+
+  it('rejects a decode in flight at disposal and frees a texture that arrives late', async () => {
+    const loader = new ThreePanoramaLoader(fakeRenderer());
+
+    const pending = loader.load('/fake/mood.hdr', 'rgbe');
+    await vi.waitFor(() => expect(hdr.FakeHDRLoader.instances[0]?.requests).toHaveLength(1));
+    const instance = hdr.FakeHDRLoader.instances[0]!;
+    expect(instance.requests[0]!.url).toBe('/fake/mood.hdr');
+
+    loader.dispose();
+
+    await expect(pending).rejects.toBeInstanceOf(EnvironmentDisposedError);
+    await expect(pending).rejects.toThrow('/fake/mood.hdr');
+
+    // Unlike KTX2's worker pool the HDR fetch cannot be cancelled, so the
+    // decoded texture may well still arrive. Its promise already rejected;
+    // the loader is the only owner left to free it.
+    const late = new THREE.Texture();
+    let freed = false;
+    late.addEventListener('dispose', () => {
+      freed = true;
+    });
+    instance.requests[0]!.onLoad(late);
+    expect(freed).toBe(true);
+  });
+
+  it('ignores a failure that lands after disposal already rejected the decode', async () => {
+    const loader = new ThreePanoramaLoader(fakeRenderer());
+
+    const pending = loader.load('/fake/mood.hdr', 'rgbe');
+    await vi.waitFor(() => expect(hdr.FakeHDRLoader.instances[0]?.requests).toHaveLength(1));
+
+    loader.dispose();
+    await expect(pending).rejects.toBeInstanceOf(EnvironmentDisposedError);
+
+    // The aborted fetch surfacing its own error afterwards must not turn into
+    // an unhandled rejection or clobber the disposal error.
+    hdr.FakeHDRLoader.instances[0]!.requests[0]!.onError(new Error('network gave up'));
+    await expect(pending).rejects.toBeInstanceOf(EnvironmentDisposedError);
+  });
+
+  it('rejects a load requested after disposal without creating a decoder', async () => {
+    const loader = new ThreePanoramaLoader(fakeRenderer());
+    loader.dispose();
+
+    await expect(loader.load('/fake/late.hdr', 'rgbe')).rejects.toBeInstanceOf(
+      EnvironmentDisposedError,
+    );
+    await expect(loader.load('/fake/late.ktx2', 'ktx2')).rejects.toBeInstanceOf(
+      EnvironmentDisposedError,
+    );
+
+    // Refusing up front is the point: no decoder chunk is fetched and no
+    // transcoder worker pool is built for a renderer that no longer exists.
+    expect(hdr.FakeHDRLoader.instances).toHaveLength(0);
+    expect(ktx2.FakeKTX2Loader.instances).toHaveLength(0);
   });
 });
