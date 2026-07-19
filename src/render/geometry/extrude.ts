@@ -228,6 +228,10 @@ export function computeCreasedVertexNormals(
   const position = geometry.getAttribute('position');
   const vertexCount = position.count;
   const faceCount = Math.floor(vertexCount / 3);
+  // Whole triangles only; a position count that is not a multiple of three is
+  // malformed, and the stray corners are left with zero normals rather than
+  // being read past the end of the buffer.
+  const cornerCount = faceCount * 3;
   const cosThreshold = Math.cos(creaseAngle);
 
   // Area-weighted face normals, plus their unit forms for the angle test.
@@ -268,8 +272,8 @@ export function computeCreasedVertexNormals(
     const z = Math.round(position.getZ(vertex) / WELD_PRECISION);
     return `${x},${y},${z}`;
   };
-  const keys = new Array<string>(vertexCount);
-  for (let vertex = 0; vertex < faceCount * 3; vertex += 1) {
+  const keys = new Array<string>(cornerCount);
+  for (let vertex = 0; vertex < cornerCount; vertex += 1) {
     const key = keyOf(vertex);
     keys[vertex] = key;
     const bucket = faceAt.get(key);
@@ -278,7 +282,7 @@ export function computeCreasedVertexNormals(
   }
 
   const normals = new Float32Array(vertexCount * 3);
-  for (let vertex = 0; vertex < faceCount * 3; vertex += 1) {
+  for (let vertex = 0; vertex < cornerCount; vertex += 1) {
     const face = Math.floor(vertex / 3);
     const f = face * 3;
     let sx = 0;
