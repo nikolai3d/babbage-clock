@@ -175,6 +175,19 @@ Why it wins here:
 - **Parametric.** `strokeWidth` reweights every digit at once, and the digit set
   is a parameter — a ring is not restricted to 0-9.
 
+Shading the result needs one thing that is easy to get wrong. The bend makes a
+numeral's front face genuinely curved, and the pipeline is non-indexed all the
+way through (`ExtrudeGeometry` and `subdivideTrianglesY` both emit loose
+triangles). `BufferGeometry.computeVertexNormals` has no vertex sharing to work
+with in that form, so it writes each triangle's face normal to all three of its
+corners — flat shading by construction, which showed up as visible triangles
+across every digit. Normals are therefore rebuilt by
+`computeCreasedVertexNormals` (`src/render/geometry/extrude.ts`), which welds by
+position and averages only across joins gentler than `DEFAULT_CREASE_ANGLE`
+(60°). That smooths the bowls and the round stroke caps while keeping the 90°
+relief edge, where a numeral's face meets its extruded side, sharp — rounding
+that edge is its own defect, not a fix.
+
 The trade: raised numerals, not sunk. At the default framing that difference is
 not visible, and the intent is preserved (dark digits standing off a copper
 drum). If a later bead wants true engraving, the same outlines feed a boolean

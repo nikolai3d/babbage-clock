@@ -198,7 +198,6 @@ function surfaceDensity(
   config: RingConfig,
 ): { mean: number; min: number; max: number; samples: number } {
   const position = geometry.getAttribute('position');
-  const normal = geometry.getAttribute('normal');
   const uv = geometry.getAttribute('uv') as THREE.BufferAttribute;
   const index = geometry.getIndex();
   const count = index ? index.count : position.count;
@@ -221,11 +220,18 @@ function surfaceDensity(
       uvs[corner]!.fromBufferAttribute(uv, vertex);
     }
 
-    faceNormal.set(0, 0, 0);
-    for (let corner = 0; corner < 3; corner += 1) {
-      faceNormal.add(new THREE.Vector3().fromBufferAttribute(normal, at(i + corner)));
-    }
-    faceNormal.normalize();
+    // The triangle's *geometric* orientation, not its shading normal. Those
+    // used to be the same thing, because normals were rebuilt with three's
+    // `computeVertexNormals` over non-indexed geometry — which can only write
+    // face normals. Now that the relief is smooth-shaded across its curves, a
+    // shading normal says where a face points *visually*, and a skewed sliver
+    // borrows its neighbours' direction. Only the cross product still says
+    // which way the triangle itself faces, which is what this filter means.
+    faceNormal
+      .copy(points[1]!)
+      .sub(points[0]!)
+      .cross(new THREE.Vector3().copy(points[2]!).sub(points[0]!))
+      .normalize();
 
     radial.copy(points[0]!);
     radial[config.axis] = 0;

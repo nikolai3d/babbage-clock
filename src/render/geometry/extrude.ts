@@ -87,18 +87,6 @@ export function mergeAndDispose(geometries: THREE.BufferGeometry[]): THREE.Buffe
 }
 
 /**
- * Rewrites every vertex position through `transform`, then rebuilds normals.
- *
- * Used to bend flat extruded glyphs onto a cylinder. Normals must be recomputed
- * rather than rotated because the mapping is not rigid.
- *
- * The callback is handed the vertex's UV alongside its position, and for the
- * same reason: `ExtrudeGeometry` writes UVs for the *flat* profile, so once the
- * profile is bent they describe a surface that no longer exists. Only the
- * caller knows the mapping, so only the caller can restate them — see
- * `createRingNumeralsGeometry`.
- */
-/**
  * Splits triangles until no edge spans more than `maxSpanY` along y.
  *
  * The counterpart to outline subdivision for a geometry that is about to be
@@ -194,9 +182,153 @@ export function subdivideTrianglesY(
   return result;
 }
 
+/**
+ * The crease threshold used when rebuilding normals after a deform.
+ *
+ * It sits between the two angles the glyph pipeline actually produces. Facets
+ * *within* a face that is meant to read as curved are at most 45 degrees apart
+ * — a round stroke cap sweeps 180 degrees in `capSegments` (4) steps, and the
+ * bowl arcs are gentler still at 22.5 — while the relief edge, where a
+ * numeral's front face meets its extruded side, is a true 90 degrees because
+ * the glyphs are extruded without a bevel. Smoothing everything under 60
+ * degrees therefore rounds the curves and leaves that edge crisp, with margin
+ * on both sides. Genuinely sharp glyph corners (the elbow of a 7, the apex of
+ * a 4) exceed it and stay sharp, which is also what they should do.
+ */
+export const DEFAULT_CREASE_ANGLE = (60 * Math.PI) / 180;
+
+/** Position quantisation for welding, in metres. Far below any glyph feature. */
+const WELD_PRECISION = 1e-6;
+
+/**
+ * Rebuilds normals by averaging across faces that meet at an angle gentler
+ * than `creaseAngle`, leaving sharper joins flat.
+ *
+ * `BufferGeometry.computeVertexNormals` cannot do this. On *non-indexed*
+ * geometry — which is what `ExtrudeGeometry` and `subdivideTrianglesY` produce
+ * — it has no vertex sharing to work with, so it writes each triangle's own
+ * face normal to all three of its corners. That is flat shading by
+ * construction, and it is why the bent numerals showed every triangle: the
+ * bend makes the front face genuinely curved and the subdivision gives it
+ * plenty of triangles to show.
+ *
+ * Faces are welded by position rather than by vertex id, so the split corners
+ * that non-indexed geometry is made of find each other again. Contributions
+ * are area-weighted (the cross product is left unnormalised), which keeps the
+ * slivers earcut emits from dragging a normal around.
+ */
+export function computeCreasedVertexNormals(
+  geometry: THREE.BufferGeometry,
+  creaseAngle: number = DEFAULT_CREASE_ANGLE,
+): void {
+  if (geometry.getIndex() !== null) {
+    throw new Error('computeCreasedVertexNormals: expected non-indexed geometry');
+  }
+
+  const position = geometry.getAttribute('position');
+  const vertexCount = position.count;
+  const faceCount = Math.floor(vertexCount / 3);
+  const cosThreshold = Math.cos(creaseAngle);
+
+  // Area-weighted face normals, plus their unit forms for the angle test.
+  const weighted = new Float64Array(faceCount * 3);
+  const unit = new Float64Array(faceCount * 3);
+  for (let face = 0; face < faceCount; face += 1) {
+    const i = face * 3;
+    const ax = position.getX(i);
+    const ay = position.getY(i);
+    const az = position.getZ(i);
+    const bx = position.getX(i + 1) - ax;
+    const by = position.getY(i + 1) - ay;
+    const bz = position.getZ(i + 1) - az;
+    const cx = position.getX(i + 2) - ax;
+    const cy = position.getY(i + 2) - ay;
+    const cz = position.getZ(i + 2) - az;
+    const nx = by * cz - bz * cy;
+    const ny = bz * cx - bx * cz;
+    const nz = bx * cy - by * cx;
+    weighted[i] = nx;
+    weighted[i + 1] = ny;
+    weighted[i + 2] = nz;
+    // Twice the triangle area; zero only for a degenerate face, which then
+    // contributes nothing and falls back to its own (zero) normal.
+    const length = Math.hypot(nx, ny, nz);
+    if (length > 0) {
+      unit[i] = nx / length;
+      unit[i + 1] = ny / length;
+      unit[i + 2] = nz / length;
+    }
+  }
+
+  // Every face touching a given position, found by quantised coordinates.
+  const faceAt = new Map<string, number[]>();
+  const keyOf = (vertex: number): string => {
+    const x = Math.round(position.getX(vertex) / WELD_PRECISION);
+    const y = Math.round(position.getY(vertex) / WELD_PRECISION);
+    const z = Math.round(position.getZ(vertex) / WELD_PRECISION);
+    return `${x},${y},${z}`;
+  };
+  const keys = new Array<string>(vertexCount);
+  for (let vertex = 0; vertex < faceCount * 3; vertex += 1) {
+    const key = keyOf(vertex);
+    keys[vertex] = key;
+    const bucket = faceAt.get(key);
+    if (bucket) bucket.push(Math.floor(vertex / 3));
+    else faceAt.set(key, [Math.floor(vertex / 3)]);
+  }
+
+  const normals = new Float32Array(vertexCount * 3);
+  for (let vertex = 0; vertex < faceCount * 3; vertex += 1) {
+    const face = Math.floor(vertex / 3);
+    const f = face * 3;
+    let sx = 0;
+    let sy = 0;
+    let sz = 0;
+    for (const other of faceAt.get(keys[vertex]!)!) {
+      const o = other * 3;
+      const alignment =
+        unit[f]! * unit[o]! + unit[f + 1]! * unit[o + 1]! + unit[f + 2]! * unit[o + 2]!;
+      if (alignment < cosThreshold) continue;
+      sx += weighted[o]!;
+      sy += weighted[o + 1]!;
+      sz += weighted[o + 2]!;
+    }
+    const length = Math.hypot(sx, sy, sz);
+    const v = vertex * 3;
+    if (length > 0) {
+      normals[v] = sx / length;
+      normals[v + 1] = sy / length;
+      normals[v + 2] = sz / length;
+    } else {
+      // A lone degenerate face, or a bucket that cancelled itself out.
+      normals[v] = unit[f]!;
+      normals[v + 1] = unit[f + 1]!;
+      normals[v + 2] = unit[f + 2]!;
+    }
+  }
+
+  geometry.setAttribute('normal', new THREE.BufferAttribute(normals, 3));
+}
+
+/**
+ * Rewrites every vertex position through `transform`, then rebuilds normals.
+ *
+ * Used to bend flat extruded glyphs onto a cylinder. Normals must be recomputed
+ * rather than rotated because the mapping is not rigid — and they are rebuilt
+ * with {@link computeCreasedVertexNormals} rather than three's
+ * `computeVertexNormals`, which on the non-indexed geometry this runs over can
+ * only produce flat shading.
+ *
+ * The callback is handed the vertex's UV alongside its position, and for the
+ * same reason: `ExtrudeGeometry` writes UVs for the *flat* profile, so once the
+ * profile is bent they describe a surface that no longer exists. Only the
+ * caller knows the mapping, so only the caller can restate them — see
+ * `createRingNumeralsGeometry`.
+ */
 export function deformPositions(
   geometry: THREE.BufferGeometry,
   transform: (point: THREE.Vector3, uv: THREE.Vector2) => void,
+  creaseAngle: number = DEFAULT_CREASE_ANGLE,
 ): THREE.BufferGeometry {
   const position = geometry.getAttribute('position');
   const uvAttribute = ensureUv(geometry);
@@ -213,7 +345,7 @@ export function deformPositions(
 
   position.needsUpdate = true;
   uvAttribute.needsUpdate = true;
-  geometry.computeVertexNormals();
+  computeCreasedVertexNormals(geometry, creaseAngle);
   geometry.computeBoundingSphere();
   return geometry;
 }
