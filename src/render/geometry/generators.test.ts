@@ -239,6 +239,75 @@ describe('createRingNumeralsGeometry', () => {
     geometry.dispose();
   });
 
+  it('shades the relief smoothly instead of facet by facet', () => {
+    // The reported bug: normals came from `computeVertexNormals` over
+    // non-indexed geometry, which writes each triangle's face normal to all
+    // three of its corners. Every triangle was therefore flat-shaded, and the
+    // bend onto the drum plus the sag subdivision gave the numerals plenty of
+    // triangles to show. Measure it directly: on a faceted geometry *every*
+    // triangle has three identical normals.
+    const geometry = createRingNumeralsGeometry(config);
+    const normal = geometry.getAttribute('normal');
+    expect(normal).toBeTruthy();
+
+    let flat = 0;
+    let total = 0;
+    for (let i = 0; i < normal.count; i += 3) {
+      total += 1;
+      const same = [1, 2].every(
+        (offset) =>
+          normal.getX(i) === normal.getX(i + offset) &&
+          normal.getY(i) === normal.getY(i + offset) &&
+          normal.getZ(i) === normal.getZ(i + offset),
+      );
+      if (same) flat += 1;
+    }
+
+    // Flat triangles remain — the extrusion has genuinely planar regions and
+    // sharp corners — but they must no longer be the whole geometry. Before the
+    // fix every triangle was flat (fraction 1.0); after it the fraction is 0.27%
+    // (5 of 1878 triangles on this config), the residue of genuinely planar facets.
+    // The bound is set at 5% — roughly 18x that observation, so a handful of
+    // extra planar triangles from a benign glyph tweak stays green, while any
+    // shading regression drives the fraction back toward 1.0 and fails it by a
+    // wide margin. A loose bound like 0.6 would let a half-regressed mesh pass.
+    expect(total).toBeGreaterThan(100);
+    expect(flat / total).toBeLessThan(0.05);
+    geometry.dispose();
+  });
+
+  it('keeps the relief edge sharp while smoothing the curves', () => {
+    // Over-smoothing would round the edge where a numeral's face meets its
+    // extruded side, which is its own defect rather than a fix. That edge is a
+    // 90 degree crease, so somewhere in the geometry two corners must sit at
+    // the same position carrying near-perpendicular normals.
+    const geometry = createRingNumeralsGeometry(config, { digits: [0] });
+    const position = geometry.getAttribute('position');
+    const normal = geometry.getAttribute('normal');
+
+    const seen = new Map<string, [number, number, number][]>();
+    let sharpest = 1;
+    for (let i = 0; i < position.count; i += 1) {
+      const key = [position.getX(i), position.getY(i), position.getZ(i)]
+        .map((v) => Math.round(v / 1e-6))
+        .join(',');
+      const n: [number, number, number] = [normal.getX(i), normal.getY(i), normal.getZ(i)];
+      const bucket = seen.get(key);
+      if (!bucket) {
+        seen.set(key, [n]);
+        continue;
+      }
+      for (const other of bucket) {
+        sharpest = Math.min(sharpest, n[0] * other[0] + n[1] * other[1] + n[2] * other[2]);
+      }
+      bucket.push(n);
+    }
+
+    // cos(90 degrees) is 0; allow a little slack for the bend and float32.
+    expect(sharpest).toBeLessThan(0.1);
+    geometry.dispose();
+  });
+
   it('refuses a configuration whose numerals would not fit', () => {
     const impossible: RingConfig = { ...config, thickness: 8 };
     expect(() => createRingNumeralsGeometry(impossible, { heightFraction: 1.5 })).toThrow(
