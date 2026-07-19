@@ -136,11 +136,6 @@ describe('parseIblManifest', () => {
 });
 
 /**
- * Content tests. The five shipped moods are data, and data can be wrong in ways
- * a type cannot catch — a renamed HDR, a missing licence, an id that no longer
- * matches its folder. These run against the real files in `assets/ibl/`.
- */
-/**
  * Folders prefixed `test-` are CI fixtures, not moods: committed so a decode
  * path (today: KTX2/UASTC-HDR) can be exercised end to end in a browser, and
  * deliberately kept out of the picker and of `?mood=`. They get their own
@@ -158,6 +153,11 @@ function manifestFor(folder: string): ReturnType<typeof parseIblManifest> {
   return parseIblManifest(JSON.parse(readFileSync(path, 'utf8')) as unknown, String(path));
 }
 
+/**
+ * Content tests. The five shipped moods are data, and data can be wrong in ways
+ * a type cannot catch — a renamed HDR, a missing licence, an id that no longer
+ * matches its folder. These run against the real files in `assets/ibl/`.
+ */
 describe('the shipped IBL presets', () => {
   const folders = allFolders.filter((folder) => !folder.startsWith(FIXTURE_PREFIX));
 
@@ -262,29 +262,39 @@ describe('the IBL CI fixtures', () => {
       const bytes = statSync(inPreset(folder, manifest.environment.file)).size;
 
       // Fixtures ride along in the production bundle listing (the preset glob
-      // cannot tell them apart), so they must cost next to nothing.
+      // cannot tell them apart), so they must cost next to nothing. The lower
+      // bound is the one that matters for a *future* fixture: a zero-byte or
+      // truncated file would otherwise sail through "small enough".
+      expect(bytes).toBeGreaterThan(256);
       expect(bytes).toBeLessThan(16 * 1024);
     });
   }
 
-  it('test-uastc-hdr: is a genuine Basis UASTC HDR container', () => {
-    const manifest = manifestFor('test-uastc-hdr');
-    expect(manifest.environment.format).toBe('ktx2');
+  // Looped rather than written against `test-uastc-hdr` alone: losing the
+  // format check is exactly how a fixture silently stops exercising the path
+  // it was committed for, so any `.ktx2` fixture added later inherits it.
+  for (const folder of fixtures.filter((f) => manifestFor(f).environment.format === 'ktx2')) {
+    it(`${folder}: is a genuine Basis UASTC HDR container`, () => {
+      const manifest = manifestFor(folder);
+      const bytes = readFileSync(inPreset(folder, manifest.environment.file));
 
-    const bytes = readFileSync(inPreset('test-uastc-hdr', manifest.environment.file));
+      // The KTX 2.0 identifier — a truncated download or an HTML error page
+      // saved to disk would fail here before it failed in a browser.
+      expect(bytes.subarray(0, 12).toString('hex')).toBe('ab4b5458203230bb0d0a1a0a');
 
-    // The KTX 2.0 identifier — a truncated download or an HTML error page
-    // saved to disk would fail here before it failed in a browser.
-    expect(bytes.subarray(0, 12).toString('hex')).toBe('ab4b5458203230bb0d0a1a0a');
+      // three.js routes a file through the Basis wasm transcoder when
+      // `vkFormat === VK_FORMAT_ASTC_4x4_SFLOAT_BLOCK_EXT && colorModel ===
+      // 0xA7` and the GPU lacks native ASTC HDR (KTX2Loader's `isBasisHDR`).
+      // Both halves are pinned: a replacement fixture satisfying only one of
+      // them would quietly take a different branch and stop exercising the
+      // transcoder that `e2e/ibl.spec.ts` exists to run.
+      expect(bytes.readUInt32LE(12)).toBe(1000066000);
 
-    // The DFD colour model must be KHR_DF_MODEL_UASTC_HDR_4X4 (0xA7). That is
-    // what routes the file through the Basis wasm transcoder on any GPU
-    // without native ASTC HDR — CI's SwiftShader included. A plain ASTC or
-    // ETC1S file here would quietly stop exercising the transcoder. The model
-    // is the low byte of the descriptor word at DFD offset 12 (4 bytes of
-    // dfdTotalSize, then 8 into the descriptor block).
-    const dfdByteOffset = bytes.readUInt32LE(48);
-    const colorModel = bytes.readUInt32LE(dfdByteOffset + 12) & 0xff;
-    expect(colorModel).toBe(0xa7);
-  });
+      // The colour model is the low byte of the descriptor word at DFD offset
+      // 12 (4 bytes of dfdTotalSize, then 8 into the descriptor block).
+      const dfdByteOffset = bytes.readUInt32LE(48);
+      const colorModel = bytes.readUInt32LE(dfdByteOffset + 12) & 0xff;
+      expect(colorModel).toBe(0xa7);
+    });
+  }
 });

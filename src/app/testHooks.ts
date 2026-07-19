@@ -89,6 +89,11 @@ export interface TestHooks {
    * viewer-facing surface. The id is passed through unvalidated on purpose; a
    * folder that does not exist lands on the same mood-error path a broken
    * download would, which is itself the behaviour under test.
+   *
+   * While set, this shadows the store: the mood picker still renders and still
+   * writes `AppState.mood`, but nothing it selects reaches the scene. That is
+   * acceptable for a CI hook — no spec drives both — and the divergence is
+   * observable through `RendererState.mood`, which reports what committed.
    */
   readonly moodOverride: string | null;
 }

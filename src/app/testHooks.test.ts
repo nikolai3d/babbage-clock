@@ -269,6 +269,10 @@ describe('installTestApi', () => {
     expect(api?.sceneId()).toBe('copper-padlock');
     expect(api?.renderer().webgl2).toBe(true);
     expect(api?.renderer().drawCalls).toBe(17);
+    // `mood` reaches the test API intact: `e2e/ibl.spec.ts` reads it to tell
+    // the fixture apart from a fallback to the scene's own mood, and proving
+    // the passthrough here costs microseconds instead of a browser boot.
+    expect(api?.renderer().mood).toBe('steampunk-workshop');
     expect(api?.materials().slots['housing']).toBe('pbr:copper-plate');
     expect(api?.countdown().seconds).toBe(1);
     expect(api?.target().label).toBe('New Year 2027');

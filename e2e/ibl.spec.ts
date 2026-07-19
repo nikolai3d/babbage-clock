@@ -20,9 +20,9 @@ import {
  * The fixture is `assets/ibl/test-uastc-hdr/` — a 1.3 kB genuine UASTC-HDR
  * sample from three.js r182, reachable only through the `?moodOverride=` test
  * hook because the picker (and `?mood=`) deliberately excludes `test-`
- * folders. Assertions are about state and the network log, not pixels: the
- * fixture mood is asserted on, never looked at, so no screenshot baseline is
- * involved.
+ * folders. Assertions are about the committed state and the transcoder's own
+ * requests, not pixels: the fixture mood is asserted on, never looked at, so
+ * no screenshot baseline is involved.
  */
 
 test('the KTX2/UASTC-HDR environment path decodes and commits in a real browser', async ({
@@ -49,12 +49,13 @@ test('the KTX2/UASTC-HDR environment path decodes and commits in a real browser'
   // The commit did not stall the renderer: the scene is still being drawn.
   expect(state.drawCalls).toBeGreaterThan(0);
 
-  // The fixture actually travelled: the container is small enough that Vite
-  // inlines it as a data URI inside its lazy chunk (the stem survives in the
-  // chunk name), so this matches that chunk in a preview/CI build — and the
-  // raw file path when run against a dev server. Either way, no request means
-  // the override never reached the fixture.
-  expect(requested.filter((url) => url.includes('uastc_hdr'))).not.toEqual([]);
+  // Deliberately *not* asserted here: that some request URL contains the
+  // fixture's filename stem. `mood` above already proves the container
+  // travelled and decoded — `EnvironmentController` commits an id only after
+  // its panorama resolves, so the fixture cannot be the active mood without
+  // having been fetched and transcoded. Matching the stem would add no
+  // coverage and would couple the spec to Vite's chunk naming for an asset
+  // small enough to be inlined as a data URI.
 
   // A genuine UASTC-HDR file needs the Basis wasm transcoder on any GPU
   // without native ASTC-HDR — which includes CI's SwiftShader, where this
@@ -67,7 +68,14 @@ test('the KTX2/UASTC-HDR environment path decodes and commits in a real browser'
     const ext = gl?.getExtension('WEBGL_compressed_texture_astc') as {
       getSupportedProfiles(): string[];
     } | null;
-    return ext !== null && ext !== undefined && ext.getSupportedProfiles().includes('hdr');
+    const supported =
+      ext !== null && ext !== undefined && ext.getSupportedProfiles().includes('hdr');
+    // Hand the probe's context back before returning. Chromium caps live
+    // WebGL contexts per renderer and evicts the *oldest* when the cap is
+    // hit — which here would be the app's own canvas, mid-spec, before the
+    // console and picker assertions below have run.
+    gl?.getExtension('WEBGL_lose_context')?.loseContext();
+    return supported;
   });
   // On CI the gate must never be the reason this spec passes. SwiftShader
   // reports ASTC profiles `["ldr"]` and no `hdr`, so the transcoder branch is
@@ -78,6 +86,11 @@ test('the KTX2/UASTC-HDR environment path decodes and commits in a real browser'
   if (process.env.CI) expect(astcHdrNative).toBe(false);
 
   if (!astcHdrNative) {
+    // Attributable to *this* path only because the fixture is currently the
+    // repo's sole `.ktx2`: `MaterialRegistry` has a complete KTX2 path too,
+    // so the day a material pack names a `ktx2` source, these requests become
+    // satisfiable without the IBL path running at all. Narrow the assertion
+    // then — `mood` above stays the honest signal either way.
     const transcoder = requested.filter((url) => url.includes('basis_transcoder'));
     expect(transcoder.some((url) => url.endsWith('basis_transcoder.js'))).toBe(true);
     expect(transcoder.some((url) => url.endsWith('basis_transcoder.wasm'))).toBe(true);
