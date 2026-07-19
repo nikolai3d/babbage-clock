@@ -151,9 +151,15 @@ export function buildShareParams(state: ShareableState): URLSearchParams {
 function shareTargetValue(target: ResolvedTarget): string {
   const { wallClock, offset } = target.enteredZone;
   try {
-    if (resolveTarget({ value: wallClock, zone: target.zone }).atMs === target.atMs) {
-      return wallClock;
-    }
+    // The probe only consults `atMs`, but its inputs are pinned anyway so the
+    // check is hermetic — no ambient clock or machine zone even incidentally.
+    const probe = resolveTarget({
+      value: wallClock,
+      zone: target.zone,
+      nowMs: target.atMs,
+      viewerZone: target.zone,
+    });
+    if (probe.atMs === target.atMs) return wallClock;
   } catch {
     // A pair that cannot re-resolve at all cannot use the readable form.
   }

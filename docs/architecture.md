@@ -285,6 +285,7 @@ p#canvas-help.sr-only
                               p#target-error[role=alert]
                               button#target-apply, button#target-reset
       .field#clock-zone-field .tzpicker > input#clock-zone-input[role=combobox] + ul[role=listbox]
+                              p#clock-zone-error[role=alert]
                               (clock mode only — swaps in for the target form)
       .echo#target-echo       dl.echo__rows, p.echo__adjustment, ul.echo__notes, p.echo__origin
       .panel__group           one .field per SettingControl descriptor
