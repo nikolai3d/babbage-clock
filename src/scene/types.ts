@@ -162,6 +162,24 @@ export interface LightingConfig {
   readonly exposure?: number;
 }
 
+/**
+ * Reference to an authored glTF/GLB model whose named parts override the
+ * procedural generators.
+ *
+ * When a scene carries this, `ClockSceneView` uses an authored mesh wherever the
+ * model provides one (matched by role — see `docs/authored-geometry.md`) and
+ * falls back to the generator everywhere else. Plain, serialisable scene data:
+ * the loader lives in `render/assets/`, three.js-free like the rest of `scene/`.
+ */
+export interface AssetSpec {
+  /**
+   * Model URL relative to `import.meta.env.BASE_URL`, e.g.
+   * `assets/models/babbage-engine.glb`. Resolved the same way material folders
+   * are (`src/materials/paths.ts`), so a sub-path deployment still finds it.
+   */
+  readonly source: string;
+}
+
 /** Camera placement plus the OrbitControls framing limits for this scene. */
 export interface CameraConfig {
   readonly fov: number;
@@ -194,6 +212,8 @@ export interface SceneDefinition {
   readonly gears: readonly GearSpec[];
   /** Escapement placement override; omitted, it derives from the case. */
   readonly escapement?: EscapementPlacement;
+  /** Authored geometry overriding the generators; omitted, the scene is procedural. */
+  readonly assets?: AssetSpec;
   readonly materials: MaterialSlotMap;
   readonly lighting: LightingConfig;
   readonly camera: CameraConfig;
