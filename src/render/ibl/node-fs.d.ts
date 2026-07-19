@@ -16,7 +16,9 @@ declare module 'node:fs' {
   export function readFileSync(path: string | URL, encoding: 'utf8'): string;
   export function readFileSync(path: string | URL): {
     readonly byteLength: number;
-    subarray(start: number, end: number): { toString(encoding: 'ascii'): string };
+    subarray(start: number, end: number): { toString(encoding: 'ascii' | 'hex'): string };
+    /** For the KTX2 fixture check: header offsets are little-endian uint32s. */
+    readUInt32LE(offset: number): number;
   };
   export function readdirSync(path: string | URL): string[];
   export function statSync(path: string | URL): {

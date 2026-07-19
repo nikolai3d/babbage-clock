@@ -401,6 +401,8 @@ export class ClockRenderer {
     cameraPosition: readonly [number, number, number];
     sceneId: string | null;
     lighting: IblStatus;
+    /** The mood the environment controller has committed, or null. */
+    mood: string | null;
     quality: QualitySettings['tier'];
     maxFps: number | null;
     framingFit: 'whole' | 'rings';
@@ -428,6 +430,7 @@ export class ClockRenderer {
       // A frame captured while this is 'loading' still shows the previous
       // mood, so anything photographing the scene has to wait it out.
       lighting: this.environment.status,
+      mood: this.environment.activeMood,
       quality: this.quality.tier,
       maxFps: this.quality.maxFps,
       framingFit: this.framingFit,

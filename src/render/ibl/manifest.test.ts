@@ -140,16 +140,26 @@ describe('parseIblManifest', () => {
  * a type cannot catch — a renamed HDR, a missing licence, an id that no longer
  * matches its folder. These run against the real files in `assets/ibl/`.
  */
-describe('the shipped IBL presets', () => {
-  // One folder per mood, plus `LICENSES.md`, which is not one.
-  const folders = readdirSync(IBL_ROOT).filter((entry) =>
-    statSync(new URL(entry, IBL_ROOT)).isDirectory(),
-  );
+/**
+ * Folders prefixed `test-` are CI fixtures, not moods: committed so a decode
+ * path (today: KTX2/UASTC-HDR) can be exercised end to end in a browser, and
+ * deliberately kept out of the picker and of `?mood=`. They get their own
+ * describe below with fixture-sized expectations.
+ */
+const FIXTURE_PREFIX = 'test-';
 
-  function manifestFor(folder: string): ReturnType<typeof parseIblManifest> {
-    const path = inPreset(folder, 'preset.json');
-    return parseIblManifest(JSON.parse(readFileSync(path, 'utf8')) as unknown, String(path));
-  }
+// One folder per mood or fixture, plus `LICENSES.md`, which is neither.
+const allFolders = readdirSync(IBL_ROOT).filter((entry) =>
+  statSync(new URL(entry, IBL_ROOT)).isDirectory(),
+);
+
+function manifestFor(folder: string): ReturnType<typeof parseIblManifest> {
+  const path = inPreset(folder, 'preset.json');
+  return parseIblManifest(JSON.parse(readFileSync(path, 'utf8')) as unknown, String(path));
+}
+
+describe('the shipped IBL presets', () => {
+  const folders = allFolders.filter((folder) => !folder.startsWith(FIXTURE_PREFIX));
 
   it('covers every mood the picker offers except "none"', () => {
     const offered = ENVIRONMENT_PRESETS.map((preset) => preset.id).filter((id) => id !== 'none');
@@ -207,4 +217,74 @@ describe('the shipped IBL presets', () => {
       if (manifest.sceneLightScale === 0) expect(manifest.lights.length).toBeGreaterThan(0);
     });
   }
+});
+
+describe('the IBL CI fixtures', () => {
+  const fixtures = allFolders.filter((folder) => folder.startsWith(FIXTURE_PREFIX));
+
+  it('include the UASTC-HDR fixture the compressed-path e2e depends on', () => {
+    // `e2e/ibl.spec.ts` boots the app with `?moodOverride=test-uastc-hdr`; if
+    // the folder is renamed or dropped, fail here — in the unit suite, with a
+    // message that names the dependency — rather than as a mood-load timeout.
+    expect(fixtures).toContain('test-uastc-hdr');
+  });
+
+  it('never leak into the picker', () => {
+    // A fixture is committed to be asserted on, not looked at: the picker (and
+    // with it `?mood=` and share links) must not know these folders exist.
+    for (const preset of ENVIRONMENT_PRESETS) {
+      expect(preset.id.startsWith(FIXTURE_PREFIX)).toBe(false);
+    }
+  });
+
+  for (const folder of fixtures) {
+    it(`${folder}: parses, and its id matches its folder`, () => {
+      expect(manifestFor(folder).id).toBe(folder);
+    });
+  }
+
+  for (const folder of fixtures) {
+    it(`${folder}: records where its panorama came from and under what licence`, () => {
+      const manifest = manifestFor(folder);
+
+      // Same provenance bar as a shipped mood, minus the CC0 requirement: a
+      // fixture is never redistributed as content, so any auditable licence
+      // (the three.js sample is MIT) is acceptable.
+      expect(manifest.source.authors.length).toBeGreaterThan(0);
+      expect(manifest.source.licence).not.toBe('');
+      expect(manifest.source.url).toMatch(/^https:\/\//);
+    });
+  }
+
+  for (const folder of fixtures) {
+    it(`${folder}: stays fixture-sized`, () => {
+      const manifest = manifestFor(folder);
+      const bytes = statSync(inPreset(folder, manifest.environment.file)).size;
+
+      // Fixtures ride along in the production bundle listing (the preset glob
+      // cannot tell them apart), so they must cost next to nothing.
+      expect(bytes).toBeLessThan(16 * 1024);
+    });
+  }
+
+  it('test-uastc-hdr: is a genuine Basis UASTC HDR container', () => {
+    const manifest = manifestFor('test-uastc-hdr');
+    expect(manifest.environment.format).toBe('ktx2');
+
+    const bytes = readFileSync(inPreset('test-uastc-hdr', manifest.environment.file));
+
+    // The KTX 2.0 identifier — a truncated download or an HTML error page
+    // saved to disk would fail here before it failed in a browser.
+    expect(bytes.subarray(0, 12).toString('hex')).toBe('ab4b5458203230bb0d0a1a0a');
+
+    // The DFD colour model must be KHR_DF_MODEL_UASTC_HDR_4X4 (0xA7). That is
+    // what routes the file through the Basis wasm transcoder on any GPU
+    // without native ASTC HDR — CI's SwiftShader included. A plain ASTC or
+    // ETC1S file here would quietly stop exercising the transcoder. The model
+    // is the low byte of the descriptor word at DFD offset 12 (4 bytes of
+    // dfdTotalSize, then 8 into the descriptor block).
+    const dfdByteOffset = bytes.readUInt32LE(48);
+    const colorModel = bytes.readUInt32LE(dfdByteOffset + 12) & 0xff;
+    expect(colorModel).toBe(0xa7);
+  });
 });

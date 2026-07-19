@@ -33,6 +33,8 @@ export const TEST_URL_PARAM = {
   mockSync: 'mocksync',
   /** Installs `window.__clock`. */
   testApi: 'testApi',
+  /** Applies a raw preset-folder id as the lighting mood, bypassing the picker. */
+  moodOverride: 'moodOverride',
 } as const;
 
 /**
@@ -76,6 +78,19 @@ export interface TestHooks {
   readonly mockSync: boolean;
   /** Whether `window.__clock` should be installed. */
   readonly testApi: boolean;
+  /**
+   * A preset-folder id under `assets/ibl/` to apply as the lighting mood,
+   * bypassing `parseEnvironmentPreset`'s picker whitelist. Null without the
+   * parameter.
+   *
+   * Exists for CI fixtures: `?mood=` deliberately narrows to the moods the
+   * picker offers, so a `test-` fixture folder — committed to exercise a
+   * decode path end to end, never to be looked at — is unreachable through the
+   * viewer-facing surface. The id is passed through unvalidated on purpose; a
+   * folder that does not exist lands on the same mood-error path a broken
+   * download would, which is itself the behaviour under test.
+   */
+  readonly moodOverride: string | null;
 }
 
 export const DEFAULT_TEST_HOOKS: TestHooks = {
@@ -85,6 +100,7 @@ export const DEFAULT_TEST_HOOKS: TestHooks = {
   timeSync: true,
   mockSync: false,
   testApi: false,
+  moodOverride: null,
 };
 
 /**
@@ -133,6 +149,10 @@ export function readTestHooks(search: string): TestHooks {
     console.warn(`[testHooks] Ignoring unparseable ?${TEST_URL_PARAM.mockNow}=${mockNowRaw}`);
   }
 
+  // An empty override means "no override": `?moodOverride=` with no value is
+  // an authoring slip, not a request for a mood with an empty id.
+  const moodOverrideRaw = params.get(TEST_URL_PARAM.moodOverride)?.trim() ?? '';
+
   return {
     mockNowMs,
     mockNowMode: parseMockNowMode(params.get(TEST_URL_PARAM.mockNowMode)),
@@ -140,6 +160,7 @@ export function readTestHooks(search: string): TestHooks {
     timeSync: !readFlag(params, TEST_URL_PARAM.noSync),
     mockSync: readFlag(params, TEST_URL_PARAM.mockSync),
     testApi: readFlag(params, TEST_URL_PARAM.testApi),
+    moodOverride: moodOverrideRaw === '' ? null : moodOverrideRaw,
   };
 }
 
@@ -253,6 +274,15 @@ export interface RendererState {
    * three.js-adjacent imports.
    */
   readonly lighting: 'none' | 'loading' | 'ready' | 'error';
+  /**
+   * The lighting mood actually committed to the scene, or null when none is.
+   *
+   * `lighting === 'ready'` alone cannot say *which* mood is on screen — a
+   * mis-wired override would fall back to the scene's default and still read
+   * `ready`. This is the id the environment controller committed, so a spec
+   * can assert the mood it asked for is the one being rendered.
+   */
+  readonly mood: string | null;
   /** The render-quality tier in force. See `app/quality.ts`. */
   readonly quality: 'high' | 'low';
   /** Frame ceiling the tier imposes, or null when the loop runs free. */

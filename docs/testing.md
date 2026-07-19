@@ -238,6 +238,7 @@ is off unless its parameter is present**, so production behaviour is unchanged;
 | `?nosync=1`             | Skips the network clock correction, for hermetic runs.                   |
 | `?mocksync=1`           | Presents the hermetic clock as healthily synced (see below).             |
 | `?testApi=1`            | Installs `window.__clock`.                                               |
+| `?moodOverride=<id>`    | Applies a raw preset-folder id as the mood, bypassing the picker.        |
 
 `?quality=low` and `?quality=high` are **not** test hooks — they are a real
 viewer-facing setting that pins the render tier, documented here because the
@@ -253,6 +254,14 @@ the heuristic itself passes `quality: 'auto'`.
 
 The hooks are orthogonal: setting one never implies another, and a unit test
 asserts it.
+
+`?moodOverride=` exists for CI fixtures. `?mood=` narrows to the moods the
+picker offers, on purpose — so the `test-`prefixed fixture folders under
+`assets/ibl/` (committed to exercise a decode path end to end, never to be
+looked at) are unreachable through the viewer-facing surface. The override
+passes the folder id straight through to the environment controller;
+`e2e/ibl.spec.ts` uses it to run the real Basis wasm transcoder against a
+genuine UASTC-HDR container on the CI shards.
 
 `?nosync` matters more than it looks. On boot the app corrects its clock against
 external time services, and its last-resort provider probes the app's own origin
