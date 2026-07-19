@@ -276,11 +276,20 @@ export function computeCreasedVertexNormals(
 
   const position = geometry.getAttribute('position');
   const vertexCount = position.count;
-  const faceCount = Math.floor(vertexCount / 3);
-  // Whole triangles only; a position count that is not a multiple of three is
-  // malformed, and the stray corners are left with zero normals rather than
-  // being read past the end of the buffer.
-  const cornerCount = faceCount * 3;
+  // Whole triangles only. A count that is not a multiple of three is malformed
+  // triangle soup: the one or two stray corners could never form a face, so they
+  // would keep the zero normal the buffer starts with — and a zero normal
+  // normalises to NaN in the shader, the very failure this function exists to
+  // avoid. Fail loudly, as the indexed and creaseAngle guards above do. The real
+  // glyph pipeline (`ExtrudeGeometry` -> `subdivideTrianglesY`) only ever emits
+  // whole triangles, so this catches a caller mistake, not live geometry.
+  if (vertexCount % 3 !== 0) {
+    throw new Error(
+      `computeCreasedVertexNormals: expected a whole number of triangles, got ${vertexCount} vertices`,
+    );
+  }
+  const faceCount = vertexCount / 3;
+  const cornerCount = vertexCount;
   const cosThreshold = Math.cos(creaseAngle);
 
   // Area-weighted face normals, plus their unit forms for the angle test.

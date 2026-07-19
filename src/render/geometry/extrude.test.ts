@@ -170,6 +170,23 @@ describe('computeCreasedVertexNormals', () => {
     }
   });
 
+  it('rejects a position count that is not a whole number of triangles', () => {
+    // Two stray corners can never form a face, so they would keep the buffer's
+    // zero normal — which normalises to NaN in the shader. The real pipeline
+    // only hands on whole triangles, so this can only be a caller mistake; fail
+    // loudly rather than ship a corner that renders as a NaN hole.
+    const geometry = triangles(
+      [0, 0, 0],
+      [1, 0, 0],
+      [1, 1, 0],
+      // A trailing pair with no third corner: position.count === 5.
+      [0, 0, 0],
+      [0, 1, 0],
+    );
+    expect(() => computeCreasedVertexNormals(geometry)).toThrow(/whole number of triangles/);
+    geometry.dispose();
+  });
+
   it('rejects indexed geometry, which cannot carry per-corner normals', () => {
     const geometry = triangles(...FLAT_QUAD);
     geometry.setIndex([0, 1, 2, 3, 4, 5]);
