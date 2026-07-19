@@ -16,6 +16,7 @@ import type {
   TestHooks,
 } from './testHooks.js';
 import type { TimeSource } from '../time/target.js';
+import type { MechanismEvent } from '../mechanism/index.js';
 
 const EPOCH = Date.UTC(2026, 0, 1, 0, 0, 0);
 
@@ -200,10 +201,24 @@ describe('installTestApi', () => {
     ktx2: false,
   };
 
+  /** A canned seek, for asserting the facade hands back the probe's own object. */
+  const seekEvent: MechanismEvent = {
+    kind: 'seek',
+    atMs: 1000,
+    durationMs: 420,
+    digits: [0, 2, 1],
+    previousDigits: [0, 1, 0],
+    motions: [{ ring: 1, fromDigit: 1, toDigit: 2, steps: 1, deltaAngle: -0.62 }],
+    carryDepth: 0,
+    expired: false,
+  };
+
   function deps(): {
     store: StoreProbe;
     renderer: {
       getDigits: () => number[];
+      getRingAngles: () => number[];
+      getLastMechanismEvent: () => MechanismEvent | null;
       getRenderState: () => RendererState;
       getMaterialState: () => MaterialState;
     };
@@ -238,6 +253,8 @@ describe('installTestApi', () => {
       },
       renderer: {
         getDigits: () => [1, 2, 3],
+        getRingAngles: () => [0.1, 0.2, 0.3],
+        getLastMechanismEvent: () => null,
         getRenderState: () => rendererState,
         getMaterialState: () => materialState,
       },
@@ -260,12 +277,18 @@ describe('installTestApi', () => {
     const host: { __clock?: ClockTestApi } = {};
     const hooks: TestHooks = { ...DEFAULT_TEST_HOOKS, testApi: true };
 
-    installTestApi(hooks, deps(), host);
+    const source = deps();
+    source.renderer.getLastMechanismEvent = () => seekEvent;
+    installTestApi(hooks, source, host);
 
     const api = host.__clock;
     expect(api).toBeDefined();
     expect(api?.version).toBe(1);
     expect(api?.digits()).toEqual([1, 2, 3]);
+    expect(api?.ringAngles()).toEqual([0.1, 0.2, 0.3]);
+    // Identity, not shape: the facade must hand back the mechanism's own
+    // event object, never a copy — the e2e collector dedups by identity.
+    expect(api?.lastMechanismEvent()).toBe(seekEvent);
     expect(api?.sceneId()).toBe('copper-padlock');
     expect(api?.renderer().webgl2).toBe(true);
     expect(api?.renderer().drawCalls).toBe(17);

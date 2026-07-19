@@ -619,6 +619,8 @@ async function bootstrap(): Promise<void> {
   // is what lets the no-WebGL e2e spec assert on the fallback.
   const rendererProbe: RendererProbe = renderer ?? {
     getDigits: () => [],
+    getRingAngles: () => [],
+    getLastMechanismEvent: () => null,
     getRenderState: () => ({
       webgl2: false,
       frames: 0,

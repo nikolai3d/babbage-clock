@@ -277,6 +277,21 @@ export async function readDigits(page: Page): Promise<readonly number[]> {
   });
 }
 
+/**
+ * The ring rotations last written to the scene graph, in radians.
+ *
+ * This is where a travel actually lives: the digits update the instant a new
+ * target is applied, and the spin to the new reading is entirely in the
+ * angles. See the travel spec in `countdown.spec.ts`.
+ */
+export async function readRingAngles(page: Page): Promise<readonly number[]> {
+  return page.evaluate(() => {
+    const api = window.__clock;
+    if (!api) throw new Error('window.__clock is not installed — is ?testApi set?');
+    return api.ringAngles();
+  });
+}
+
 /** The scene id the app believes is active. */
 export async function readSceneId(page: Page): Promise<string> {
   return page.evaluate(() => {
