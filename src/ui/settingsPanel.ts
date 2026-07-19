@@ -17,6 +17,8 @@
  *     .field > label[for=tz-input]     + .tzpicker(input#tz-input + ul[role=listbox])
  *     p#target-error.field__error[role=alert]
  *     .panel__actions > button[type=submit] + button#target-reset
+ *   .field#clock-zone-field   > .tzpicker(input#clock-zone-input) + p#clock-zone-error
+ *                               (clock mode only — swaps in for the target form)
  *   .echo#target-echo         > dl.echo__rows, p.echo__adjustment, ul.echo__notes
  *   .panel__group             > one .field per SettingControl descriptor
  *   .field--share             > input#share-url[readonly] + button#share-button
@@ -26,6 +28,7 @@
 import { summarizeTarget, toDateTimeLocalValue } from './targetSummary.js';
 import { TimeZonePicker } from './timeZonePicker.js';
 import { loadTargetHistory, pushTargetHistory } from './targetHistory.js';
+import { isClockMode } from '../app/store.js';
 import type { TargetHistoryEntry } from './targetHistory.js';
 import type { AppState, AppStore } from '../app/store.js';
 import type { ResolvedTarget } from '../time/target.js';
@@ -58,6 +61,19 @@ export interface SettingsPanelOptions {
   readonly viewerZone: string;
   readonly onSubmitTarget: (request: TargetRequest) => TargetResult;
   /**
+   * Applies a new reading zone while in clock mode. Unlike `onSubmitTarget`
+   * this must keep the countdown instant where it is — only the zone the rings
+   * read the current time in changes.
+   */
+  readonly onSubmitClockZone: (zone: string) => TargetResult;
+  /**
+   * The app's corrected clock, injected like every other time read
+   * (`docs/architecture.md`: nothing outside `src/time/` reads `Date.now()`).
+   * Labels the clock-zone listbox offsets, so a pinned `?mockNow=` session
+   * shows offsets coherent with the app's own now.
+   */
+  readonly nowMs: () => number;
+  /**
    * One-tap targets, computed at click time so "in 1 hour" is measured from
    * the click, not from when the drawer was built. `zone` is the picker's
    * current zone, so the wall clock lands coherently in the visible fields.
@@ -80,6 +96,9 @@ export class SettingsPanel {
   private readonly form: HTMLFormElement;
   private readonly targetInput: HTMLInputElement;
   private readonly picker: TimeZonePicker;
+  private readonly clockZoneField: HTMLDivElement;
+  private readonly clockZonePicker: TimeZonePicker;
+  private readonly clockZoneErrorEl: HTMLParagraphElement;
   private readonly errorEl: HTMLParagraphElement;
   private readonly quickRow: HTMLDivElement;
   private readonly historyRow: HTMLDivElement;
@@ -214,6 +233,51 @@ export class SettingsPanel {
 
     this.form.append(targetField, zoneField, this.quickRow, this.historyRow, this.errorEl, actions);
 
+    // --- clock-mode reading zone ------------------------------------------
+    // The target form above hides wholesale in clock mode because everything
+    // in it — including its zone picker — applies through a target submission.
+    // This field is the clock-mode replacement: its own picker, its own apply
+    // path, committing on selection like the descriptor controls below.
+    this.clockZoneField = document.createElement('div');
+    this.clockZoneField.className = 'field';
+    this.clockZoneField.id = 'clock-zone-field';
+    this.clockZoneField.hidden = true;
+
+    const clockZoneLabel = document.createElement('label');
+    clockZoneLabel.className = 'field__label';
+    clockZoneLabel.htmlFor = 'clock-zone-input';
+    clockZoneLabel.textContent = 'Time zone';
+
+    this.clockZonePicker = new TimeZonePicker({
+      inputId: 'clock-zone-input',
+      initialZone: state.target.zone || options.viewerZone,
+      // Offsets in the list are labelled against the current moment — this is
+      // a clock, not a countdown — read from the app's own time source.
+      referenceMs: () => options.nowMs(),
+      onChange: (zone) => {
+        this.applyClockZone(zone);
+      },
+    });
+
+    const clockZoneHint = document.createElement('p');
+    clockZoneHint.className = 'field__hint';
+    clockZoneHint.id = 'clock-zone-hint';
+    clockZoneHint.textContent = 'The zone the clock reads the current time in.';
+    this.clockZonePicker.input.setAttribute('aria-describedby', clockZoneHint.id);
+
+    this.clockZoneErrorEl = document.createElement('p');
+    this.clockZoneErrorEl.className = 'field__error';
+    this.clockZoneErrorEl.id = 'clock-zone-error';
+    this.clockZoneErrorEl.setAttribute('role', 'alert');
+    this.clockZoneErrorEl.hidden = true;
+
+    this.clockZoneField.append(
+      clockZoneLabel,
+      this.clockZonePicker.root,
+      clockZoneHint,
+      this.clockZoneErrorEl,
+    );
+
     // --- resolved-target echo ---------------------------------------------
     this.echoEl = document.createElement('div');
     this.echoEl.className = 'echo';
@@ -253,7 +317,7 @@ export class SettingsPanel {
     shareRow.append(this.shareInput, this.shareButton);
     shareField.append(shareLabel, shareRow);
 
-    this.root.append(head, this.form, this.echoEl, controlGroup, shareField);
+    this.root.append(head, this.form, this.clockZoneField, this.echoEl, controlGroup, shareField);
 
     this.closeButton.addEventListener('click', this.onClose);
     this.resetButton.addEventListener('click', this.onReset);
@@ -268,7 +332,13 @@ export class SettingsPanel {
 
   /** Moves focus to the first control — called after the drawer opens. */
   focusFirstField(): void {
-    this.targetInput.focus();
+    // In clock mode the target form is hidden and unfocusable; the zone picker
+    // is the first control there is.
+    if (isClockMode(this.options.store.get())) {
+      this.clockZonePicker.input.focus();
+    } else {
+      this.targetInput.focus();
+    }
   }
 
   dispose(): void {
@@ -282,6 +352,7 @@ export class SettingsPanel {
     // detached elements, so dropping the map is enough to make them collectable.
     this.controlInputs.clear();
     this.picker.dispose();
+    this.clockZonePicker.dispose();
     this.root.remove();
   }
 
@@ -290,12 +361,12 @@ export class SettingsPanel {
   private render(state: AppState): void {
     // Clock mode: the target form, quick targets and echo are countdown
     // affordances and hide as a block. The reading zone still follows `?tz=`;
-    // an in-drawer zone control for clock mode is a filed follow-up rather
-    // than a reuse of the target form's picker, whose apply path is a target
-    // submission.
-    const clockMode = state.clockReading !== null;
+    // the dedicated zone field — whose apply path keeps the countdown instant
+    // rather than submitting a new target — swaps in where the form was.
+    const clockMode = isClockMode(state);
     this.form.hidden = clockMode;
     this.echoEl.hidden = clockMode;
+    this.clockZoneField.hidden = !clockMode;
     this.root.hidden = !state.settingsOpen;
 
     // Abandoning an edit by closing the drawer discards it: reopening should
@@ -308,8 +379,12 @@ export class SettingsPanel {
     if (state.target !== this.lastTarget) {
       this.lastTarget = state.target;
       if (!this.dirty) this.fillTargetFields(state.target);
+      if (this.clockZonePicker.value !== state.target.zone) {
+        this.clockZonePicker.value = state.target.zone;
+      }
       this.renderEcho(state.target);
       this.setError(null);
+      this.setClockZoneError(null);
     }
 
     // Rebuilt only when something the link encodes has changed; this runs on
@@ -480,6 +555,32 @@ export class SettingsPanel {
       this.setError(result.message);
     }
   };
+
+  /**
+   * Clock mode's own apply path: committed zone in, store round trip out.
+   *
+   * The picker only commits values `isValidTimeZone` accepts, so a refusal is
+   * unexpected — but it is still shown rather than swallowed, and the picker
+   * reverts to the zone actually in force so the field never lies.
+   */
+  private applyClockZone(zone: string): void {
+    const current = this.options.store.get().target.zone;
+    if (zone === current) return;
+
+    const result = this.options.onSubmitClockZone(zone);
+    if (result.ok) {
+      this.setClockZoneError(null);
+    } else {
+      this.setClockZoneError(result.message);
+      this.clockZonePicker.value = current;
+    }
+  }
+
+  private setClockZoneError(message: string | null): void {
+    this.clockZoneErrorEl.textContent = message ?? '';
+    this.clockZoneErrorEl.hidden = message === null;
+    this.clockZonePicker.input.setAttribute('aria-invalid', String(message !== null));
+  }
 
   /** Fills the visible fields and goes through the one submit path there is. */
   private applyEntry(entry: TargetHistoryEntry): void {

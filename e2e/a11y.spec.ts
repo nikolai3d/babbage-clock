@@ -79,6 +79,20 @@ test.describe('axe', () => {
     expect(describeViolations(results.violations)).toBe('');
   });
 
+  test('the drawer in clock mode has no violations and focuses the zone picker', async ({
+    page,
+  }) => {
+    await gotoApp(page, deterministicOptions({ scene: 'copper-padlock-clock' }));
+    await openSettings(page);
+
+    // Clock mode hides the target form, so focus lands on the first control
+    // there is: the reading-zone picker.
+    expect(await focusedId(page)).toBe('clock-zone-input');
+
+    const results = await axe(page).analyze();
+    expect(describeViolations(results.violations)).toBe('');
+  });
+
   test('a toast has no violations', async ({ page }) => {
     await gotoApp(page, deterministicOptions());
     await openSettings(page);

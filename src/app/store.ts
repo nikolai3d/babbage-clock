@@ -99,6 +99,16 @@ export interface AppState {
   readonly fps: number;
 }
 
+/**
+ * True while clock mode is effectively in force — a reading is being
+ * published. Derived from `clockReading` rather than `mode`, because `mode`
+ * is only the viewer's override; the scene's own default is applied by
+ * whichever loop is driving time.
+ */
+export function isClockMode(state: Pick<AppState, 'clockReading'>): boolean {
+  return state.clockReading !== null;
+}
+
 export type Listener<T> = (state: T, previous: T) => void;
 
 /** Minimal observable store: no framework, no dependencies. */
