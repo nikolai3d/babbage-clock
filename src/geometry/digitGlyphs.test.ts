@@ -111,6 +111,10 @@ describe('colonGlyph', () => {
     // Both dots stay inside the 1 em box the digits share.
     expect(t.maxY).toBeLessThanOrEqual(0.5);
     expect(b.minY).toBeGreaterThanOrEqual(-0.5);
+    // Both dots are centred on the vertical axis, so the colon sits on the
+    // reading line rather than shifted across the drum face.
+    expect(t.minX + t.maxX).toBeCloseTo(0, 9);
+    expect(b.minX + b.maxX).toBeCloseTo(0, 9);
   });
 
   it('takes its weight from the stroke width, like the numerals', () => {

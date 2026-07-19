@@ -2,8 +2,17 @@ import * as THREE from 'three';
 import { describe, expect, it } from 'vitest';
 import { createGearGeometry, defaultSpokeStyleFor } from './gear.js';
 import { createHousingParts, validateHousingParams } from './housing.js';
-import { createRingBodyGeometry, createRingNumeralsGeometry } from './ring.js';
-import { digitAngle, readingAngleForAxis, ringPlaneAxes } from '../../geometry/ringLayout.js';
+import {
+  createRingBodyGeometry,
+  createRingNumeralsGeometry,
+  createSeparatorGlyphGeometry,
+} from './ring.js';
+import {
+  digitAngle,
+  readingAngleForAxis,
+  ringPlaneAxes,
+  type SeparatorGlyph,
+} from '../../geometry/ringLayout.js';
 import { copperPadlockScene } from '../../scene/scenes/copperPadlock.js';
 import { slateOrreryScene } from '../../scene/scenes/slateOrrery.js';
 import { MATERIAL_SLOTS, type RingConfig } from '../../scene/types.js';
@@ -322,6 +331,45 @@ describe('createRingNumeralsGeometry', () => {
       expectFinite(geometry);
       geometry.dispose();
     }
+  });
+});
+
+describe('createSeparatorGlyphGeometry', () => {
+  const config = copperPadlockScene.rings;
+
+  it('engraves the colon on the reading line', () => {
+    const geometry = createSeparatorGlyphGeometry(config, 'colon');
+    const reading = readingAngleForAxis(config.axis);
+    const [uAxis, vAxis] = ringPlaneAxes(config.axis);
+
+    // A separator never rotates, so its one glyph must sit on the reading line
+    // — the extreme angles straddle it, exactly as the reading digit does. Only
+    // this state assertion, not the screenshot, pins the engraving angle.
+    const angles = positions(geometry).map((p) => Math.atan2(p[vAxis], p[uAxis]));
+    expect(Math.min(...angles)).toBeLessThan(reading);
+    expect(Math.max(...angles)).toBeGreaterThan(reading);
+    geometry.dispose();
+  });
+
+  it('stands on the drum surface like the numerals, and shades cleanly', () => {
+    const geometry = createSeparatorGlyphGeometry(config, 'colon');
+    expectFinite(geometry);
+
+    for (const point of positions(geometry)) {
+      const radius = Math.hypot(point.y, point.z);
+      // Sunk slightly into the drum at the base, proud at the face — the same
+      // relief the numerals get, so it reads as the same kind of mark.
+      expect(radius).toBeGreaterThan(config.radius * 0.95);
+      expect(radius).toBeLessThan(config.radius * 1.05);
+      expect(Math.abs(point.x)).toBeLessThan(config.thickness / 2);
+    }
+    geometry.dispose();
+  });
+
+  it('rejects a separator glyph it cannot draw', () => {
+    expect(() =>
+      createSeparatorGlyphGeometry(config, 'slash' as unknown as SeparatorGlyph),
+    ).toThrow(/unsupported separator glyph/);
   });
 });
 

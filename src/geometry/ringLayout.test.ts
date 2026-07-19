@@ -137,6 +137,21 @@ describe('ringStackSlots', () => {
     const slots = ringStackSlots(2, [{ afterRing: 0 }, { afterRing: 2 }]);
     expect(slots.map((slot) => slot.kind)).toEqual(['separator', 'digit', 'digit', 'separator']);
   });
+
+  it('stacks two separators declared at the same boundary', () => {
+    const slots = ringStackSlots(2, [{ afterRing: 1 }, { afterRing: 1 }]);
+    expect(slots.map((slot) => slot.kind)).toEqual(['digit', 'separator', 'separator', 'digit']);
+  });
+
+  it('still emits an out-of-range separator, so the physical count never lies', () => {
+    // `scene/validate.ts` rejects an afterRing outside [0, count]; the layout
+    // stays robust regardless and keeps physicalRingCount === count + separators,
+    // so a bad scene can never make the slot list disagree with the span.
+    const separators = [{ afterRing: 9 }];
+    const slots = ringStackSlots(3, separators);
+    expect(slots.filter((slot) => slot.kind === 'separator')).toHaveLength(1);
+    expect(slots).toHaveLength(physicalRingCount({ count: 3, separators }));
+  });
 });
 
 describe('numeralLayout', () => {
