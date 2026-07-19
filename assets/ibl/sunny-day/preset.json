@@ -30,7 +30,14 @@
       "name": "sun",
       "color": "#fff2d8",
       "intensity": 3.4,
-      "position": [6, 7, 4]
+      "position": [6, 7, 4],
+      "shadow": {
+        "radius": 9,
+        "near": 2,
+        "far": 17,
+        "bias": -0.0002,
+        "normalBias": 0.03
+      }
     },
     {
       "type": "directional",

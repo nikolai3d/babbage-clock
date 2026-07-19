@@ -5,6 +5,7 @@ import {
   openSettings,
   readRendererState,
   waitForFrames,
+  waitForMaterials,
   watchConsole,
 } from './support/app.js';
 import type { Page } from '@playwright/test';
@@ -35,14 +36,9 @@ async function readMaterials(page: Page): Promise<{
   });
 }
 
-/** Waits until no material load is in flight. */
+/** Waits until no material load is in flight, then uploads what landed. */
 async function settleMaterials(page: Page): Promise<void> {
-  await expect
-    .poll(async () => (await readMaterials(page)).pending, {
-      message: 'material loads never settled',
-      timeout: 15_000,
-    })
-    .toBe(0);
+  await waitForMaterials(page);
   // One frame, not several: `renderer.info.memory.textures` only counts a
   // texture once it has been uploaded, which happens on the next render. More
   // frames than that buys nothing and costs real time under software

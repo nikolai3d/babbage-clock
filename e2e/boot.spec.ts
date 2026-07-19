@@ -2,10 +2,12 @@ import { expect, test } from '@playwright/test';
 import {
   appUrl,
   blockExternalRequests,
+  deterministicOptions,
   SELECTOR,
   gotoApp,
   readRendererState,
   waitForFrames,
+  waitForMaterials,
   watchConsole,
 } from './support/app.js';
 
@@ -91,6 +93,103 @@ test.describe('boot', () => {
     expect(initial.height).toBeGreaterThan(0);
 
     await waitForFrames(page, 5);
+    // A live clock moves the drive phase every frame, so every pass draws.
+    const later = await readRendererState(page);
+    expect(later.draws).toBeGreaterThan(initial.draws);
+  });
+
+  /**
+   * The held-frame contract, both halves.
+   *
+   * `frames` counts loop passes and `drawCalls` keeps its last value when a
+   * draw is skipped, so neither can tell a deliberately held frame from a
+   * renderer that has stopped drawing for good. `draws` can, and this is the
+   * only place the optimisation that makes captures bit-stable is asserted.
+   */
+  test('holds the frame under a frozen clock, and redraws when the picture changes', async ({
+    page,
+  }) => {
+    await gotoApp(page, deterministicOptions());
+    // `gotoApp` already waits the mood out, but not the ten material folders
+    // the default scene binds. A texture commit landing between the two
+    // readings below would show up as a draw and fail the hold — the very
+    // race this test exists to pin down, so it has to be excluded first.
+    await waitForMaterials(page);
+    await waitForFrames(page, 10);
+    const settled = await readRendererState(page);
+    await waitForFrames(page, 10);
+    const held = await readRendererState(page);
+
+    expect(held.frames, 'the loop itself must keep running').toBeGreaterThan(settled.frames);
+    expect(
+      held.draws,
+      'a frozen clock reached a fixed point but the renderer kept drawing — captures cannot settle',
+    ).toBe(settled.draws);
+
+    // Resize clears the drawing buffer, so a held frame must be redrawn: the
+    // negative half of the contract, and the one that catches a gate with no
+    // way back out of the held state.
+    await page.setViewportSize({ width: 1100, height: 640 });
+    await waitForFrames(page, 10);
+    const resized = await readRendererState(page);
+    expect(
+      resized.draws,
+      'the picture changed but no frame was drawn — the canvas is now stale',
+    ).toBeGreaterThan(held.draws);
+  });
+
+  /**
+   * Coming back from a hidden tab must draw.
+   *
+   * The loop is stopped while hidden, so nothing observes what changed across
+   * the gap, and the drawing buffer is not preserved — a compositor layer
+   * dropped while backgrounded returns undefined. With the mechanism at a
+   * fixed point (here a frozen clock; in production reduced motion between
+   * digits, or any time after the wind-down) nothing would ask for a frame and
+   * the canvas would stay blank. The context-restore path happens to be
+   * covered by the `resize` it does on the way back, so this is the only test
+   * that actually pins `resume`.
+   */
+  test('draws again after the tab comes back from hidden', async ({ page }) => {
+    await gotoApp(page, deterministicOptions());
+    await waitForMaterials(page);
+    await waitForFrames(page, 10);
+
+    // Drive the real handler: it reads `document.hidden`, so overriding the
+    // property and firing the event is the page-level truth it responds to.
+    const setHidden = async (hidden: boolean): Promise<void> => {
+      await page.evaluate((value) => {
+        Object.defineProperty(document, 'hidden', { value, configurable: true });
+        Object.defineProperty(document, 'visibilityState', {
+          value: value ? 'hidden' : 'visible',
+          configurable: true,
+        });
+        document.dispatchEvent(new Event('visibilitychange'));
+      }, hidden);
+    };
+
+    await setHidden(true);
+    await expect
+      .poll(async () => (await readRendererState(page)).running, {
+        message: 'the loop kept running with the tab hidden',
+      })
+      .toBe(false);
+
+    const hiddenState = await readRendererState(page);
+
+    await setHidden(false);
+    await expect
+      .poll(async () => (await readRendererState(page)).running, {
+        message: 'the loop never restarted when the tab came back',
+      })
+      .toBe(true);
+    await waitForFrames(page, 5);
+
+    const back = await readRendererState(page);
+    expect(
+      back.draws,
+      'the tab came back but no frame was drawn — the canvas may be blank',
+    ).toBeGreaterThan(hiddenState.draws);
   });
 
   /**

@@ -120,6 +120,20 @@ export class MaterialLibrary {
   }
 
   /**
+   * True while any slot has an apply in flight.
+   *
+   * A cheap synchronous read for the render loop: while this is true — and for
+   * one frame after it flips back — a frame must be drawn, because a texture
+   * commit can land between two otherwise identical clock instants.
+   */
+  get busy(): boolean {
+    for (const slot of this.slots.values()) {
+      if (slot.settled() !== null) return true;
+    }
+    return false;
+  }
+
+  /**
    * Resolves when nothing is still loading.
    *
    * Loops because finishing one apply can start another (a look switched while

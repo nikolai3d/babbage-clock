@@ -125,17 +125,56 @@ export class ClockRenderer {
   private disposed = false;
   private contextLost = false;
 
+  /**
+   * Draw on the next frame-loop pass even if the mechanism has not moved.
+   *
+   * The loop itself never stops — it is cheap, and it is what keeps the store
+   * and the mechanism current — but the GL work is skipped for a frame that
+   * would repeat the last one pixel for pixel. A live clock moves the drive
+   * phase continuously, so production draws every pass exactly as before; the
+   * held frame only ever happens under a frozen `?mockNow` clock or after the
+   * wind-down, and it is what makes a deterministic capture stable on however
+   * starved a CI runner. Every mutation that changes the picture without
+   * moving the mechanism must set this flag (or be caught by the status polls
+   * in `frame`).
+   */
+  private renderRequested = true;
+  /** Environment status at the last draw, to catch an async mood commit. */
+  private lastEnvStatus: IblStatus | null = null;
+  /** Material-load activity at the last draw; a landed commit needs one draw. */
+  private lastMaterialsBusy = false;
+
   /** Scratch for keyboard orbiting, so a key press allocates nothing. */
   private readonly orbitOffset = new THREE.Vector3();
   private readonly orbitSpherical = new THREE.Spherical();
 
   /** Last digits handed to the scene; read by the `?testApi` observation surface. */
   private frameCount = 0;
+  /**
+   * Frames actually drawn, as opposed to loop passes.
+   *
+   * `frameCount` counts passes and `renderer.info.render.calls` keeps its last
+   * non-zero value when a draw is skipped, so neither can tell a held frame
+   * from a renderer that has stopped drawing entirely. This can: it advances
+   * only next to the `render` call itself, which is what lets the e2e suite
+   * assert both halves of the held-frame contract — that it holds under a
+   * frozen clock, and that it resumes for everything that changes the picture.
+   */
+  private drawCount = 0;
 
   private readonly resizeObserver: ResizeObserver;
   /** The viewer has taken the camera; automatic framing stops moving it. */
   private readonly onControlsStart = (): void => {
     this.userAdjustedCamera = true;
+  };
+
+  /**
+   * The camera moved — a drag, a pinch, damping still coasting. Fires from
+   * `controls.update()` inside the frame loop, before the draw decision, so a
+   * moving camera always redraws the frame it moved in.
+   */
+  private readonly onControlsChange = (): void => {
+    this.renderRequested = true;
   };
 
   private readonly onVisibilityChange = (): void => {
@@ -170,6 +209,14 @@ export class ClockRenderer {
     this.renderer.setPixelRatio(this.pixelRatio());
     this.renderer.outputColorSpace = THREE.SRGBColorSpace;
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
+    // Enabled unconditionally, but only a lighting mood whose manifest gives
+    // its key light a `shadow` block ever casts (see `render/ibl/rig.ts`), and
+    // with no casting light three.js schedules no shadow pass and compiles no
+    // shadow sampling into the materials — moods without one render exactly as
+    // before, at no cost. Soft PCF because a hard-edged 1024px map on the low
+    // tier would read as stair-steps across the drums.
+    this.renderer.shadowMap.enabled = true;
+    this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 
     if (!this.renderer.capabilities.isWebGL2) {
       // WebGPU is explicitly deferred; WebGL1 is not a supported target either.
@@ -186,6 +233,7 @@ export class ClockRenderer {
       scene: this.scene,
       library: createEnvironmentLibrary(this.renderer),
       panoramaBackground: quality.panoramaBackground,
+      shadowMapSize: quality.shadowMapSize,
     });
 
     this.controls = new OrbitControls(this.camera, canvas);
@@ -206,6 +254,7 @@ export class ClockRenderer {
     this.controls.touches = { ONE: THREE.TOUCH.ROTATE, TWO: THREE.TOUCH.DOLLY_PAN };
 
     this.controls.addEventListener('start', this.onControlsStart);
+    this.controls.addEventListener('change', this.onControlsChange);
 
     this.resizeObserver = new ResizeObserver(() => {
       this.resize();
@@ -256,6 +305,7 @@ export class ClockRenderer {
     // Put the new mechanism on the clock immediately, so a scene switched to
     // while the tab is hidden is already reading the right time when it shows.
     this.syncMechanism(this.timeSource.now());
+    this.renderRequested = true;
   }
 
   /**
@@ -267,6 +317,9 @@ export class ClockRenderer {
   setMaterialLook(lookId: string | null): void {
     this.materialLook = resolveLook(lookId) ? lookId : null;
     if (this.view) this.applyLook(this.view.definition);
+    // A placeholder binding commits synchronously — no slot ever reads as
+    // busy — so the rebind has to request its own draw.
+    this.renderRequested = true;
   }
 
   /** Resolves once the active scene's materials have finished loading. */
@@ -309,6 +362,7 @@ export class ClockRenderer {
       textureSize: this.quality.textureSize,
     });
     this.syncMechanism(this.timeSource.now());
+    this.renderRequested = true;
   }
 
   /**
@@ -421,6 +475,8 @@ export class ClockRenderer {
   getRenderState(): {
     webgl2: boolean;
     frames: number;
+    /** Frames actually drawn. See `drawCount` — `frames` counts loop passes. */
+    draws: number;
     fps: number;
     running: boolean;
     drawCalls: number;
@@ -450,6 +506,7 @@ export class ClockRenderer {
     return {
       webgl2: this.renderer.capabilities.isWebGL2,
       frames: this.frameCount,
+      draws: this.drawCount,
       fps: Math.round(this.fps),
       running: this.frameHandle !== null,
       drawCalls: this.renderer.info.render.calls,
@@ -577,6 +634,7 @@ export class ClockRenderer {
     this.canvas.removeEventListener('keydown', this.onCanvasKeyDown);
     this.resizeObserver.disconnect();
     this.controls.removeEventListener('start', this.onControlsStart);
+    this.controls.removeEventListener('change', this.onControlsChange);
     this.controls.dispose();
     // Before the view: the controller detaches its rig from the same scene.
     this.environment.dispose();
@@ -695,6 +753,10 @@ export class ClockRenderer {
           ? false
           : this.quality.panoramaBackground;
     this.environment.setPanoramaBackground(panorama);
+    // A tier change re-sizes the mood's shadow map with everything else it
+    // re-derives; the controller rebuilds its rig only when the size changed.
+    this.environment.setShadowMapSize(this.quality.shadowMapSize);
+    this.renderRequested = true;
   }
 
   private resize(): void {
@@ -712,6 +774,8 @@ export class ClockRenderer {
     this.camera.updateProjectionMatrix();
     // After the projection matrix, because the framing reads `camera.aspect`.
     this.applyFraming();
+    // `setSize` cleared the drawing buffer, so a held frame must be redrawn.
+    this.renderRequested = true;
   }
 
   /**
@@ -834,6 +898,15 @@ export class ClockRenderer {
   private resume(): void {
     if (this.disposed || this.contextLost || this.frameHandle !== null) return;
     this.lastFrameMs = performance.now();
+    // The loop was stopped, so nothing observed whatever changed while it was:
+    // an async commit that both started and settled inside the gap leaves the
+    // status polls agreeing across it, and the drawing buffer itself is not
+    // preserved — a compositor layer dropped while the tab was hidden comes
+    // back undefined. A mechanism at a fixed point (reduced motion between
+    // digits, or after the wind-down) would then never ask for a draw and the
+    // canvas would stay blank. Every restart funnels through here — visibility,
+    // un-suspend, context restore — so one request covers them all.
+    this.renderRequested = true;
     this.frameHandle = requestAnimationFrame(this.frame);
   }
 
@@ -888,8 +961,30 @@ export class ClockRenderer {
       }
     }
 
+    // May fire `onControlsChange` (damping still coasting, a drag in
+    // progress), so it must run before the draw decision below.
     this.controls.update();
-    this.renderer.render(this.scene, this.camera);
+
+    // Async work that changes the picture without moving the mechanism:
+    // a mood committing after its panorama loads, a material's textures
+    // landing. Each is drawn while active and once more after it settles,
+    // so the frame on screen always shows the committed state.
+    const envStatus = this.environment.status;
+    if (envStatus !== this.lastEnvStatus || envStatus === 'loading') {
+      this.renderRequested = true;
+    }
+    this.lastEnvStatus = envStatus;
+    const materialsBusy = this.view?.materialsBusy ?? false;
+    if (materialsBusy || materialsBusy !== this.lastMaterialsBusy) {
+      this.renderRequested = true;
+    }
+    this.lastMaterialsBusy = materialsBusy;
+
+    if (this.renderRequested) {
+      this.renderRequested = false;
+      this.drawCount += 1;
+      this.renderer.render(this.scene, this.camera);
+    }
   };
 
   /**
@@ -921,7 +1016,10 @@ export class ClockRenderer {
         : countdownFrame(remaining, view.ringCount),
       nowMs,
     );
-    view.update(nowMs);
+    // The view reports whether anything actually moved; a frozen clock (or a
+    // finished wind-down) reaches a fixed point, and the frame loop then skips
+    // redrawing a pixel-identical frame. See `renderRequested`.
+    if (view.update(nowMs)) this.renderRequested = true;
     return remaining;
   }
 }

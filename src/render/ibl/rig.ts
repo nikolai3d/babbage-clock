@@ -13,26 +13,45 @@
  */
 
 import * as THREE from 'three';
-import type { IblBackgroundFallback, IblLightSpec, IblManifest } from './manifest.js';
+import type {
+  IblBackgroundFallback,
+  IblLightSpec,
+  IblManifest,
+  IblShadowSpec,
+} from './manifest.js';
 
 /** Height of the generated backdrop gradient. Cheap, and smooth enough. */
 const GRADIENT_HEIGHT = 128;
 /** Longitude is constant in a vertical gradient, so a few columns will do. */
 const GRADIENT_WIDTH = 4;
 
+/** What a caller that never states a tier gets: the high tier's resolution. */
+export const DEFAULT_SHADOW_MAP_SIZE = 2048;
+
+export interface RigOptions {
+  /**
+   * Side length of the shadow map a casting light renders into. The manifest
+   * authors *whether* and *where* its key casts (see `IblShadowSpec`); how many
+   * texels that costs is the device's business, so it arrives from the active
+   * quality tier rather than from content. See `app/quality.ts`.
+   */
+  readonly shadowMapSize?: number;
+}
+
 /**
  * Builds the mood's lights. The caller owns them: add them to a scene, and
  * `disposeRig` them when the mood changes.
  */
-export function createRigLights(manifest: IblManifest): THREE.Light[] {
+export function createRigLights(manifest: IblManifest, options: RigOptions = {}): THREE.Light[] {
+  const shadowMapSize = options.shadowMapSize ?? DEFAULT_SHADOW_MAP_SIZE;
   return manifest.lights.map((spec) => {
-    const light = createLight(spec);
+    const light = createLight(spec, shadowMapSize);
     light.name = `ibl:${manifest.id}:${spec.name}`;
     return light;
   });
 }
 
-function createLight(spec: IblLightSpec): THREE.Light {
+function createLight(spec: IblLightSpec, shadowMapSize: number): THREE.Light {
   switch (spec.type) {
     case 'ambient':
       return new THREE.AmbientLight(spec.color, spec.intensity);
@@ -43,6 +62,7 @@ function createLight(spec: IblLightSpec): THREE.Light {
     case 'directional': {
       const light = new THREE.DirectionalLight(spec.color, spec.intensity);
       light.position.set(...spec.position);
+      if (spec.shadow) applyDirectionalShadow(light, spec.shadow, shadowMapSize);
       return light;
     }
 
@@ -77,10 +97,42 @@ function createLight(spec: IblLightSpec): THREE.Light {
   }
 }
 
+/**
+ * Turns a manifest's shadow block into a configured shadow camera.
+ *
+ * The frustum is square — the mechanism is roughly as tall as it is wide from
+ * any key-light angle — and authored in the manifest, because content knows
+ * what it must cover. Only the resolution comes from the caller: that is the
+ * quality tier's lever, not the mood's.
+ */
+function applyDirectionalShadow(
+  light: THREE.DirectionalLight,
+  spec: IblShadowSpec,
+  mapSize: number,
+): void {
+  light.castShadow = true;
+  light.shadow.mapSize.set(mapSize, mapSize);
+  light.shadow.bias = spec.bias;
+  light.shadow.normalBias = spec.normalBias;
+
+  const camera = light.shadow.camera;
+  camera.left = -spec.radius;
+  camera.right = spec.radius;
+  camera.top = spec.radius;
+  camera.bottom = -spec.radius;
+  camera.near = spec.near;
+  camera.far = spec.far;
+  // The shadow pass reads the projection matrix as-is; nothing recomputes it
+  // from the bounds set above, so it has to be stated here.
+  camera.updateProjectionMatrix();
+}
+
 /** Detaches and releases a rig. Safe to call with an empty list. */
 export function disposeRig(scene: THREE.Scene, lights: readonly THREE.Light[]): void {
   for (const light of lights) {
     scene.remove(light);
+    // `dispose` on a shadow-casting light also releases its shadow map, so a
+    // rig swap cannot strand a render target on the GPU.
     light.dispose();
   }
 }

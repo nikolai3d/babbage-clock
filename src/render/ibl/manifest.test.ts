@@ -127,6 +127,43 @@ describe('parseIblManifest', () => {
     ).toThrow(/lights\[0\]\.position/);
   });
 
+  it('parses a directional shadow block and defaults its acne counters', () => {
+    const manifest = parseIblManifest(
+      minimal({
+        lights: [
+          { type: 'directional', color: '#ffffff', position: [1, 2, 3], shadow: { radius: 7 } },
+          { type: 'directional', color: '#ffffff', position: [3, 2, 1] },
+        ],
+      }),
+      'test',
+    );
+
+    const [casting, plain] = manifest.lights;
+    expect(casting?.type === 'directional' && casting.shadow).toEqual({
+      radius: 7,
+      near: 0.5,
+      far: 50,
+      bias: -0.0002,
+      normalBias: 0.02,
+    });
+    // No block means no key at all — downstream reads `spec.shadow` truthily.
+    expect(plain?.type === 'directional' && 'shadow' in plain).toBe(false);
+  });
+
+  it('rejects a shadow block without a usable frustum', () => {
+    const withShadow = (shadow: unknown): Record<string, unknown> =>
+      minimal({ lights: [{ type: 'directional', color: '#ffffff', position: [1, 2, 3], shadow }] });
+
+    // A guessed radius is either clipped or blocky, so it is not defaulted.
+    expect(() => parseIblManifest(withShadow({}), 'test')).toThrow(/lights\[0\]\.shadow\.radius/);
+    expect(() => parseIblManifest(withShadow({ radius: -1 }), 'test')).toThrow(
+      /lights\[0\]\.shadow\.radius/,
+    );
+    expect(() => parseIblManifest(withShadow({ radius: 5, near: 6, far: 2 }), 'test')).toThrow(
+      /lights\[0\]\.shadow\.far/,
+    );
+  });
+
   it('defaults a missing fallback backdrop to black rather than to nothing', () => {
     // A scene may set `showAsBackground: false` under any mood, so every mood
     // needs a backdrop even if its own manifest never mentions one.

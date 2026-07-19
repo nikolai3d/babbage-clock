@@ -75,6 +75,17 @@ export interface QualitySettings {
    */
   readonly maxFps: number | null;
   readonly textureSize: TextureSizePreference;
+  /**
+   * Resolution, in texels per side, of the shadow map a lighting mood's
+   * shadow-casting key light renders into.
+   *
+   * Only the moods with a real key light cast shadows at all (see
+   * `render/ibl/rig.ts`), so this costs nothing elsewhere. Halving the side on
+   * the low tier quarters the shadow pass's fill and memory, which is the same
+   * shape of saving as the pixel-ratio cap — and a soft-edged shadow degrades
+   * gracefully at half resolution, unlike the numerals.
+   */
+  readonly shadowMapSize: number;
 }
 
 /** Retina displays gain little above 2x and cost a lot of fill rate. */
@@ -83,6 +94,10 @@ export const HIGH_TIER_MAX_PIXEL_RATIO = 2;
 export const LOW_TIER_MAX_PIXEL_RATIO = 1.5;
 /** Halving the frame rate is the cheapest thermal win available. */
 export const LOW_TIER_MAX_FPS = 30;
+/** Crisp key-light shadows on the mechanism at desktop viewing distances. */
+export const HIGH_TIER_SHADOW_MAP_SIZE = 2048;
+/** A quarter of the fill and memory; soft shadows survive it, numerals would not. */
+export const LOW_TIER_SHADOW_MAP_SIZE = 1024;
 
 /** Four cores or fewer is a phone or a very old laptop. */
 const LOW_CORE_COUNT = 4;
@@ -135,6 +150,7 @@ export function qualitySettings(tier: QualityTier): QualitySettings {
         panoramaBackground: false,
         maxFps: LOW_TIER_MAX_FPS,
         textureSize: 'half',
+        shadowMapSize: LOW_TIER_SHADOW_MAP_SIZE,
       }
     : {
         tier,
@@ -142,6 +158,7 @@ export function qualitySettings(tier: QualityTier): QualitySettings {
         panoramaBackground: true,
         maxFps: null,
         textureSize: 'full',
+        shadowMapSize: HIGH_TIER_SHADOW_MAP_SIZE,
       };
 }
 

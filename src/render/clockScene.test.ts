@@ -83,6 +83,23 @@ describe('ClockSceneView', () => {
     view.dispose();
   });
 
+  it('marks every mesh as a shadow caster and receiver', () => {
+    // The flags are free until a lighting mood's key light actually casts
+    // (see render/ibl/rig.ts); what this protects is completeness — a new part
+    // added without them would float, shadowless, under sunny-day.
+    const view = new ClockSceneView(scene, copperPadlockScene);
+
+    let meshes = 0;
+    view.root.traverse((object) => {
+      if (!(object as THREE.Mesh).isMesh) return;
+      meshes += 1;
+      expect(object.castShadow, `${object.name || object.parent?.name} casts`).toBe(true);
+      expect(object.receiveShadow, `${object.name || object.parent?.name} receives`).toBe(true);
+    });
+    expect(meshes).toBeGreaterThan(0);
+    view.dispose();
+  });
+
   it('takes ring count and spacing from the definition, not from code', () => {
     const copper = new ClockSceneView(scene, copperPadlockScene);
     const slate = new ClockSceneView(new THREE.Scene(), slateOrreryScene);
@@ -427,6 +444,61 @@ describe('ClockSceneView motion', () => {
     still.update(500);
     expect(gearRotation(still)).toBe(0);
     still.dispose();
+  });
+});
+
+describe('ClockSceneView — update reports whether anything moved', () => {
+  /**
+   * The renderer skips redrawing when `update` returns false, so this contract
+   * is what makes a frozen `?mockNow` capture bit-stable: the mechanism is a
+   * pure function of the instant, and a repeated instant must reach a fixed
+   * point rather than report phantom motion.
+   */
+  it('reaches a fixed point under a frozen clock', () => {
+    const view = new ClockSceneView(scene, copperPadlockScene);
+    view.setFrame(
+      { digits: [0, 9, 9, 5, 9, 5, 9], sequence: 0, expired: false, direction: 'down' },
+      1_000,
+    );
+
+    expect(view.update(1_000)).toBe(true);
+    expect(view.update(1_000)).toBe(false);
+    expect(view.update(1_000)).toBe(false);
+
+    view.dispose();
+  });
+
+  it('reports motion again when the clock advances', () => {
+    const view = new ClockSceneView(scene, copperPadlockScene);
+    view.setFrame(
+      { digits: [0, 9, 9, 5, 9, 5, 9], sequence: 0, expired: false, direction: 'down' },
+      1_000,
+    );
+    view.update(1_000);
+
+    // The drive train turns continuously, so any later instant is a new pose.
+    expect(view.update(1_500)).toBe(true);
+
+    view.dispose();
+  });
+
+  it('reports a new frame even at the same instant', () => {
+    // A target change with the clock frozen: the instant repeats, but the
+    // rings must still travel — and the renderer must still draw it.
+    const view = new ClockSceneView(scene, copperPadlockScene, { motion: false });
+    view.setFrame(
+      { digits: [0, 0, 0, 0, 0, 0, 0], sequence: 0, expired: false, direction: 'down' },
+      1_000,
+    );
+    view.update(1_000);
+
+    view.setFrame(
+      { digits: [1, 2, 3, 4, 5, 6, 7], sequence: 1, expired: false, direction: 'down' },
+      1_000,
+    );
+    expect(view.update(1_000)).toBe(true);
+
+    view.dispose();
   });
 });
 

@@ -61,7 +61,14 @@ const MANIFESTS: Record<string, Record<string, unknown>> = {
     },
     grade: { exposure: 0.9, toneMapping: 'agx' },
     lights: [
-      { type: 'directional', name: 'key', color: '#eef3fb', intensity: 1.1, position: [4, 6, 7] },
+      {
+        type: 'directional',
+        name: 'key',
+        color: '#eef3fb',
+        intensity: 1.1,
+        position: [4, 6, 7],
+        shadow: { radius: 9, near: 2, far: 17 },
+      },
     ],
     source: {
       title: 'C',
@@ -304,6 +311,33 @@ describe('EnvironmentController', () => {
     expect(scene.background).toBe(scene.environment);
     expect(sceneLights().every((light) => light.intensity === 0)).toBe(true);
     expect(rigLights()).toHaveLength(1);
+  });
+
+  it('re-sizes a casting key light with the quality tier, and only on a change', () => {
+    library.cached.add('cool');
+    rebuildScene(sceneWith('cool'));
+
+    const castingLight = (): THREE.DirectionalLight => {
+      const light = rigLights().find((candidate) => candidate.castShadow);
+      if (!(light instanceof THREE.DirectionalLight)) throw new Error('no casting key light');
+      return light;
+    };
+
+    // No tier stated: the rig's own high-tier default.
+    const before = castingLight();
+    expect(before.shadow.mapSize.width).toBe(2048);
+
+    // The tier changed: the rig is rebuilt around the new resolution, and the
+    // old lights (and with them the old shadow map) are released.
+    controller.setShadowMapSize(1024);
+    const after = castingLight();
+    expect(after).not.toBe(before);
+    expect(after.shadow.mapSize.width).toBe(1024);
+    expect(rigLights()).toHaveLength(1);
+
+    // Re-stating the same size must not churn the rig every applyQuality call.
+    controller.setShadowMapSize(1024);
+    expect(castingLight()).toBe(after);
   });
 
   it('discards a load the viewer has already navigated away from', async () => {

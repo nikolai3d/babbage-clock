@@ -93,6 +93,12 @@ export interface EnvironmentControllerOptions {
    * Defaults to true, so nothing that does not care changes behaviour.
    */
   readonly panoramaBackground?: boolean;
+  /**
+   * Resolution of the shadow map a mood's casting key light renders into,
+   * from the active quality tier. Omitted means the rig's own (high-tier)
+   * default — see `render/ibl/rig.ts`.
+   */
+  readonly shadowMapSize?: number;
 }
 
 interface CommittedMood {
@@ -136,17 +142,20 @@ export class EnvironmentController {
   private state: IblStatus = 'none';
   private disposed = false;
   private panoramaBackground: boolean;
+  private shadowMapSize: number | undefined;
 
   constructor({
     renderer,
     scene,
     library,
     panoramaBackground = true,
+    shadowMapSize,
   }: EnvironmentControllerOptions) {
     this.renderer = renderer;
     this.scene = scene;
     this.library = library;
     this.panoramaBackground = panoramaBackground;
+    this.shadowMapSize = shadowMapSize;
   }
 
   /**
@@ -161,6 +170,21 @@ export class EnvironmentController {
   setPanoramaBackground(allowed: boolean): void {
     if (this.disposed || allowed === this.panoramaBackground) return;
     this.panoramaBackground = allowed;
+    this.reassert();
+  }
+
+  /**
+   * Re-sizes the casting key light's shadow map, for a quality-tier change made
+   * while a mood is on screen.
+   *
+   * Rebuilds the rig through `reassert` rather than resizing the live shadow
+   * map: `commit` already knows how to swap a whole rig atomically, and
+   * disposing the old lights releases the old map with them — one path for rig
+   * lifetimes rather than a second, subtly different one for this.
+   */
+  setShadowMapSize(size: number): void {
+    if (this.disposed || size === this.shadowMapSize) return;
+    this.shadowMapSize = size;
     this.reassert();
   }
 
@@ -301,7 +325,10 @@ export class EnvironmentController {
       : null;
 
     disposeRig(scene, this.rig);
-    this.rig = createRigLights(manifest);
+    this.rig = createRigLights(
+      manifest,
+      this.shadowMapSize === undefined ? {} : { shadowMapSize: this.shadowMapSize },
+    );
     for (const light of this.rig) scene.add(light);
 
     this.lighting?.setAnalyticScale(manifest.sceneLightScale);

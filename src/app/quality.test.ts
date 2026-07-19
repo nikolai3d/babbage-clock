@@ -1,8 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import {
   HIGH_TIER_MAX_PIXEL_RATIO,
+  HIGH_TIER_SHADOW_MAP_SIZE,
   LOW_TIER_MAX_FPS,
   LOW_TIER_MAX_PIXEL_RATIO,
+  LOW_TIER_SHADOW_MAP_SIZE,
   detectQualityTier,
   parseQualityPreference,
   qualitySettings,
@@ -99,6 +101,13 @@ describe('qualitySettings', () => {
     expect(high.panoramaBackground).toBe(true);
     expect(high.maxFps).toBeNull();
     expect(high.textureSize).toBe('full');
+  });
+
+  it('halves the shadow map side on the low tier', () => {
+    expect(qualitySettings('high').shadowMapSize).toBe(HIGH_TIER_SHADOW_MAP_SIZE);
+    expect(qualitySettings('low').shadowMapSize).toBe(LOW_TIER_SHADOW_MAP_SIZE);
+    // A side, squared into texels: half the side really is a quarter the cost.
+    expect(LOW_TIER_SHADOW_MAP_SIZE * 2).toBe(HIGH_TIER_SHADOW_MAP_SIZE);
   });
 });
 

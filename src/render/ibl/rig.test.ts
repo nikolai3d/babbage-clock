@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { describe, expect, it } from 'vitest';
 import {
+  DEFAULT_SHADOW_MAP_SIZE,
   createFallbackBackground,
   createRigLights,
   disposeRig,
@@ -60,6 +61,63 @@ describe('createRigLights', () => {
     const lamp = lights[3] as THREE.PointLight;
     expect(lamp.distance).toBe(18);
     expect(lamp.decay).toBe(2);
+  });
+
+  it('casts no shadow unless the manifest gives a light a shadow block', () => {
+    const lights = createRigLights(
+      manifestWith([
+        { type: 'directional', name: 'sun', color: '#ffffff', position: [6, 7, 4] },
+        { type: 'point', name: 'lamp', color: '#ffffff', position: [-3, 2, 3] },
+      ]),
+    );
+    for (const light of lights) expect(light.castShadow).toBe(false);
+  });
+
+  it('builds the authored shadow frustum on a casting key light', () => {
+    const [light] = createRigLights(
+      manifestWith([
+        {
+          type: 'directional',
+          name: 'sun',
+          color: '#ffffff',
+          position: [6, 7, 4],
+          shadow: { radius: 9, near: 2, far: 17, bias: -0.0002, normalBias: 0.03 },
+        },
+      ]),
+    );
+    const sun = light as THREE.DirectionalLight;
+
+    expect(sun.castShadow).toBe(true);
+    expect(sun.shadow.bias).toBeCloseTo(-0.0002);
+    expect(sun.shadow.normalBias).toBeCloseTo(0.03);
+
+    const camera = sun.shadow.camera;
+    expect([camera.left, camera.right, camera.top, camera.bottom]).toEqual([-9, 9, 9, -9]);
+    expect(camera.near).toBe(2);
+    expect(camera.far).toBe(17);
+    // The bounds must have reached the projection matrix: the shadow pass
+    // reads the matrix, not the bounds. An ortho camera's [0][0] is 2/(r-l).
+    expect(camera.projectionMatrix.elements[0]).toBeCloseTo(2 / 18);
+  });
+
+  it('sizes the shadow map from the caller, defaulting to the high tier', () => {
+    const spec = {
+      type: 'directional',
+      name: 'sun',
+      color: '#ffffff',
+      position: [6, 7, 4],
+      shadow: { radius: 9 },
+    };
+
+    const [byDefault] = createRigLights(manifestWith([spec]));
+    expect((byDefault as THREE.DirectionalLight).shadow.mapSize.width).toBe(
+      DEFAULT_SHADOW_MAP_SIZE,
+    );
+
+    // The tier's knob: content says whether and where, the device says how big.
+    const [lowTier] = createRigLights(manifestWith([spec]), { shadowMapSize: 1024 });
+    expect((lowTier as THREE.DirectionalLight).shadow.mapSize.width).toBe(1024);
+    expect((lowTier as THREE.DirectionalLight).shadow.mapSize.height).toBe(1024);
   });
 
   it('namespaces every light so a mood can be found in the scene graph', () => {

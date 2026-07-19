@@ -150,6 +150,13 @@ test.describe('context loss', () => {
     await expect(page.locator(SELECTOR.fallbackNote)).toContainText('graphics context was lost');
     await expect(page.locator(SELECTOR.fallbackCountdown)).not.toBeEmpty();
 
+    // Sampled while the loop is still stopped, so the baseline cannot already
+    // include the restore's own draw. This clock is frozen and motionless, so
+    // the mechanism is at a fixed point: the restore gets exactly one frame
+    // and then legitimately holds, and a baseline taken any later would be
+    // comparing that held count against itself.
+    const drawsBeforeRestore = (await readRendererState(page)).draws;
+
     await restoreContext(page);
 
     await expect
@@ -167,7 +174,15 @@ test.describe('context loss', () => {
 
     const after = await readRendererState(page);
     expect(after.running).toBe(true);
-    expect(after.drawCalls, 'nothing reached the GPU after the restore').toBeGreaterThan(0);
+    // `draws`, not `drawCalls`: the latter keeps its last value when a frame
+    // is held, so it reads healthy against a renderer that never drew again.
+    // This covers the restore path as a whole — the `resize` on the way back
+    // is what requests the frame today, so it does not isolate `resume`; the
+    // visibility test in boot.spec.ts does that.
+    expect(
+      after.draws,
+      'the context was restored but no frame was drawn — the canvas is blank',
+    ).toBeGreaterThan(drawsBeforeRestore);
     expect(after.sceneId).toBe(sceneBefore.sceneId);
     expect(await readDigits(page)).toEqual(digitsBefore);
   });

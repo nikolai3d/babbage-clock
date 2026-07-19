@@ -59,7 +59,13 @@ assets/ibl/steampunk-workshop/
 
   "lights": [                       // the analytic rig — see below
     { "type": "directional", "name": "lamp-key", "color": "#ffd7a8",
-      "intensity": 1.25, "position": [3, 4, 6] },
+      "intensity": 1.25, "position": [3, 4, 6],
+      "shadow": {                   // only on a real key light — see "Shadows"
+        "radius": 9,                // half-extent of the ortho frustum, scene units
+        "near": 0.2, "far": 14,     // depth range from the light
+        "bias": -0.0002,            // acne counters; both optional
+        "normalBias": 0.03
+      } },
     { "type": "point", "name": "gaslight", "color": "#ffa64d", "intensity": 26,
       "position": [-3.2, 2.4, 3.4], "distance": 18, "decay": 2 }
   ],
@@ -98,6 +104,27 @@ shipped mood: while a mood is active it owns the lighting, and the scene's own
 `lighting.ambient` / `lighting.directional` are scaled to nothing. Those lights
 are not deleted — they are the scene's `none`-mood fallback, and scaling rather
 than removing them is what lets a mood be reverted in a single frame.
+
+## Shadows
+
+A directional light may carry a `shadow` block, and then it casts a real shadow
+map. Only two shipped moods use one — the `sun` in `sunny-day` and the
+`lamp-key` in `steampunk-workshop` — because only they have a key light hard
+enough for a defined shadow; giving the soft fills one would spend a render
+pass per frame on a smudge. A mood with no casting light costs nothing: the
+renderer's shadow support is on, but with no casters three.js schedules no
+shadow pass and compiles no shadow sampling.
+
+The manifest authors _whether_ and _where_: the frustum (`radius`, `near`,
+`far`) is content, sized so the whole mechanism — open lid and shackle
+included — is covered from that light's position. The shipped `radius: 9` was
+measured off the built copper-padlock scene, the largest shipped scene, not
+eyeballed. What the manifest deliberately cannot say is _how many texels_ that
+costs: resolution comes from the active quality tier (`app/quality.ts` —
+2048 on `high`, 1024 on `low`), threaded through `EnvironmentController` into
+`createRigLights`. A tier change while a mood is on screen rebuilds the rig
+around the new size in the same atomic `commit` everything else uses, and
+disposing the old lights releases the old shadow map with them.
 
 ## Background independent of lighting
 

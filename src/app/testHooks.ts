@@ -233,8 +233,16 @@ export function resolveTimeSource(
 export interface RendererState {
   /** False if the context fell back to WebGL1 — the CI SwiftShader canary. */
   readonly webgl2: boolean;
-  /** Frames drawn since start-up; a still-advancing loop is a live scene. */
+  /** Frame-loop passes since start-up; a still-advancing loop is a live scene. */
   readonly frames: number;
+  /**
+   * Frames actually drawn since start-up.
+   *
+   * Distinct from `frames`, which counts loop passes, and from `drawCalls`,
+   * which keeps its last value when a draw is skipped. Only this one can tell
+   * a deliberately held frame from a renderer that has stopped drawing.
+   */
+  readonly draws: number;
   readonly fps: number;
   /** True while the requestAnimationFrame loop is scheduled. */
   readonly running: boolean;
