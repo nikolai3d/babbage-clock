@@ -9,11 +9,13 @@ import {
   alignToAxis,
   createRingBodyGeometry,
   createRingNumeralsGeometry,
+  createSeparatorGlyphGeometry,
 } from './geometry/ring.js';
 import {
   readingAngleForAxis,
   ringAxisOffset,
   ringPlaneAxes,
+  ringStackSlots,
   ringStackSpan,
 } from '../geometry/ringLayout.js';
 import { boxProjectUv } from './geometry/uv.js';
@@ -331,14 +333,22 @@ export class ClockSceneView {
   }
 
   /**
-   * The rings themselves.
+   * The rings themselves, plus any static separators.
    *
-   * Both geometries are built once and shared by every ring in the stack —
-   * seven meshes, two buffers. Only the group transforms differ, which is what
-   * lets each ring rotate independently without duplicating vertex data.
+   * The digit drum, its numerals and the colon a separator carries are each one
+   * shared buffer across the whole stack — only the group transforms differ,
+   * which is what lets each digit ring rotate independently without duplicating
+   * vertex data. The physical order comes from `ringStackSlots`: separators take
+   * their own positions between the digit rings, so a scene reads `HHH:MM:SS`
+   * with colons at the group boundaries. Crucially, a digit ring keeps its
+   * `digitIndex` however many separators precede it, so `ringGroups[i]` is still
+   * the mechanism's ring `i` — inserting a separator shifts nothing the clock
+   * drives, only where the drum sits.
    */
   private buildRings(config: RingConfig): void {
     const { count, axis, spacing } = config;
+    const slots = ringStackSlots(count, config.separators ?? []);
+    const physical = slots.length;
 
     const body = this.track(createRingBodyGeometry(config));
     const numerals = this.track(createRingNumeralsGeometry(config));
@@ -346,17 +356,32 @@ export class ClockSceneView {
     const bodyMaterial = this.materials.get(config.slot);
     const numeralMaterial = this.materials.get(config.markSlot);
 
-    for (let i = 0; i < count; i += 1) {
+    // Built lazily and shared: no separator, no colon geometry at all. Every
+    // separator carries the same colon, so one buffer serves them all.
+    let separatorGlyph: THREE.BufferGeometry | null = null;
+
+    slots.forEach((slot, slotIndex) => {
       const group = new THREE.Group();
-      group.name = `ring:${i}`;
-      group.position[axis] = ringAxisOffset(i, count, spacing);
-
+      group.position[axis] = ringAxisOffset(slotIndex, physical, spacing);
       group.add(new THREE.Mesh(body, bodyMaterial));
-      group.add(new THREE.Mesh(numerals, numeralMaterial));
 
-      this.root.add(group);
-      this.ringGroups.push(group);
-    }
+      if (slot.kind === 'digit') {
+        group.name = `ring:${slot.digitIndex}`;
+        group.add(new THREE.Mesh(numerals, numeralMaterial));
+        this.root.add(group);
+        // Digit slots arrive in ascending `digitIndex`, so pushing keeps
+        // `ringGroups[i]` aligned with the mechanism's ring `i`; `update` maps
+        // them one-to-one. Separators are never pushed — they are never sampled.
+        this.ringGroups.push(group);
+      } else {
+        group.name = `separator:${slotIndex}`;
+        if (!separatorGlyph) {
+          separatorGlyph = this.track(createSeparatorGlyphGeometry(config, slot.glyph));
+        }
+        group.add(new THREE.Mesh(separatorGlyph, numeralMaterial));
+        this.root.add(group);
+      }
+    });
   }
 
   /** A shaft through the ring stack plus a bearing boss either side of it. */
@@ -400,6 +425,8 @@ export class ClockSceneView {
    */
   private buildDetents(config: RingConfig): void {
     const { count, axis, spacing, radius, thickness } = config;
+    const slots = ringStackSlots(count, config.separators ?? []);
+    const physical = slots.length;
 
     const length = radius * 0.34;
     const geometry = this.track(createDetentLeverGeometry(length, thickness * 0.5));
@@ -426,9 +453,14 @@ export class ClockSceneView {
     mesh.name = 'detents';
     mesh.frustumCulled = false;
 
-    for (let i = 0; i < count; i += 1) {
+    // One lever per digit ring, seated at that ring's physical position — a
+    // separator does not turn, so it gets no detent. Physical positions come
+    // from the same slot layout `buildRings` uses, so lever and drum stay
+    // aligned however many separators sit between them.
+    for (const [slotIndex, slot] of slots.entries()) {
+      if (slot.kind !== 'digit') continue;
       const position = new THREE.Vector3();
-      position[axis] = ringAxisOffset(i, count, spacing);
+      position[axis] = ringAxisOffset(slotIndex, physical, spacing);
       position.addScaledVector(restVector, radius + length * 0.92);
       this.detentBases.push({ position, quaternion: baseQuaternion.clone() });
     }

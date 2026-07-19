@@ -125,6 +125,42 @@ function pt(x: number, y: number): Point2 {
   return { x, y };
 }
 
+/** A filled disc as a single closed contour, wound counter-clockwise. */
+function disc(cx: number, cy: number, radius: number, segments: number): Outline {
+  // `ellipseArc` repeats the start point when it closes the loop; drop it, since
+  // a `Contour` is implicitly closed.
+  const contour = ellipseArc(cx, cy, radius, radius, 0, 2 * Math.PI, segments).slice(0, -1);
+  return { contour, holes: [] };
+}
+
+/** Vertical gap of each colon dot's centre from the em-box midline. */
+const COLON_DOT_OFFSET = 0.2;
+/** Colon dot radius as a fraction of the stroke width, so it reads with the numerals' weight. */
+const COLON_DOT_RADIUS_FRACTION = 0.9;
+
+/**
+ * The colon a static separator ring carries, as two filled dots.
+ *
+ * Authored on the same 1 em box as the digits (see the module header) so it
+ * scales identically when a caller maps the box to metres — the separator wants
+ * a colon the same size as the numerals around it. Two solid dots rather than
+ * stroked rings: a separator never rotates, so only this one reading-line glyph
+ * is ever seen, and a solid dot reads as punctuation where a hollow ring would
+ * read as a tiny `0`.
+ */
+export function colonGlyph(options: GlyphOptions = {}): Outline[] {
+  const strokeWidth = options.strokeWidth ?? DEFAULT_STROKE_WIDTH;
+  const quarterSegments = Math.max(1, options.arcSegments ?? DEFAULT_ARC_SEGMENTS);
+  // A dot is a full turn: four quarters, so a segment count keyed to the same
+  // knob the digits use keeps the colon as round as the bowls beside it.
+  const segments = Math.max(8, quarterSegments * 4);
+  const radius = strokeWidth * COLON_DOT_RADIUS_FRACTION;
+  return [
+    disc(0, COLON_DOT_OFFSET, radius, segments),
+    disc(0, -COLON_DOT_OFFSET, radius, segments),
+  ];
+}
+
 /**
  * Filled outlines for one digit, in em space.
  *

@@ -179,6 +179,14 @@ describe('validateSceneDefinition', () => {
     expect(validateSceneDefinition(scene).join('\n')).toMatch(/duplicate gear id/);
   });
 
+  it('flags a separator placed outside the digit-ring range', () => {
+    const scene = makeScene({
+      rings: { ...copperPadlockScene.rings, separators: [{ afterRing: 9 }] },
+    });
+
+    expect(validateSceneDefinition(scene).join('\n')).toMatch(/separator afterRing must be/);
+  });
+
   it('flags inverted camera limits', () => {
     const scene = makeScene({
       camera: { ...copperPadlockScene.camera, minDistance: 20, maxDistance: 5 },

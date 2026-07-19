@@ -8,6 +8,7 @@
  */
 
 import type { GearSpokeStyle } from '../geometry/gearProfile.js';
+import type { RingSeparator } from '../geometry/ringLayout.js';
 
 /** A 3D vector expressed as a plain tuple so scene data stays serialisable. */
 export type Vec3 = readonly [x: number, y: number, z: number];
@@ -96,6 +97,16 @@ export interface RingConfig {
   readonly slot: MaterialSlot;
   /** Slot used for the per-ring index mark. */
   readonly markSlot: MaterialSlot;
+  /**
+   * Static separators inserted into the physical ring stack — each a
+   * non-rotating drum carrying a colon at a `HHH:MM:SS` group boundary. Omitted,
+   * a scene has none and its stack is exactly `count` rings, unchanged. A
+   * separator is not a digit ring: it reads no time component and does not shift
+   * which physical ring the mechanism drives (see `ringStackSlots`). Uses the
+   * same `slot`/`markSlot` materials as the digit rings, so it matches the
+   * scene's wheel style.
+   */
+  readonly separators?: readonly RingSeparator[];
 }
 
 /** A gear wheel in the decorative train. */

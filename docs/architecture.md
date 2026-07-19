@@ -226,7 +226,12 @@ reads:
 - **Rings** — `createRingBodyGeometry` and `createRingNumeralsGeometry` are
   functions of `RingConfig`. Change `rings.count` or `rings.radius` in a scene
   file and the drums, the numerals and the case that encloses them all follow.
-  Both buffers are built once and shared by every ring in the stack.
+  Both buffers are built once and shared by every ring in the stack. A scene may
+  also list `rings.separators` — static colon drums inserted at the `HHH:MM:SS`
+  group boundaries by `ringStackSlots`. They render like a ring (same buffers and
+  materials) but never rotate and read no time component, and they carry no
+  `digitIndex`, so the seven digit rings still map to hours, minutes and seconds
+  unshifted however many separators sit between them.
 - **Numerals** — a procedural stroke font, extruded and bent onto the drum.
   Digit `d` is engraved at `digitAngle(d)`, which is exactly the angle the
   mechanism rotates to. See `docs/assets.md` for why this rather than a texture

@@ -39,11 +39,22 @@ export const copperPadlockScene: SceneDefinition = {
     count: 7,
     radius: 1.0,
     thickness: 0.42,
-    spacing: 0.5,
+    // Tighter than a single seven-ring stack would need: the two colon drums
+    // add two positions, and 0.43 keeps the nine-position `HHH:MM:SS` stack
+    // barely wider than the old seven-ring one — narrow enough that the whole
+    // readout still fits a portrait phone without cropping (see the framing note
+    // in mobile.spec.ts), while `spacing > thickness` keeps the drums clear.
+    spacing: 0.43,
     axis: 'x',
     radialSegments: 64,
     slot: 'ring',
     markSlot: 'numerals',
+    // The readout is `HHH:MM:SS`; static colon drums mark the two group
+    // boundaries — after the three hours rings and after the two minutes rings.
+    // They render like the digit drums (same `ring`/`numerals` slots) but never
+    // rotate and read no time component, so the seven digit rings still map to
+    // hours, minutes and seconds exactly as before.
+    separators: [{ afterRing: 3 }, { afterRing: 5 }],
   },
 
   gears: [
