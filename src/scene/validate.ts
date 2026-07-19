@@ -64,6 +64,12 @@ export function validateSceneDefinition(scene: SceneDefinition): string[] {
     if (!scene.materials[slot]) errors.push(`${where}: material slot "${slot}" is unbound`);
   }
 
+  if (scene.assets !== undefined) {
+    if (typeof scene.assets.source !== 'string' || scene.assets.source.trim() === '') {
+      errors.push(`${where}: assets.source must be a non-empty string`);
+    }
+  }
+
   const { camera } = scene;
   if (camera.near <= 0) errors.push(`${where}: camera.near must be > 0`);
   if (camera.far <= camera.near) errors.push(`${where}: camera.far must exceed camera.near`);
