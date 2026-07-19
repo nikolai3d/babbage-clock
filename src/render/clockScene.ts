@@ -485,15 +485,17 @@ export class ClockSceneView {
   }
 
   /**
-   * The balance, its escape wheel and the cock that holds them, tucked into the
-   * quadrant of the case the gear train leaves free.
+   * The balance, its escape wheel and the cock that holds them.
    *
-   * Sized and placed from the case, not from scene data: every scene gets one,
-   * and it is the element that keeps the movement alive between ticks.
+   * Every scene gets one — it is the element that keeps the movement alive
+   * between ticks — and it is always *sized* from the case. Placement derives
+   * from the case too unless the scene declares `escapement`, for a case or
+   * layout where the derived quadrant is the wrong place.
    */
   private buildEscapement(): void {
     const { caseAxis, uAxis, vAxis, clearance, movementDepth } = this.caseMetrics;
     const rings = this.definition.rings;
+    const placement = this.definition.escapement;
 
     const balanceRadius = clearance * 0.21;
     const escapeRadius = clearance * 0.105;
@@ -501,13 +503,17 @@ export class ClockSceneView {
 
     const parts = createEscapementParts({ balanceRadius, escapeRadius, thickness });
 
-    // Lower left as seen through the case mouth, where the train has room. Far
-    // enough out that the balance clears the drums and can actually be seen
-    // swinging — a movement nobody can see is not worth the draw calls.
+    // Default: lower left as seen through the case mouth, where the train has
+    // room. Far enough out that the balance clears the drums and can actually
+    // be seen swinging — a movement nobody can see is not worth the draw calls.
     const centre = new THREE.Vector3();
-    centre[uAxis] = -clearance * 0.56;
-    centre[vAxis] = -(rings.radius + balanceRadius * 0.72);
-    centre[caseAxis] = movementDepth;
+    if (placement?.position) {
+      centre.set(...placement.position);
+    } else {
+      centre[uAxis] = -clearance * 0.56;
+      centre[vAxis] = -(rings.radius + balanceRadius * 0.72);
+      centre[caseAxis] = movementDepth;
+    }
 
     const axisVector = unitVector(caseAxis);
     const spinAlignment = new THREE.Quaternion().setFromUnitVectors(
@@ -529,8 +535,12 @@ export class ClockSceneView {
       if (part.name === 'escapement:escape-wheel') {
         // Alongside the balance, meshing with it in spirit if not in geometry.
         const offset = new THREE.Vector3();
-        offset[uAxis] = balanceRadius + escapeRadius * 1.05;
-        offset[vAxis] = balanceRadius * 0.62;
+        if (placement?.escapeWheelOffset) {
+          offset.set(...placement.escapeWheelOffset);
+        } else {
+          offset[uAxis] = balanceRadius + escapeRadius * 1.05;
+          offset[vAxis] = balanceRadius * 0.62;
+        }
         holder.position.add(offset);
       }
 
