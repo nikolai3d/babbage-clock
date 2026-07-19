@@ -381,6 +381,42 @@ export class ClockRenderer {
     return this.view?.displayedDigits ?? [];
   }
 
+  /**
+   * The ring rotations last written to the scene graph, in radians. See
+   * `app/testHooks.ts`.
+   *
+   * Read from what `ClockSceneView.update` cached as applied rather than from
+   * the mechanism directly, so a travel assertion observes the transforms the
+   * viewer sees rather than the ones it was asked for.
+   *
+   * That cache and the group rotations are written side by side in `update`,
+   * not read back from the scene graph, so this is only honest for as long as
+   * they stay written together — which is a test invariant, not a structural
+   * one. `clockScene.test.ts` ("mirrors the group rotations through
+   * appliedRingAngles") is what holds the two to each other.
+   */
+  getRingAngles(): readonly number[] {
+    return this.view?.appliedRingAngles ?? [];
+  }
+
+  /**
+   * The mechanism's most recent event, or null before the first. See
+   * `app/testHooks.ts` — this is how the travel e2e spec proves a target
+   * change planned an animated seek rather than a cut, independent of how
+   * slowly frames render.
+   *
+   * A per-frame reader sees every event *while the mechanism is driven by the
+   * frame loop*: one event at most per rendered frame, each a fresh object, so
+   * the current one cannot be replaced before a reader on the next frame has
+   * seen it. `syncMechanism` also runs off the loop — on a scene swap, a
+   * motion toggle and a context restore — and an event created there can be
+   * overwritten within the same frame. A collector spanning any of those
+   * cannot assume it saw them all.
+   */
+  getLastMechanismEvent(): MechanismEvent | null {
+    return this.view?.mechanism.lastMechanismEvent ?? null;
+  }
+
   /** Renderer diagnostics for the `?testApi` observation surface. */
   getRenderState(): {
     webgl2: boolean;
