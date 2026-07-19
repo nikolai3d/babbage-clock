@@ -116,30 +116,34 @@ test.describe('countdown readout', () => {
 
     // Collect every seek the mechanism plans, from before the apply so none
     // can slip past. Reading `lastMechanismEvent` once per animation frame is
-    // lossless: events are created at most once per rendered frame, so the
+    // lossless: events are created at most once per rendered frame — each a
+    // fresh object, so identity distinguishes consecutive events — and the
     // current one cannot be replaced before this callback has seen it.
     //
     // Seeks are not rare here, and that is why they are collected rather than
     // assumed to be the apply's: when a contended runner takes more than a
     // second between frames, the tick sequence jumps by two or more and the
-    // mechanism resolves the catch-up as a quiet seek of the low rings. The
-    // apply's seek is the one that moves the tens-of-hours ring — a catch-up
-    // cannot reach it inside this test.
+    // mechanism resolves the catch-up as a quiet seek of the low rings. A
+    // catch-up *can* even reach the tens-of-hours ring — `planSeek` re-aims
+    // any ring still moving — but only by re-aiming it mid-travel, after the
+    // apply set it moving; an idle ring whose digit did not change is skipped.
+    // So the FIRST seek to touch that ring is always the apply's, and the
+    // selection below relies on collection order for exactly that reason.
     await page.evaluate(() => {
       const api = window.__clock;
       if (!api) throw new Error('window.__clock is not installed — is ?testApi set?');
       const seeks: MechanismEvent[] = [];
-      let lastAtMs = Number.NEGATIVE_INFINITY;
+      let last: MechanismEvent | null = null;
       const record = (): void => {
         const event = api.lastMechanismEvent();
-        if (event && event.atMs !== lastAtMs) {
-          lastAtMs = event.atMs;
+        if (event && event !== last) {
+          last = event;
           if (event.kind === 'seek') seeks.push(event);
         }
         requestAnimationFrame(record);
       };
       requestAnimationFrame(record);
-      (window as Window & { __travelSeeks?: MechanismEvent[] }).__travelSeeks = seeks;
+      window.__travelSeeks = seeks;
     });
 
     await openSettings(page);
@@ -155,8 +159,8 @@ test.describe('countdown readout', () => {
         () =>
           page.evaluate(
             (ring) =>
-              ((window as Window & { __travelSeeks?: MechanismEvent[] }).__travelSeeks ?? []).some(
-                (seek) => seek.motions.some((motion) => motion.ring === ring),
+              (window.__travelSeeks ?? []).some((seek) =>
+                seek.motions.some((motion) => motion.ring === ring),
               ),
             TRAVEL_RING,
           ),
@@ -169,8 +173,8 @@ test.describe('countdown readout', () => {
 
     const seek = (await page.evaluate(
       (ring) =>
-        ((window as Window & { __travelSeeks?: MechanismEvent[] }).__travelSeeks ?? []).find(
-          (candidate) => candidate.motions.some((motion) => motion.ring === ring),
+        (window.__travelSeeks ?? []).find((candidate) =>
+          candidate.motions.some((motion) => motion.ring === ring),
         ),
       TRAVEL_RING,
     )) as MechanismEvent;
@@ -187,6 +191,14 @@ test.describe('countdown readout', () => {
 
     // And the rendered rings actually arrive: the angle written to the scene
     // graph comes to rest exactly on the new digit and stays there.
+    //
+    // Exact equality, not toBeCloseTo. The mechanism re-normalises every idle
+    // ring to exactly `ringAngleForDigit(digit)` (its `settle()`), and that
+    // function is pure IEEE arithmetic, so Node and the page compute the
+    // identical double. A tolerance would quietly re-open a flake: the settle
+    // wobble passes within a few µrad of the canonical angle while still
+    // moving, so a tolerant poll could latch a transient mid-flight sample
+    // that the stay-at-rest check below would then flag as movement.
     await expect
       .poll(async () => (await readDigits(page))[TRAVEL_RING], {
         message: 'the tens-of-hours ring never took the new reading',
@@ -198,11 +210,10 @@ test.describe('countdown readout', () => {
         message: 'the rings never came to rest on the new reading',
         timeout: 20_000,
       })
-      .toBeCloseTo(ringAngleForDigit(2), 5);
-    const settledAngle = (await readRingAngles(page))[TRAVEL_RING]!;
+      .toBe(ringAngleForDigit(2));
     await waitForFrames(page, 3);
     expect((await readRingAngles(page))[TRAVEL_RING], 'the ring did not stay at rest').toBe(
-      settledAngle,
+      ringAngleForDigit(2),
     );
   });
 
@@ -248,3 +259,14 @@ test.describe('countdown readout', () => {
     expect(countdown?.totalMs).toBe(Date.parse(PINNED_TARGET) - PINNED_NOW);
   });
 });
+
+declare global {
+  interface Window {
+    /**
+     * Every seek the mechanism has planned since the travel spec installed its
+     * in-page collector, oldest first. Spec-owned, like `__loseContext` in
+     * `fallback.spec.ts`.
+     */
+    __travelSeeks?: MechanismEvent[];
+  }
+}
