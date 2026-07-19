@@ -5,9 +5,13 @@ import {
   SELECTOR,
   TICKING_TARGET,
   gotoApp,
+  openSettings,
   readDigits,
+  readRingAngles,
   waitForFrames,
 } from './support/app.js';
+import { ringAngleForDigit } from '../src/geometry/ringLayout.js';
+import type { MechanismEvent } from '../src/mechanism/index.js';
 
 /**
  * The countdown readout.
@@ -77,30 +81,129 @@ test.describe('countdown readout', () => {
   });
 
   test('applying a new target travels rather than teleporting', async ({ page }) => {
-    // The rings should spin to a new value, not cut to it. The clock is frozen,
-    // so any difference between these frames is the rings moving, not time
-    // passing — which is also why this cannot be asserted from the digits: the
-    // logical reading updates the instant the target is applied, and the travel
-    // is entirely in the angles.
-    await gotoApp(page, {
-      mockNow: PINNED_NOW,
-      mockNowMode: 'frozen',
-      target: TICKING_TARGET,
+    // The rings should spin to a new value, not cut to it — and the travel is
+    // entirely in the ring *angles*: the logical digits update the instant the
+    // target is applied.
+    //
+    // This used to compare three full-page screenshots around the spin, which
+    // was wrong twice over. Every moving part is a function of the mocked
+    // clock, so the frozen clock this test pinned froze the seek animation at
+    // t = 0 — the drums never moved at all, and the comparison passed on
+    // incidental DOM differences. And under SwiftShader a screenshot costs
+    // whole seconds, so after a slow boot the trio regularly blew the 45 s
+    // test budget. Hence: an advancing clock, so the travel genuinely plays,
+    // and mechanism state instead of pixels.
+    //
+    // "It travelled" is asserted from the mechanism's event, not from angles
+    // sampled per frame: a contended SwiftShader runner can render two frames
+    // more than a second apart, bracketing the whole spin — the viewer's
+    // frames genuinely skip from the old reading to the new one, and no
+    // sampling scheme can observe what was never drawn. The event is
+    // unmissable at any frame rate (each one is created on a rendered frame
+    // and stays current until the next), and it is the decision itself: a
+    // teleport is exactly a seek with no duration, or no seek at all.
+    await gotoApp(page, { mockNow: PINNED_NOW, mockNowMode: 'advance', target: TICKING_TARGET });
+
+    // The tens-of-hours ring: `010:30:00 -> 021:15:00` turns it 1 -> 2.
+    // Chosen because natural ticking cannot touch it inside this test — the
+    // hours reading holds 021 for the rest of the hour — so every angle change
+    // on this ring belongs to the travel.
+    const TRAVEL_RING = 1;
+    expect(
+      (await readRingAngles(page))[TRAVEL_RING],
+      'expected the tens-of-hours ring at rest on 1 before the apply',
+    ).toBeCloseTo(ringAngleForDigit(1), 5);
+
+    // Collect every seek the mechanism plans, from before the apply so none
+    // can slip past. Reading `lastMechanismEvent` once per animation frame is
+    // lossless: events are created at most once per rendered frame, so the
+    // current one cannot be replaced before this callback has seen it.
+    //
+    // Seeks are not rare here, and that is why they are collected rather than
+    // assumed to be the apply's: when a contended runner takes more than a
+    // second between frames, the tick sequence jumps by two or more and the
+    // mechanism resolves the catch-up as a quiet seek of the low rings. The
+    // apply's seek is the one that moves the tens-of-hours ring — a catch-up
+    // cannot reach it inside this test.
+    await page.evaluate(() => {
+      const api = window.__clock;
+      if (!api) throw new Error('window.__clock is not installed — is ?testApi set?');
+      const seeks: MechanismEvent[] = [];
+      let lastAtMs = Number.NEGATIVE_INFINITY;
+      const record = (): void => {
+        const event = api.lastMechanismEvent();
+        if (event && event.atMs !== lastAtMs) {
+          lastAtMs = event.atMs;
+          if (event.kind === 'seek') seeks.push(event);
+        }
+        requestAnimationFrame(record);
+      };
+      requestAnimationFrame(record);
+      (window as Window & { __travelSeeks?: MechanismEvent[] }).__travelSeeks = seeks;
     });
 
-    await page.locator('#settings-toggle').click();
+    await openSettings(page);
     // Playwright's fill() rejects seconds on a datetime-local input.
-    await page.locator('#target-input').fill('2026-06-16T09:15');
-    await page.locator('#target-apply').click();
+    await page.locator(SELECTOR.targetInput).fill('2026-06-16T09:15');
+    await page.locator(SELECTOR.targetApply).click();
 
-    const during = await page.screenshot();
-    await page.waitForTimeout(2000);
-    const settled = await page.screenshot();
-    await page.waitForTimeout(400);
-    const stillSettled = await page.screenshot();
+    // The apply must resolve through a seek that turns the travel ring — a
+    // target change routed through a mechanism reset would adopt the new
+    // reading instantly and emit nothing.
+    await expect
+      .poll(
+        () =>
+          page.evaluate(
+            (ring) =>
+              ((window as Window & { __travelSeeks?: MechanismEvent[] }).__travelSeeks ?? []).some(
+                (seek) => seek.motions.some((motion) => motion.ring === ring),
+              ),
+            TRAVEL_RING,
+          ),
+        {
+          message: 'applying the target never made the mechanism seek the hours rings',
+          timeout: 15_000,
+        },
+      )
+      .toBe(true);
 
-    expect(during.equals(settled), 'the rings cut straight to the new value').toBe(false);
-    expect(settled.equals(stillSettled), 'the rings never came to rest').toBe(true);
+    const seek = (await page.evaluate(
+      (ring) =>
+        ((window as Window & { __travelSeeks?: MechanismEvent[] }).__travelSeeks ?? []).find(
+          (candidate) => candidate.motions.some((motion) => motion.ring === ring),
+        ),
+      TRAVEL_RING,
+    )) as MechanismEvent;
+
+    // The travel itself: the correction turns the ring over a real duration.
+    // A teleport is exactly this duration being zero.
+    expect(seek.durationMs, 'the rings cut straight to the new value').toBeGreaterThan(0);
+    const travelMotion = seek.motions.find((motion) => motion.ring === TRAVEL_RING);
+    expect(travelMotion?.toDigit, 'the seek did not aim the tens-of-hours ring at 2').toBe(2);
+    expect(
+      Math.abs(travelMotion?.deltaAngle ?? 0),
+      'the seek planned no rotation for the tens-of-hours ring',
+    ).toBeGreaterThan(0);
+
+    // And the rendered rings actually arrive: the angle written to the scene
+    // graph comes to rest exactly on the new digit and stays there.
+    await expect
+      .poll(async () => (await readDigits(page))[TRAVEL_RING], {
+        message: 'the tens-of-hours ring never took the new reading',
+        timeout: 15_000,
+      })
+      .toBe(2);
+    await expect
+      .poll(async () => (await readRingAngles(page))[TRAVEL_RING], {
+        message: 'the rings never came to rest on the new reading',
+        timeout: 20_000,
+      })
+      .toBeCloseTo(ringAngleForDigit(2), 5);
+    const settledAngle = (await readRingAngles(page))[TRAVEL_RING]!;
+    await waitForFrames(page, 3);
+    expect((await readRingAngles(page))[TRAVEL_RING], 'the ring did not stay at rest').toBe(
+      settledAngle,
+    );
   });
 
   test('a frozen clock holds the readout still', async ({ page }) => {

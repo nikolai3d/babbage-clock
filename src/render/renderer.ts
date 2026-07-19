@@ -381,6 +381,29 @@ export class ClockRenderer {
     return this.view?.displayedDigits ?? [];
   }
 
+  /**
+   * The ring rotations last written to the scene graph, in radians. See
+   * `app/testHooks.ts`.
+   *
+   * Read from what `ClockSceneView.update` actually applied rather than from
+   * the mechanism directly, so a travel assertion observes the transforms the
+   * viewer sees — a renderer that stopped applying samples would be caught,
+   * not papered over.
+   */
+  getRingAngles(): readonly number[] {
+    return this.view?.appliedRingAngles ?? [];
+  }
+
+  /**
+   * The mechanism's most recent event, or null before the first. See
+   * `app/testHooks.ts` — this is how the travel e2e spec proves a target
+   * change planned an animated seek rather than a cut, independent of how
+   * slowly frames render.
+   */
+  getLastMechanismEvent(): MechanismEvent | null {
+    return this.view?.mechanism.lastMechanismEvent ?? null;
+  }
+
   /** Renderer diagnostics for the `?testApi` observation surface. */
   getRenderState(): {
     webgl2: boolean;

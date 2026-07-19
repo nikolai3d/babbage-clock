@@ -188,6 +188,8 @@ describe('installTestApi', () => {
     store: StoreProbe;
     renderer: {
       getDigits: () => number[];
+      getRingAngles: () => number[];
+      getLastMechanismEvent: () => null;
       getRenderState: () => RendererState;
       getMaterialState: () => MaterialState;
     };
@@ -222,6 +224,8 @@ describe('installTestApi', () => {
       },
       renderer: {
         getDigits: () => [1, 2, 3],
+        getRingAngles: () => [0.1, 0.2, 0.3],
+        getLastMechanismEvent: () => null,
         getRenderState: () => rendererState,
         getMaterialState: () => materialState,
       },
@@ -250,6 +254,8 @@ describe('installTestApi', () => {
     expect(api).toBeDefined();
     expect(api?.version).toBe(1);
     expect(api?.digits()).toEqual([1, 2, 3]);
+    expect(api?.ringAngles()).toEqual([0.1, 0.2, 0.3]);
+    expect(api?.lastMechanismEvent()).toBeNull();
     expect(api?.sceneId()).toBe('copper-padlock');
     expect(api?.renderer().webgl2).toBe(true);
     expect(api?.renderer().drawCalls).toBe(17);
