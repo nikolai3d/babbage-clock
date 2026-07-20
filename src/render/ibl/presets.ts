@@ -39,6 +39,21 @@ function folderOf(path: string): string {
   return path.split('/').slice(-2, -1)[0] ?? '';
 }
 
+/**
+ * Folders whose name starts with this prefix are CI decode-path fixtures (e.g.
+ * `test-uastc-hdr`), committed so the browser decode path can be exercised end
+ * to end, but deliberately kept out of the picker and `?mood=`. Discovery lives
+ * in this module, so the convention that marks a fixture does too — a picker or
+ * whitelist sourced from `iblPresets` should filter on {@link isFixturePreset}
+ * rather than re-deriving the prefix (which is what pinned it to the test file).
+ */
+const FIXTURE_PREFIX = 'test-';
+
+/** Whether a preset id names a CI fixture rather than a shipped mood. */
+export function isFixturePreset(id: string): boolean {
+  return id.startsWith(FIXTURE_PREFIX);
+}
+
 export interface IblPresetEntry {
   readonly id: string;
   /** Parses `preset.json`. Rejects with `IblManifestError` if it is malformed. */

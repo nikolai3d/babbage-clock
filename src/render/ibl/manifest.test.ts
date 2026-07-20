@@ -2,6 +2,7 @@ import { readFileSync, readdirSync, statSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { IblManifestError, parseHexColor, parseIblManifest } from './manifest.js';
 import { ENVIRONMENT_PRESETS } from '../../scene/environment.js';
+import { isFixturePreset } from './presets.js';
 
 /**
  * Resolved from this module rather than from the working directory, so the
@@ -176,9 +177,10 @@ describe('parseIblManifest', () => {
  * Folders prefixed `test-` are CI fixtures, not moods: committed so a decode
  * path (today: KTX2/UASTC-HDR) can be exercised end to end in a browser, and
  * deliberately kept out of the picker and of `?mood=`. They get their own
- * describe below with fixture-sized expectations.
+ * describe below with fixture-sized expectations. The `test-` prefix convention
+ * lives with discovery in `presets.ts` (`isFixturePreset`); this suite consumes
+ * it rather than re-deriving it.
  */
-const FIXTURE_PREFIX = 'test-';
 
 // One folder per mood or fixture, plus `LICENSES.md`, which is neither.
 const allFolders = readdirSync(IBL_ROOT).filter((entry) =>
@@ -196,7 +198,7 @@ function manifestFor(folder: string): ReturnType<typeof parseIblManifest> {
  * matches its folder. These run against the real files in `assets/ibl/`.
  */
 describe('the shipped IBL presets', () => {
-  const folders = allFolders.filter((folder) => !folder.startsWith(FIXTURE_PREFIX));
+  const folders = allFolders.filter((folder) => !isFixturePreset(folder));
 
   it('covers every mood the picker offers except "none"', () => {
     const offered = ENVIRONMENT_PRESETS.map((preset) => preset.id).filter((id) => id !== 'none');
@@ -257,7 +259,7 @@ describe('the shipped IBL presets', () => {
 });
 
 describe('the IBL CI fixtures', () => {
-  const fixtures = allFolders.filter((folder) => folder.startsWith(FIXTURE_PREFIX));
+  const fixtures = allFolders.filter((folder) => isFixturePreset(folder));
 
   it('include the UASTC-HDR fixture the compressed-path e2e depends on', () => {
     // `e2e/ibl.spec.ts` boots the app with `?moodOverride=test-uastc-hdr`; if
@@ -270,7 +272,7 @@ describe('the IBL CI fixtures', () => {
     // A fixture is committed to be asserted on, not looked at: the picker (and
     // with it `?mood=` and share links) must not know these folders exist.
     for (const preset of ENVIRONMENT_PRESETS) {
-      expect(preset.id.startsWith(FIXTURE_PREFIX)).toBe(false);
+      expect(isFixturePreset(preset.id)).toBe(false);
     }
   });
 
