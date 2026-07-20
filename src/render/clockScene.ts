@@ -97,6 +97,17 @@ const ESCAPEMENT_ROLES: Record<
   'escapement:cock': 'balance-cock',
 };
 
+/**
+ * Material slots that actually name a gear wheel.
+ *
+ * `GearSpec.slot` is a `MaterialSlot`, and nothing stops a decorative gear
+ * from sitting in any of them — 'bezel' or 'arbor', say. Only a slot in here
+ * may be reinterpreted as the identically-spelled `PartRole` for an authored
+ * lookup; anything else would raid whatever unrelated part happens to share
+ * the name.
+ */
+const GEAR_ROLES = new Set<MaterialSlot>(['gearA', 'gearB', 'gearC', 'gearD']);
+
 /** The case's own frame: which way it faces and how big it had to be. */
 interface CaseMetrics {
   /** Axis the case mouth faces along. */
@@ -731,14 +742,19 @@ export class ClockSceneView {
     const spinner = new THREE.Group();
     group.add(spinner);
 
-    const wheel = this.rolePart(spec.slot as PartRole, () =>
+    const buildWheel = (): THREE.BufferGeometry =>
       createGearGeometry({
         teeth: spec.teeth,
         radius: spec.radius,
         thickness: spec.thickness,
         spokeStyle: spec.spokeStyle ?? defaultSpokeStyleFor(index, spec.teeth),
-      }),
-    );
+      });
+    // Only a real gear slot may borrow an authored wheel (see `GEAR_ROLES`); a
+    // decorative gear parked in another slot always builds from the generator,
+    // with no authored lookup and nothing registered for the swap.
+    const wheel = GEAR_ROLES.has(spec.slot)
+      ? this.rolePart(spec.slot as PartRole, buildWheel)
+      : { geometry: this.track(buildWheel()), claim: noop };
     const wheelMesh = new THREE.Mesh(wheel.geometry, this.materials.get(spec.slot));
     wheel.claim(wheelMesh);
     spinner.add(wheelMesh);

@@ -334,6 +334,18 @@ export class ClockRenderer {
     await this.view?.materialsReady();
   }
 
+  /**
+   * Resolves once the active scene's authored geometry (if any) has been
+   * swapped in.
+   *
+   * Wiring this into the boot screen alongside `materialsReady` is deferred to
+   * the integrate bead — no shipped scene carries an `AssetSpec` yet, so
+   * nothing outside tests calls this today.
+   */
+  async assetsReady(): Promise<void> {
+    await this.view?.assetsReady();
+  }
+
   private applyLook(definition: SceneDefinition): void {
     const look = resolveLook(this.materialLook);
     const bindings: MaterialSlotMap = look ? lookToSlotMap(look) : definition.materials;
@@ -366,6 +378,7 @@ export class ClockRenderer {
     this.view?.dispose();
     this.view = new ClockSceneView(this.scene, definition, {
       motion: enabled,
+      materials: this.materials,
       assets: this.assets,
       textureSize: this.quality.textureSize,
     });
