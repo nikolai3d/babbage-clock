@@ -51,6 +51,22 @@ export function parseEnvironmentPreset(
   return PRESET_IDS.has(trimmed) ? (trimmed as EnvironmentPresetId) : null;
 }
 
+/**
+ * Treats an arbitrary loadable preset-folder id as an `EnvironmentPresetId`.
+ *
+ * `EnvironmentPresetId` is the *picker catalogue* — the curated moods the UI and
+ * `?mood=` offer. The runtime, though, can load any folder under `assets/ibl/`:
+ * the `?moodOverride=` test hook deliberately reaches CI fixtures (`test-*`) the
+ * picker rejects, and unit fixtures name ids like `warm`. Those are loadable but
+ * uncatalogued, so this is the one named, documented seam that bridges the two —
+ * `render/lighting.ts` keys `EnvironmentSource` on a plain string, so nothing
+ * downstream is misled. Far better than an `as EnvironmentPresetId` re-derived at
+ * each call site. See babbage-clock-b8t.
+ */
+export function unlistedPreset(folder: string): EnvironmentPresetId {
+  return folder as EnvironmentPresetId;
+}
+
 /** The preset a scene renders with when the viewer has not overridden it. */
 export function sceneEnvironmentPreset(definition: SceneDefinition): EnvironmentPresetId {
   return definition.lighting.environment?.preset ?? 'none';
