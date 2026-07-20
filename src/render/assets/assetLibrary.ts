@@ -51,6 +51,15 @@ export class AssetLibrary {
           }
         },
       );
+      // Warm cache: `acquire` above still has to be called (it is what the
+      // refcount is keyed on), but if the source was already decoded by an
+      // earlier `AssetLibrary` its model is sitting in the registry right now.
+      // Grabbing it synchronously means `part()` can hand out authored geometry
+      // from the very first call — e.g. switching back to a previously loaded
+      // scene never renders a procedural frame while the (already-settled)
+      // promise above works its way through a microtask.
+      const cached = this.registry.peek(source);
+      if (cached) this.parts = cached.parts;
     }
   }
 
@@ -79,7 +88,10 @@ export class AssetLibrary {
    * The authored geometry for a role, or null to use the generator.
    *
    * Null covers every fall-back case with one return value: no model declared,
-   * model still loading, model failed, or a role the model does not carry.
+   * model still loading, model failed, or a role the model does not carry. On a
+   * warm cache this can already be non-null right after construction — see the
+   * `registry.peek` call above — so a caller must not assume it needs to await
+   * {@link ready} first.
    */
   part(role: PartRole): THREE.BufferGeometry | null {
     return this.parts?.get(role) ?? null;
@@ -96,6 +108,9 @@ export class AssetLibrary {
   }
 
   dispose(): void {
+    // Idempotent: a second call must not decrement the registry's refcount a
+    // second time for a reference this library only ever acquired once.
+    if (this.disposed) return;
     this.disposed = true;
     if (this.source !== null) this.registry.release(this.source);
     this.parts = null;
