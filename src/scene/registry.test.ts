@@ -195,4 +195,25 @@ describe('validateSceneDefinition', () => {
 
     expect(validateSceneDefinition(scene).length).toBeGreaterThan(1);
   });
+
+  it('flags an empty assets.source', () => {
+    const scene = makeScene({ assets: { source: '' } });
+
+    expect(validateSceneDefinition(scene).join('\n')).toMatch(/assets\.source/);
+  });
+
+  it('accepts a populated assets.source', () => {
+    const scene = makeScene({ assets: { source: 'assets/models/x.glb' } });
+
+    expect(validateSceneDefinition(scene).some((error) => error.includes('assets'))).toBe(false);
+  });
+
+  it('is unaffected by a scene with no assets spec', () => {
+    // The shipped preset carries no `assets` field; confirms that omitting it
+    // entirely — as opposed to supplying an empty source — is not an error.
+    expect(copperPadlockScene.assets).toBeUndefined();
+    expect(
+      validateSceneDefinition(copperPadlockScene).some((error) => error.includes('assets')),
+    ).toBe(false);
+  });
 });

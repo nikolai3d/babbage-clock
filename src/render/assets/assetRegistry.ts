@@ -35,7 +35,13 @@ export interface AssetRegistryOptions {
   readonly baseUrl?: string;
   /** Injected for tests; defaults to a real `GLTFLoader`-backed loader. */
   readonly loadModel?: ModelLoader;
-  /** Called with byte progress per source, for wiring into `LoadingTracker`. */
+  /**
+   * Called with byte progress per source, for wiring into `LoadingTracker`.
+   *
+   * Recorded but not yet acted on — same as the counts {@link AssetRegistry.stats}
+   * reports: nothing in the app reads either yet. A `LoadingTracker` binding and
+   * a `getAssetState` test hook land in the integrate bead.
+   */
   readonly onProgress?: (source: string, loaded: number, total: number) => void;
 }
 
@@ -105,6 +111,16 @@ export class AssetRegistry {
     );
     this.models.set(source, entry);
     return entry.promise;
+  }
+
+  /**
+   * The already-resolved model for a source, or null if it is not cached — not
+   * yet requested, still decoding, or never acquired. A non-null answer means a
+   * caller can hand out authored geometry this instant, with no promise
+   * microtask between asking and having it in hand.
+   */
+  peek(source: string): LoadedModel | null {
+    return this.models.get(source)?.model ?? null;
   }
 
   /** Gives back one reference; the model is disposed when the last one goes. */
