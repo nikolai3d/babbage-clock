@@ -133,7 +133,11 @@ test('swapping looks back and forth leaks no textures', async ({ page }) => {
 });
 
 test('scene switching reuses the material cache and releases the old scene', async ({ page }) => {
-  await gotoApp(page, deterministicOptions());
+  // Pinned to copper-padlock rather than the default scene: this test is about
+  // the textured↔placeholder material-cache round-trip, and copper is the
+  // textured fixture (the default is now babbage-engine, which carries an extra
+  // `casing` slot and would not match copper below).
+  await gotoApp(page, deterministicOptions({ scene: 'copper-padlock' }));
   await settleMaterials(page);
 
   const copper = await readMaterials(page);

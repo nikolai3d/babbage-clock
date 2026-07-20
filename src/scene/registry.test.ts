@@ -2,7 +2,12 @@ import { describe, expect, it } from 'vitest';
 import { SceneRegistry } from './registry.js';
 import { validateSceneDefinition } from './validate.js';
 import { MATERIAL_SLOTS } from './types.js';
-import { COPPER_PADLOCK_SCENE_ID, SLATE_ORRERY_SCENE_ID, sceneRegistry } from './scenes/index.js';
+import {
+  BABBAGE_ENGINE_SCENE_ID,
+  COPPER_PADLOCK_SCENE_ID,
+  SLATE_ORRERY_SCENE_ID,
+  sceneRegistry,
+} from './scenes/index.js';
 import { copperPadlockScene } from './scenes/copperPadlock.js';
 import type { SceneDefinition } from './types.js';
 
@@ -109,8 +114,8 @@ describe('shipped scenes', () => {
 });
 
 describe('SceneRegistry', () => {
-  it('defaults to the copper padlock preset', () => {
-    expect(sceneRegistry.defaultSceneId).toBe(COPPER_PADLOCK_SCENE_ID);
+  it('defaults to the babbage-engine preset', () => {
+    expect(sceneRegistry.defaultSceneId).toBe(BABBAGE_ENGINE_SCENE_ID);
   });
 
   it('resolves a known ?scene= value', () => {
@@ -119,9 +124,9 @@ describe('SceneRegistry', () => {
 
   it('falls back to the default for unknown, empty or missing ids', () => {
     for (const input of ['nope', '', null, undefined]) {
-      expect(sceneRegistry.resolveId(input)).toBe(COPPER_PADLOCK_SCENE_ID);
+      expect(sceneRegistry.resolveId(input)).toBe(BABBAGE_ENGINE_SCENE_ID);
     }
-    expect(sceneRegistry.resolve('nope').id).toBe(COPPER_PADLOCK_SCENE_ID);
+    expect(sceneRegistry.resolve('nope').id).toBe(BABBAGE_ENGINE_SCENE_ID);
   });
 
   it('uses the first scene when no default is named', () => {
