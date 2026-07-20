@@ -1,10 +1,16 @@
 import { SceneRegistry } from '../registry.js';
+import { BABBAGE_ENGINE_SCENE_ID, babbageEngineScene } from './babbageEngine.js';
 import { COPPER_PADLOCK_SCENE_ID, copperPadlockScene } from './copperPadlock.js';
 import { COPPER_PADLOCK_CLOCK_SCENE_ID, copperPadlockClockScene } from './copperPadlockClock.js';
 import { SLATE_ORRERY_SCENE_ID, slateOrreryScene } from './slateOrrery.js';
 import type { SceneDefinition } from '../types.js';
 
-export { COPPER_PADLOCK_SCENE_ID, COPPER_PADLOCK_CLOCK_SCENE_ID, SLATE_ORRERY_SCENE_ID };
+export {
+  COPPER_PADLOCK_SCENE_ID,
+  COPPER_PADLOCK_CLOCK_SCENE_ID,
+  SLATE_ORRERY_SCENE_ID,
+  BABBAGE_ENGINE_SCENE_ID,
+};
 
 /**
  * The single place a new scene gets hooked up. Add the definition to this array
@@ -14,6 +20,7 @@ export const allScenes: readonly SceneDefinition[] = [
   copperPadlockScene,
   copperPadlockClockScene,
   slateOrreryScene,
+  babbageEngineScene,
 ];
 
 /** Application-wide registry. Construction validates every scene eagerly. */

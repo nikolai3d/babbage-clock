@@ -38,6 +38,9 @@ export const PART_ROLES = [
   'gear-pin',
   'detent-lever',
   'table',
+  // The authored ornate rectangular enclosure (a scene with `housingStyle: 'none'`
+  // supplies this instead of the procedural padlock case).
+  'casing',
 ] as const;
 
 export type FixedPartRole = (typeof PART_ROLES)[number];
@@ -69,6 +72,7 @@ const FIXED_ROLE_SLOT: Record<FixedPartRole, MaterialSlot> = {
   'gear-pin': 'arbor',
   'detent-lever': 'arbor',
   table: 'housing',
+  casing: 'casing',
 };
 
 function isFixedPartRole(name: string): name is FixedPartRole {

@@ -75,6 +75,8 @@ export const slateOrreryScene: SceneDefinition = {
     gearD: placeholder(0xaab6c2, 0.8, 0.26),
     arbor: placeholder(0x2f3740, 0.9, 0.2),
     frame: placeholder(0x39424c, 0.5, 0.55),
+    // Unused here (no authored casing geometry); bound because every slot must be.
+    casing: placeholder(0x39424c, 0.5, 0.55),
   },
 
   lighting: {
