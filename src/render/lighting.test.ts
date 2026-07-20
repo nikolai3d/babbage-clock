@@ -5,7 +5,8 @@ import { EnvironmentDisposedError } from './ibl/library.js';
 import { parseIblManifest } from './ibl/manifest.js';
 import { copperPadlockScene } from '../scene/scenes/copperPadlock.js';
 import type { EnvironmentSource, LoadedEnvironment } from './ibl/library.js';
-import type { EnvironmentPresetId, SceneDefinition } from '../scene/types.js';
+import { unlistedPreset } from '../scene/environment.js';
+import type { SceneDefinition } from '../scene/types.js';
 
 /**
  * The two properties these tests exist to protect:
@@ -131,7 +132,7 @@ function fakeEnvironments(): FakeEnvironment {
  * care which ids exist, only what a manifest says.
  */
 function sceneWith(mood: string, showAsBackground?: boolean): SceneDefinition {
-  const preset = mood as EnvironmentPresetId;
+  const preset = unlistedPreset(mood);
   return {
     ...copperPadlockScene,
     lighting: {
