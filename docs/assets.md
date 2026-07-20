@@ -32,7 +32,8 @@ properties procedural geometry gives us:
 procedural ones piece by piece, because every piece is already keyed by material
 slot (see the contract below). The bead that adds a loader should keep the
 generators as the default so a missing or slow asset degrades to something that
-still renders.
+still renders. The pivots, axes, naming and export settings an authored part must
+follow are the contract in **[authored-geometry.md](authored-geometry.md)**.
 
 The "authored asset round-trip proof" originally scoped with this work was
 explicitly deferred by the owner and is not implemented here.
