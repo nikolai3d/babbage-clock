@@ -36,6 +36,29 @@ echo "==> Playwright image: ${IMAGE}"
 HOST_UID="$(id -u)"
 HOST_GID="$(id -g)"
 
+# Serialise concurrent runs on the shared node_modules volume.
+#
+# Two containers mounting "${MODULES_VOLUME}" both run `npm ci`, and the second
+# wipes it underneath the first — which then dies with 'Cannot find module
+# .../workerProcessEntry.js'. A host-side lock keeps the cache shared (and warm,
+# unlike a per-run volume) while making the second run wait its turn rather than
+# corrupt the first. `mkdir` is the atomic primitive here because `flock` is not
+# available on macOS hosts; the holder records its PID so a lock orphaned by a
+# crashed run is reclaimed rather than deadlocking every future run.
+LOCK_DIR="${TMPDIR:-/tmp}/${MODULES_VOLUME}.lock"
+until mkdir "${LOCK_DIR}" 2>/dev/null; do
+  lock_pid="$(cat "${LOCK_DIR}/pid" 2>/dev/null || true)"
+  if [ -n "${lock_pid}" ] && ! kill -0 "${lock_pid}" 2>/dev/null; then
+    echo "==> reclaiming an e2e volume lock left by a dead run (pid ${lock_pid})" >&2
+    rm -rf "${LOCK_DIR}"
+    continue
+  fi
+  echo "==> another e2e run holds ${MODULES_VOLUME}; waiting for it to finish…"
+  sleep 3
+done
+trap 'rm -rf "${LOCK_DIR}"' EXIT
+echo "$$" >"${LOCK_DIR}/pid"
+
 docker run --rm --init --ipc=host \
   -v "${ROOT}:/work" \
   -v "${MODULES_VOLUME}:/work/node_modules" \
