@@ -73,6 +73,13 @@ three +X equals Blender +X, so the drum's revolution axis is Blender X. A scene 
 a different ring axis would author the drum about the matching Blender axis; the
 `babbage-engine` scene fixes `axis: 'x'` to match the delivered model.
 
+The `detent-lever` is the one part whose lever-local frame is stated in three-space,
+so mind the conversion: `createDetentLeverGeometry` builds it hanging along three
+**−Y** with its pivot axle along three X. Three −Y is Blender **−Z** (three +Y =
+Blender +Z), so author the lever **hanging along Blender −Z**, pivot at the origin,
+thin along Blender X — not along Blender −Y. The engine then rotates that frame onto
+the ring axis and rocks it about the pivot.
+
 ## 3. Naming → role and material slot
 
 **An object's name is its role key.** The loader indexes every mesh in the `.glb` by
@@ -138,7 +145,7 @@ def digit_transform(d):
     ct, st = math.cos(theta), math.sin(theta)
     loc    = Vector((along_x, -R * st,  R * ct))   # radial position, three→Blender
     x_axis = Vector(( 1.0, 0.0, 0.0))              # glyph width  → ring axis
-    y_axis = Vector(( 0.0, -ct, -st))              # glyph height → tangent (digits scroll past)
+    y_axis = Vector(( 0.0, ct,  st))               # glyph height → tangent (digits scroll past)
     z_axis = Vector(( 0.0, -st,  ct))              # glyph relief → radial, points outward
     rot = Matrix((x_axis, y_axis, z_axis)).transposed().to_4x4()
     return Matrix.Translation(loc) @ rot
@@ -146,9 +153,19 @@ def digit_transform(d):
 
 `Matrix((x,y,z)).transposed()` puts the three axes in the columns, so the rotation
 maps glyph-local X/Y/Z onto `x_axis`/`y_axis`/`z_axis`. Relief stands proud of `R`
-along the outward radial. The verification for the numerals task is to import the
-drum and numerals together and confirm rotating the pair by `−d·36°` about X reads
-digit `d` (spot-check `d = 0, 3, 7`).
+along the outward radial. The signs are dictated by the engine's bend in
+`engraveGlyphOntoDrum` (`theta = angle − height/radius`, `y = r·cosθ`, `z = r·sinθ`):
+the height axis is `(0, cosθ, sinθ)`, which makes the frame right-handed and puts
+digit `0` **upright** at the reading line (its top toward Blender +Z). Negating it —
+as an earlier draft of this snippet did — flips the digits upside-down and mirrors
+them. The verification for the numerals task is to import the drum and numerals
+together and confirm rotating the pair by `−d·36°` about X reads digit `d` upright
+(spot-check `d = 0, 3, 7`).
+
+Size the glyphs to the engine's `numeralLayout`, not to a fixed guess: for the copper
+ring (`radius 1.0`, `thickness 0.42`) that is a cap height of about **0.39 m**
+(`heightFraction 0.62 × arcPerDigit 0.628`), which is what keeps neighbouring digits
+partly visible above and below the reading line.
 
 The procedural numerals (`createRingNumeralsGeometry`) remain the fallback and the
 authority on these angles; authored numerals reproduce them, they do not redefine

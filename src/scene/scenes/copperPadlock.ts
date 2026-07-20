@@ -137,6 +137,9 @@ export const copperPadlockScene: SceneDefinition = {
     gearD: pbr('blued-steel', { roughness: 1.2 }),
     arbor: pbr('blued-steel', { tiling: [2, 2] }),
     frame: pbr('rusty-copper', { tiling: [0.7, 0.7], roughness: 1.25 }),
+    // Unused here (the padlock case has no authored `casing` geometry); bound
+    // only because every slot must be. `babbage-engine` is where it does work.
+    casing: pbr('rusty-copper', { tiling: [0.7, 0.7], roughness: 1.25 }),
   },
 
   lighting: {

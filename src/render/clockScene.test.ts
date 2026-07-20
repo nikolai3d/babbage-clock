@@ -7,6 +7,7 @@ import { AssetRegistry } from './assets/assetRegistry.js';
 import type { PartRole } from './assets/roles.js';
 import { ringAngleForDigit, ringAxisOffset, ringStackSlots } from '../geometry/ringLayout.js';
 import { copperPadlockScene } from '../scene/scenes/copperPadlock.js';
+import { babbageEngineScene } from '../scene/scenes/babbageEngine.js';
 import { slateOrreryScene } from '../scene/scenes/slateOrrery.js';
 import { MATERIAL_SLOTS, type SceneDefinition } from '../scene/types.js';
 
@@ -235,10 +236,14 @@ describe('ClockSceneView', () => {
       // three.js types InstancedMesh generically, so narrow it explicitly.
       if (object instanceof THREE.InstancedMesh) instanced.push(object as THREE.InstancedMesh);
     });
-    // The bezel screw studs and the detent levers. Gear teeth used to be
-    // instanced too; they are now part of the extruded gear profile, so a wheel
-    // is a single mesh.
-    expect(instanced.map((mesh) => mesh.name).sort()).toEqual(['detents', 'housing:studs']);
+    // The bezel screw studs, the detent levers and the two arbor end caps. Gear
+    // teeth used to be instanced too; they are now part of the extruded gear
+    // profile, so a wheel is a single mesh.
+    expect(instanced.map((mesh) => mesh.name).sort()).toEqual([
+      'arbor:caps',
+      'detents',
+      'housing:studs',
+    ]);
 
     // InstancedMesh.dispose() releases instanceMatrix; disposing the geometry
     // and material alone would leak it on every scene switch.
@@ -442,6 +447,10 @@ describe('ClockSceneView with authored geometry', () => {
       // geometry and is disposed differently from a plain Mesh (see `dispose`).
       'detent-lever',
       'stud',
+      // The static set-dressing borrows too: it has no generator, so this is the
+      // only path that proves `buildStaticSet` hands out registry-owned geometry
+      // the view must never free.
+      'table',
     ]);
     // A second holder keeps the model alive past the view's release, which
     // separates "the view disposed it" from "the registry disposed it".
@@ -457,6 +466,10 @@ describe('ClockSceneView with authored geometry', () => {
     const studs = view.root.getObjectByName('housing:studs') as THREE.InstancedMesh;
     expect(detents.geometry).toBe(geometries.get('detent-lever'));
     expect(studs.geometry).toBe(geometries.get('stud'));
+    // The static set is on the root and borrows just like the rest.
+    expect((view.root.getObjectByName('table') as THREE.Mesh).geometry).toBe(
+      geometries.get('table'),
+    );
 
     const disposed = [...geometries.values()].map((geometry) => vi.spyOn(geometry, 'dispose'));
     view.dispose();
@@ -667,6 +680,60 @@ describe('ClockSceneView with authored geometry', () => {
 
     authored.dispose();
     plain.dispose();
+  });
+
+  /**
+   * The delivered scene, exercised with every authored part supplied.
+   *
+   * This is the headless half of the verify bead: the real GLB decode is an e2e
+   * concern, but building the `babbage-engine` scene graph with a fake source
+   * that carries every role proves it is structurally valid, stays inside the
+   * whole-scene budgets from docs/assets.md, wears its authored ornate `casing`
+   * instead of the procedural round case (`housingStyle: 'none'`), and seats the
+   * generator-less static parts (table, casing) once the model resolves.
+   */
+  it('builds the babbage-engine scene within budget, casing not procedural case', async () => {
+    const roles: PartRole[] = [
+      'gearA',
+      'gearB',
+      'gearC',
+      'gearD',
+      'escape-wheel',
+      'balance',
+      'balance-cock',
+      'ring-body',
+      'numerals',
+      'arbor',
+      'gear-pin',
+      'detent-lever',
+      'table',
+      'casing',
+    ];
+    const { registry, geometries } = withAuthored(roles);
+    const view = new ClockSceneView(scene, babbageEngineScene, { assets: registry });
+    await view.assetsReady();
+
+    // Under the docs/assets.md budgets. Draw calls are the load-bearing bound
+    // here — one per role, with the shared drum/numerals and the instanced
+    // detents each a single call — so a sharing regression trips it.
+    const { triangles, drawCalls } = countBudget(view.root);
+    expect(triangles).toBeLessThan(150_000);
+    expect(drawCalls).toBeLessThan(40);
+
+    // `housingStyle: 'none'` builds no procedural padlock case at all…
+    expect(view.root.getObjectByName('housing')).toBeUndefined();
+    expect(view.root.getObjectByName('housing:case')).toBeUndefined();
+
+    // …the enclosure is the authored `casing` instead, a static mesh at identity,
+    // bound to its own `casing` slot. Like `table` it has no generator fallback.
+    expect((view.root.getObjectByName('casing') as THREE.Mesh).geometry).toBe(
+      geometries.get('casing'),
+    );
+    expect((view.root.getObjectByName('table') as THREE.Mesh).geometry).toBe(
+      geometries.get('table'),
+    );
+
+    view.dispose();
   });
 });
 

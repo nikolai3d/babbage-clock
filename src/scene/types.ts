@@ -34,6 +34,9 @@ export const MATERIAL_SLOTS = [
   'gearD',
   'arbor',
   'frame',
+  // The authored ornate casing (`babbage-engine`). Its own slot so it can be
+  // rebound independently of the procedural padlock case's `housing`/`frame`.
+  'casing',
 ] as const;
 
 export type MaterialSlot = (typeof MATERIAL_SLOTS)[number];
@@ -213,6 +216,16 @@ export interface CameraConfig {
  */
 export type ClockMode = 'countdown' | 'clock';
 
+/**
+ * The enclosure a scene wears.
+ *
+ * `padlock` (the default) builds the procedural round pocket-watch/padlock case
+ * from `createHousingParts`. `none` builds no procedural case at all, leaving the
+ * enclosure to authored `casing` geometry supplied by the scene's model — used by
+ * `babbage-engine`, whose ornate rectangular frame replaces the round case.
+ */
+export type HousingStyle = 'padlock' | 'none';
+
 /** The complete description of a switchable scene. */
 export interface SceneDefinition {
   readonly id: string;
@@ -221,6 +234,8 @@ export interface SceneDefinition {
   readonly mode: ClockMode;
   readonly rings: RingConfig;
   readonly gears: readonly GearSpec[];
+  /** Which enclosure to build; omitted, the procedural padlock case. */
+  readonly housingStyle?: HousingStyle;
   /** Escapement placement override; omitted, it derives from the case. */
   readonly escapement?: EscapementPlacement;
   /** Authored geometry overriding the generators; omitted, the scene is procedural. */

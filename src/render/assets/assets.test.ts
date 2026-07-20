@@ -99,6 +99,7 @@ describe('roles', () => {
       'gear-pin': 'arbor',
       'detent-lever': 'arbor',
       table: 'housing',
+      casing: 'casing',
     };
 
     for (const role of PART_ROLES) {

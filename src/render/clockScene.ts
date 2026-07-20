@@ -495,7 +495,50 @@ export class ClockSceneView {
       target.generated.dispose();
     }
     this.assetTargets.length = 0;
+    this.buildStaticSet();
+    this.buildCasing();
     this.assetsApplied = true;
+  }
+
+  /**
+   * Adds one authored, generator-less part as a static mesh on the root.
+   *
+   * The geometry already carries its world position (the loader bakes the node
+   * transform into it), so it goes on at the identity transform, unparented to
+   * any ring or gear and never animated. Borrowed geometry — owned and disposed
+   * by the registry — so it is not passed through `track`. A no-op if the model
+   * does not carry the role.
+   */
+  private addStaticAuthoredPart(role: PartRole): void {
+    const geometry = this.assets.part(role);
+    if (!geometry) return;
+    const mesh = new THREE.Mesh(geometry, this.materials.get(this.assets.slotForRole(role)));
+    mesh.name = role;
+    mesh.castShadow = true;
+    mesh.receiveShadow = true;
+    this.root.add(mesh);
+  }
+
+  /**
+   * Static set-dressing: the table the clock stands on and any `env-*` panels.
+   * These roles have no generator — they exist only in an authored model — so
+   * they are added here, once the model has resolved, rather than in the
+   * constructor.
+   */
+  private buildStaticSet(): void {
+    for (const role of this.assets.availableRoles()) {
+      if (role === 'table' || role.startsWith('env-')) this.addStaticAuthoredPart(role);
+    }
+  }
+
+  /**
+   * The ornate authored enclosure (see `SceneDefinition.housingStyle: 'none'`),
+   * which replaces the procedural padlock case `buildHousing` would otherwise
+   * build. One static mesh on its own `casing` material slot; a no-op for scenes
+   * whose model carries no casing.
+   */
+  private buildCasing(): void {
+    this.addStaticAuthoredPart('casing');
   }
 
   /**
@@ -581,14 +624,24 @@ export class ClockSceneView {
       return geometry;
     });
 
+    // The two end bosses are one geometry at mirrored positions — a textbook
+    // "instance repeats" case (docs/assets.md), so they draw in one call rather
+    // than two. That reclaimed call is what keeps the authored scene, with its
+    // static table, inside the < 40 draw-call budget.
     const bossMaterial = this.materials.get('housing');
     const offset = span / 2 + thickness * 0.35;
-    for (const side of [-1, 1]) {
-      const mesh = new THREE.Mesh(boss.geometry, bossMaterial);
-      mesh.position[axis] = offset * side;
-      boss.claim(mesh);
-      this.root.add(mesh);
-    }
+    const caps = new THREE.InstancedMesh(boss.geometry, bossMaterial, 2);
+    caps.name = 'arbor:caps';
+    [-1, 1].forEach((side, i) => {
+      const position = new THREE.Vector3();
+      position[axis] = offset * side;
+      this.scratchMatrix.compose(position, this.scratchQuaternion.identity(), this.unitScale);
+      caps.setMatrixAt(i, this.scratchMatrix);
+    });
+    caps.instanceMatrix.needsUpdate = true;
+    boss.claim(caps);
+    this.disposables.push(caps);
+    this.root.add(caps);
   }
 
   /**
@@ -685,6 +738,11 @@ export class ClockSceneView {
    * consumes them.
    */
   private buildHousing(): void {
+    // A scene can opt out of the procedural padlock case entirely — the ornate
+    // authored casing (`babbage-engine`) replaces it, added by `buildCasing`
+    // once the model resolves. Nothing else in the enclosure is built here.
+    if (this.definition.housingStyle === 'none') return;
+
     const { caseAxis, clearance, halfDepth } = this.caseMetrics;
 
     const parts = createHousingParts({
