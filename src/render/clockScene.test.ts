@@ -236,13 +236,15 @@ describe('ClockSceneView', () => {
       // three.js types InstancedMesh generically, so narrow it explicitly.
       if (object instanceof THREE.InstancedMesh) instanced.push(object as THREE.InstancedMesh);
     });
-    // The bezel screw studs, the detent levers and the two arbor end caps. Gear
-    // teeth used to be instanced too; they are now part of the extruded gear
-    // profile, so a wheel is a single mesh.
+    // The bezel screw studs, the detent levers, the two arbor end caps and the
+    // instanced separator drums and colons. Gear teeth used to be instanced too;
+    // they are now part of the extruded gear profile, so a wheel is a single mesh.
     expect(instanced.map((mesh) => mesh.name).sort()).toEqual([
       'arbor:caps',
       'detents',
       'housing:studs',
+      'separator:colons',
+      'separator:drums',
     ]);
 
     // InstancedMesh.dispose() releases instanceMatrix; disposing the geometry
@@ -1265,20 +1267,30 @@ describe('escapement placement', () => {
 });
 
 describe('separator rings', () => {
-  const separatorGroups = (view: ClockSceneView): THREE.Object3D[] =>
-    view.root.children.filter((child) => child.name.startsWith('separator:'));
+  /** The two instanced separator meshes, or null when a scene declares none. */
+  const separatorMeshes = (
+    view: ClockSceneView,
+  ): { drums: THREE.InstancedMesh | null; colons: THREE.InstancedMesh | null } => ({
+    drums:
+      (view.root.getObjectByName('separator:drums') as THREE.InstancedMesh | undefined) ?? null,
+    colons:
+      (view.root.getObjectByName('separator:colons') as THREE.InstancedMesh | undefined) ?? null,
+  });
 
-  const meshesOf = (object: THREE.Object3D): THREE.Mesh<THREE.BufferGeometry, THREE.Material>[] =>
+  const ringMeshes = (object: THREE.Object3D): THREE.Mesh<THREE.BufferGeometry, THREE.Material>[] =>
     object.children.filter((child) => child instanceof THREE.Mesh) as THREE.Mesh<
       THREE.BufferGeometry,
       THREE.Material
     >[];
 
-  it('adds a static colon drum at each declared boundary, uncounted as a digit ring', () => {
+  it('instances a colon drum at each declared boundary, uncounted as a digit ring', () => {
     const view = new ClockSceneView(scene, copperPadlockScene);
+    const { drums, colons } = separatorMeshes(view);
 
-    // The default scene declares two colons: HHH|MM and MM|SS.
-    expect(separatorGroups(view)).toHaveLength(2);
+    // The default scene declares two colons: HHH|MM and MM|SS — two instances of
+    // one drum and one colon, not a mesh pair apiece.
+    expect(drums?.count).toBe(2);
+    expect(colons?.count).toBe(2);
     // The mechanism still sees exactly `count` rings — no extra digit ring.
     expect(view.ringCount).toBe(copperPadlockScene.rings.count);
     expect(view.root.children.filter((child) => child.name.startsWith('ring:'))).toHaveLength(
@@ -1287,44 +1299,58 @@ describe('separator rings', () => {
     view.dispose();
   });
 
-  it('renders a separator like a ring: a drum and a mark, sharing the digit buffers', () => {
+  it('instances a separator from the shared drum buffer and one distinct colon buffer', () => {
     const view = new ClockSceneView(scene, copperPadlockScene);
 
-    const [drum, mark] = meshesOf(view.root.getObjectByName('ring:0')!);
-    const separators = separatorGroups(view);
-    const [sepDrum, sepMark] = meshesOf(separators[0]!);
+    const [drum, mark] = ringMeshes(view.root.getObjectByName('ring:0')!);
+    const { drums, colons } = separatorMeshes(view);
 
-    // Same two-mesh shape as a digit ring: a drum plus a colon.
-    expect(meshesOf(separators[0]!)).toHaveLength(2);
-    // Shares the drum buffer with the digit rings; only the mark differs.
-    expect(sepDrum!.geometry).toBe(drum!.geometry);
+    // Shares the drum buffer with the digit rings; only the mark differs. One
+    // InstancedMesh means every separator drum is inherently one buffer.
+    expect(drums!.geometry).toBe(drum!.geometry);
     // Same materials as the digit rings, so a separator matches the wheel style.
-    expect(sepDrum!.material).toBe(drum!.material);
-    expect(sepMark!.material).toBe(mark!.material);
-    // Both colons come off one shared buffer, distinct from the numerals.
-    const [, otherMark] = meshesOf(separators[1]!);
-    expect(otherMark!.geometry).toBe(sepMark!.geometry);
-    expect(sepMark!.geometry).not.toBe(mark!.geometry);
+    expect(drums!.material).toBe(drum!.material);
+    expect(colons!.material).toBe(mark!.material);
+    // The colon comes off its own buffer, distinct from the numerals.
+    expect(colons!.geometry).not.toBe(mark!.geometry);
     view.dispose();
   });
 
-  it('seats digit rings and separators at their physical slots', () => {
+  it('seats digit rings and separator instances at their physical slots', () => {
     const view = new ClockSceneView(scene, copperPadlockScene);
     const { count, spacing, separators, axis } = copperPadlockScene.rings;
     const slots = ringStackSlots(count, separators ?? []);
+    const { drums, colons } = separatorMeshes(view);
 
+    const matrix = new THREE.Matrix4();
+    const position = new THREE.Vector3();
+    let instance = 0;
     slots.forEach((slot, slotIndex) => {
-      const name = slot.kind === 'digit' ? `ring:${slot.digitIndex}` : `separator:${slotIndex}`;
-      const group = view.root.getObjectByName(name)!;
-      expect(group.position[axis]).toBeCloseTo(ringAxisOffset(slotIndex, slots.length, spacing), 9);
+      const expected = ringAxisOffset(slotIndex, slots.length, spacing);
+      if (slot.kind === 'digit') {
+        const group = view.root.getObjectByName(`ring:${slot.digitIndex}`)!;
+        expect(group.position[axis]).toBeCloseTo(expected, 9);
+      } else {
+        // Separators are pushed in slot order, so instance `i` is the i-th
+        // separator slot. Both the drum and the colon sit at that offset. The
+        // instance matrix is float32, so it is checked to that precision rather
+        // than the double-exact 9 the digit groups get.
+        for (const mesh of [drums!, colons!]) {
+          mesh.getMatrixAt(instance, matrix);
+          position.setFromMatrixPosition(matrix);
+          expect(position[axis]).toBeCloseTo(expected, 5);
+        }
+        instance += 1;
+      }
     });
     view.dispose();
   });
 
-  it('never rotates a separator, whatever the reading does', () => {
+  it('never moves a separator instance, whatever the reading does', () => {
     const view = new ClockSceneView(scene, copperPadlockScene);
-    const axis = copperPadlockScene.rings.axis;
-    const separators = separatorGroups(view);
+    const { drums, colons } = separatorMeshes(view);
+    const drumsBefore = [...drums!.instanceMatrix.array];
+    const colonsBefore = [...colons!.instanceMatrix.array];
 
     show(view, [1, 2, 3, 4, 5, 6, 7], 0);
     view.update(0);
@@ -1332,7 +1358,10 @@ describe('separator rings', () => {
     show(view, [9, 8, 7, 6, 5, 4, 3], 5000, 5);
     view.update(5200);
 
-    for (const separator of separators) expect(separator.rotation[axis]).toBe(0);
+    // The instanced meshes are static on the root; `update` never rewrites their
+    // matrices, so every instance stays put — no rotation, no drift.
+    expect([...drums!.instanceMatrix.array]).toEqual(drumsBefore);
+    expect([...colons!.instanceMatrix.array]).toEqual(colonsBefore);
     view.dispose();
   });
 
@@ -1347,8 +1376,10 @@ describe('separator rings', () => {
 
   it('leaves a scene that declares no separators unchanged', () => {
     const view = new ClockSceneView(scene, slateOrreryScene);
+    const { drums, colons } = separatorMeshes(view);
 
-    expect(separatorGroups(view)).toHaveLength(0);
+    expect(drums).toBeNull();
+    expect(colons).toBeNull();
     expect(view.root.children.filter((child) => child.name.startsWith('ring:'))).toHaveLength(
       slateOrreryScene.rings.count,
     );

@@ -18,6 +18,7 @@ import {
   ringStackSlots,
   ringStackSpan,
 } from '../geometry/ringLayout.js';
+import type { SeparatorGlyph } from '../geometry/ringLayout.js';
 import { boxProjectUv } from './geometry/uv.js';
 import { AssetLibrary, sharedAssetRegistry } from './assets/index.js';
 import {
@@ -565,18 +566,20 @@ export class ClockSceneView {
     const bodyMaterial = this.materials.get(config.slot);
     const numeralMaterial = this.materials.get(config.markSlot);
 
-    // Built lazily and shared: no separator, no colon geometry at all. Every
-    // separator carries the same colon, so one buffer serves them all.
-    let separatorGlyph: THREE.BufferGeometry | null = null;
+    // Separators never rotate, so rather than a drum+colon mesh pair apiece they
+    // are collected and instanced (see `buildSeparators`): two draw calls for
+    // the whole set of boundaries instead of two per boundary.
+    const separators: { offset: number; glyph: SeparatorGlyph }[] = [];
 
     slots.forEach((slot, slotIndex) => {
-      const group = new THREE.Group();
-      group.position[axis] = ringAxisOffset(slotIndex, physical, spacing);
-      const bodyMesh = new THREE.Mesh(body.geometry, bodyMaterial);
-      body.claim(bodyMesh);
-      group.add(bodyMesh);
+      const offset = ringAxisOffset(slotIndex, physical, spacing);
 
       if (slot.kind === 'digit') {
+        const group = new THREE.Group();
+        group.position[axis] = offset;
+        const bodyMesh = new THREE.Mesh(body.geometry, bodyMaterial);
+        body.claim(bodyMesh);
+        group.add(bodyMesh);
         group.name = `ring:${slot.digitIndex}`;
         const numeralMesh = new THREE.Mesh(numerals.geometry, numeralMaterial);
         numerals.claim(numeralMesh);
@@ -587,14 +590,55 @@ export class ClockSceneView {
         // them one-to-one. Separators are never pushed — they are never sampled.
         this.ringGroups.push(group);
       } else {
-        group.name = `separator:${slotIndex}`;
-        if (!separatorGlyph) {
-          separatorGlyph = this.track(createSeparatorGlyphGeometry(config, slot.glyph));
-        }
-        group.add(new THREE.Mesh(separatorGlyph, numeralMaterial));
-        this.root.add(group);
+        separators.push({ offset, glyph: slot.glyph });
       }
     });
+
+    this.buildSeparators(config, separators, body, bodyMaterial, numeralMaterial);
+  }
+
+  /**
+   * The static colon drums that mark the `HHH:MM:SS` group boundaries, instanced.
+   *
+   * A separator never rotates, so the whole set draws in two calls — one
+   * instanced drum, one instanced colon — however many boundaries the readout
+   * has, rather than a drum+colon mesh pair at each. The drum instances share
+   * the digit rings' `ring-body` buffer and are `claim`ed, so an authored swap
+   * reaches them too; the colon is a single generated glyph buffer (every
+   * separator carries the same colon). A no-op when a scene declares none.
+   */
+  private buildSeparators(
+    config: RingConfig,
+    separators: readonly { offset: number; glyph: SeparatorGlyph }[],
+    body: RolePart,
+    bodyMaterial: THREE.Material,
+    markMaterial: THREE.Material,
+  ): void {
+    if (separators.length === 0) return;
+    const { axis } = config;
+    const count = separators.length;
+
+    const drums = new THREE.InstancedMesh(body.geometry, bodyMaterial, count);
+    drums.name = 'separator:drums';
+    const glyph = this.track(createSeparatorGlyphGeometry(config, separators[0]!.glyph));
+    const colons = new THREE.InstancedMesh(glyph, markMaterial, count);
+    colons.name = 'separator:colons';
+
+    const position = new THREE.Vector3();
+    separators.forEach(({ offset }, i) => {
+      position.set(0, 0, 0);
+      position[axis] = offset;
+      this.scratchMatrix.compose(position, this.scratchQuaternion.identity(), this.unitScale);
+      drums.setMatrixAt(i, this.scratchMatrix);
+      colons.setMatrixAt(i, this.scratchMatrix);
+    });
+    drums.instanceMatrix.needsUpdate = true;
+    colons.instanceMatrix.needsUpdate = true;
+
+    body.claim(drums);
+    this.disposables.push(drums, colons);
+    this.root.add(drums);
+    this.root.add(colons);
   }
 
   /** A shaft through the ring stack plus a bearing boss either side of it. */
