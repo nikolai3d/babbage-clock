@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import {
+  DEFAULT_SHADOW_MAP_SIZE,
   createFallbackBackground,
   createRigLights,
   disposeRig,
@@ -142,7 +143,7 @@ export class EnvironmentController {
   private state: IblStatus = 'none';
   private disposed = false;
   private panoramaBackground: boolean;
-  private shadowMapSize: number | undefined;
+  private shadowMapSize: number;
 
   constructor({
     renderer,
@@ -155,7 +156,10 @@ export class EnvironmentController {
     this.scene = scene;
     this.library = library;
     this.panoramaBackground = panoramaBackground;
-    this.shadowMapSize = shadowMapSize;
+    // Normalise an omitted size to the value the rig would resolve it to anyway,
+    // so a later `setShadowMapSize(DEFAULT_SHADOW_MAP_SIZE)` on a controller
+    // built without one is correctly a no-op rather than a needless rig rebuild.
+    this.shadowMapSize = shadowMapSize ?? DEFAULT_SHADOW_MAP_SIZE;
   }
 
   /**
@@ -325,10 +329,7 @@ export class EnvironmentController {
       : null;
 
     disposeRig(scene, this.rig);
-    this.rig = createRigLights(
-      manifest,
-      this.shadowMapSize === undefined ? {} : { shadowMapSize: this.shadowMapSize },
-    );
+    this.rig = createRigLights(manifest, { shadowMapSize: this.shadowMapSize });
     for (const light of this.rig) scene.add(light);
 
     this.lighting?.setAnalyticScale(manifest.sceneLightScale);

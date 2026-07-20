@@ -340,6 +340,28 @@ describe('EnvironmentController', () => {
     expect(castingLight()).toBe(after);
   });
 
+  it('does not rebuild the rig when set to the default size it already resolved to', () => {
+    // A controller built without a shadowMapSize normalises to the rig's
+    // high-tier default (2048 = DEFAULT_SHADOW_MAP_SIZE). Setting that same
+    // default later must be a no-op, not a needless rig rebuild — before the
+    // omitted-default normalisation this compared 2048 against `undefined` and
+    // churned the rig.
+    library.cached.add('cool');
+    rebuildScene(sceneWith('cool'));
+
+    const castingLight = (): THREE.DirectionalLight => {
+      const light = rigLights().find((candidate) => candidate.castShadow);
+      if (!(light instanceof THREE.DirectionalLight)) throw new Error('no casting key light');
+      return light;
+    };
+
+    const before = castingLight();
+    expect(before.shadow.mapSize.width).toBe(2048);
+
+    controller.setShadowMapSize(2048);
+    expect(castingLight()).toBe(before);
+  });
+
   it('discards a load the viewer has already navigated away from', async () => {
     rebuildScene(sceneWith('warm'));
     library.cached.add('cool');
