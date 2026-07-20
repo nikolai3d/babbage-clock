@@ -244,6 +244,12 @@ test.describe('countdown readout', () => {
   });
 
   test('a frozen clock holds the readout still', async ({ page }) => {
+    // `waitForFrames` below carries a 30 s internal poll, which under the 45 s
+    // default test timeout leaves a slow SwiftShader runner hitting the opaque
+    // 'Test timeout' before any diagnostic — the same latent flake shape the
+    // travel test was given headroom for. Raise the budget rather than trim the
+    // observation window.
+    test.setTimeout(120_000);
     await gotoApp(page, {
       mockNow: PINNED_NOW,
       mockNowMode: 'frozen',
