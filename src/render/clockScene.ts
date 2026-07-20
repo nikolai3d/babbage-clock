@@ -19,12 +19,14 @@ import {
   ringStackSpan,
 } from '../geometry/ringLayout.js';
 import { boxProjectUv } from './geometry/uv.js';
+import { AssetLibrary, sharedAssetRegistry } from './assets/index.js';
 import {
   Mechanism,
   type MechanismEvent,
   type MechanismInput,
   type MechanismSample,
 } from '../mechanism/index.js';
+import type { AssetRegistry, PartRole } from './assets/index.js';
 import type { MaterialRegistry } from './materialRegistry.js';
 import type { TextureSizePreference } from '../app/quality.js';
 import type {
@@ -48,6 +50,63 @@ interface GearView {
   readonly spinner: THREE.Object3D;
   readonly spec: GearSpec;
 }
+
+/**
+ * A generator geometry standing in for an authored part that has not loaded yet.
+ *
+ * A scene with an `AssetSpec` still builds synchronously from the generators,
+ * because the model loads asynchronously and the constructor cannot wait. When
+ * the model lands, every mesh in `meshes` is repointed at the authored geometry
+ * and `generated` is disposed. See {@link ClockSceneView.applyAssets}.
+ */
+interface AssetTarget {
+  readonly role: PartRole;
+  readonly meshes: THREE.Mesh[];
+  readonly generated: THREE.BufferGeometry;
+}
+
+/**
+ * What {@link ClockSceneView.rolePart} hands back: the geometry a mesh should
+ * use now, and a `claim` to register that mesh for the swap when it took the
+ * generator fallback (a no-op when it took an authored part).
+ */
+interface RolePart {
+  readonly geometry: THREE.BufferGeometry;
+  readonly claim: (mesh: THREE.Mesh) => void;
+}
+
+const noop = (): void => undefined;
+
+/** Housing generator part name -> authored role. */
+const HOUSING_ROLES: Record<string, PartRole> = {
+  'housing:case': 'case-shell',
+  'housing:bezel': 'bezel',
+  'housing:studs': 'stud',
+  'housing:lid': 'lid',
+  'housing:hinge': 'hinge',
+  'housing:shackle': 'shackle',
+};
+
+/** Escapement generator part name -> authored role. */
+const ESCAPEMENT_ROLES: Record<
+  'escapement:balance' | 'escapement:escape-wheel' | 'escapement:cock',
+  PartRole
+> = {
+  'escapement:balance': 'balance',
+  'escapement:escape-wheel': 'escape-wheel',
+  'escapement:cock': 'balance-cock',
+};
+
+/**
+ * Material slots that actually name a gear wheel.
+ *
+ * `GearSpec.slot` is a `MaterialSlot`, and nothing stops a decorative gear
+ * from sitting in any of them — 'bezel' or 'arbor', say. Only a slot in here
+ * may be reinterpreted as the identically-spelled `PartRole` for an authored
+ * lookup; anything else would raid whatever unrelated part happens to share
+ * the name.
+ */
+const GEAR_ROLES = new Set<MaterialSlot>(['gearA', 'gearB', 'gearC', 'gearD']);
 
 /** The case's own frame: which way it faces and how big it had to be. */
 interface CaseMetrics {
@@ -84,6 +143,13 @@ export interface ClockSceneViewOptions {
    * Defaults to `full`.
    */
   readonly textureSize?: TextureSizePreference;
+  /**
+   * Where authored glTF models are loaded and cached. Shared across scenes on
+   * purpose, exactly like {@link ClockSceneViewOptions.materials}: switching
+   * away and back must not re-download anything. Defaults to the process-wide
+   * registry, which the headless unit tests use.
+   */
+  readonly assets?: AssetRegistry;
 }
 
 /**
@@ -116,6 +182,15 @@ export class ClockSceneView {
    */
   private readonly disposables: { dispose(): void }[] = [];
   private readonly caseMetrics: CaseMetrics;
+
+  /** Authored geometry for this scene, or an empty handle when it is procedural. */
+  private readonly assets: AssetLibrary;
+  /** Generator geometries standing in for authored parts that have not loaded. */
+  private readonly assetTargets: AssetTarget[] = [];
+  /** Resolves once authored parts (if any) have been swapped in. */
+  private assetsSettled: Promise<void> = Promise.resolve();
+  private assetsApplied = false;
+  private disposed = false;
 
   private readonly ringGroups: THREE.Group[] = [];
   private readonly gears: GearView[] = [];
@@ -167,6 +242,9 @@ export class ClockSceneView {
       registry: options.materials ?? sharedMaterialRegistry(),
       textureSize: options.textureSize ?? 'full',
     });
+    this.assets = new AssetLibrary(definition.assets, {
+      registry: options.assets ?? sharedAssetRegistry(),
+    });
     this.lighting = new SceneLighting(scene, definition.lighting);
     this.caseMetrics = measureCase(definition);
     this.mechanism = new Mechanism({
@@ -180,6 +258,14 @@ export class ClockSceneView {
     this.buildDetents(definition.rings);
     definition.gears.forEach((gear, index) => this.buildGear(gear, index));
     this.buildEscapement();
+
+    // A scene that declares authored geometry has built from the generators
+    // above, because the model loads asynchronously and the constructor cannot
+    // wait. Swap the authored parts in once the model is in hand; a failed load
+    // resolves too, leaving the generators in place.
+    if (this.assets.hasSpec) {
+      this.assetsSettled = this.assets.ready().then(() => this.applyAssets());
+    }
 
     // Everything both casts and receives: the shadows worth having here are
     // the mechanism shadowing *itself* — rings onto the case interior, the lid
@@ -227,6 +313,21 @@ export class ClockSceneView {
    */
   get materialsBusy(): boolean {
     return this.materials.busy;
+  }
+
+  /**
+   * True while authored geometry is still loading or has not yet been swapped
+   * in. Polled by the render loop the same way {@link materialsBusy} is: the
+   * swap changes the picture without the mechanism moving, so a held frame must
+   * be redrawn when it lands.
+   */
+  get assetsBusy(): boolean {
+    return this.assets.busy || (this.assets.hasSpec && !this.assetsApplied);
+  }
+
+  /** Resolves once authored parts (if any) have been swapped in. */
+  assetsReady(): Promise<void> {
+    return this.assetsSettled;
   }
 
   /** The binding currently in force for a slot. Read by the test API. */
@@ -307,14 +408,18 @@ export class ClockSceneView {
   }
 
   dispose(): void {
+    this.disposed = true;
     this.root.removeFromParent();
     this.root.clear();
 
     for (const disposable of this.disposables) disposable.dispose();
     this.disposables.length = 0;
 
+    // Only generator geometries are tracked; authored parts are borrowed from
+    // the registry and released by `this.assets.dispose()` below.
     for (const geometry of this.geometries) geometry.dispose();
     this.geometries.length = 0;
+    this.assetTargets.length = 0;
 
     this.ringGroups.length = 0;
     this.gears.length = 0;
@@ -325,11 +430,72 @@ export class ClockSceneView {
 
     this.lighting.dispose();
     this.materials.dispose();
+    this.assets.dispose();
   }
 
   private track<T extends THREE.BufferGeometry>(geometry: T): T {
     this.geometries.push(geometry);
     return geometry;
+  }
+
+  /**
+   * The geometry a role should use: the authored part when the model provides
+   * one, otherwise a freshly generated fallback.
+   *
+   * The fallback factory is only invoked when there is no authored part, so an
+   * authored scene never pays to build geometry it will not show. When the
+   * fallback is used and the scene declares a model, each mesh that takes it is
+   * registered (via `claim`) for an in-place swap once the model loads.
+   */
+  private rolePart(role: PartRole, build: () => THREE.BufferGeometry): RolePart {
+    const authored = this.assets.part(role);
+    if (authored) return { geometry: authored, claim: noop };
+    return this.fallbackPart(role, this.track(build()));
+  }
+
+  /**
+   * As {@link rolePart}, for parts whose generator geometry is already built —
+   * the housing and escapement generators produce every piece eagerly. The
+   * unused eager geometry is disposed straight away when an authored part wins,
+   * so nothing leaks.
+   */
+  private rolePartEager(role: PartRole, generated: THREE.BufferGeometry): RolePart {
+    const authored = this.assets.part(role);
+    if (authored) {
+      generated.dispose();
+      return { geometry: authored, claim: noop };
+    }
+    return this.fallbackPart(role, this.track(generated));
+  }
+
+  private fallbackPart(role: PartRole, generated: THREE.BufferGeometry): RolePart {
+    if (!this.assets.hasSpec) return { geometry: generated, claim: noop };
+    const target: AssetTarget = { role, meshes: [], generated };
+    this.assetTargets.push(target);
+    return { geometry: generated, claim: (mesh: THREE.Mesh) => target.meshes.push(mesh) };
+  }
+
+  /**
+   * Repoints every waiting mesh at its authored geometry and disposes the
+   * generator it replaced.
+   *
+   * Runs once, after the model resolves. Authored geometry is *borrowed* from
+   * the registry — never tracked here, never disposed here — so the replaced
+   * generator is pulled out of {@link geometries} before {@link dispose} would
+   * double it up. A role the model turns out not to carry keeps its generator.
+   */
+  private applyAssets(): void {
+    if (this.disposed) return;
+    for (const target of this.assetTargets) {
+      const authored = this.assets.part(target.role);
+      if (!authored) continue;
+      for (const mesh of target.meshes) mesh.geometry = authored;
+      const index = this.geometries.indexOf(target.generated);
+      if (index >= 0) this.geometries.splice(index, 1);
+      target.generated.dispose();
+    }
+    this.assetTargets.length = 0;
+    this.assetsApplied = true;
   }
 
   /**
@@ -350,8 +516,8 @@ export class ClockSceneView {
     const slots = ringStackSlots(count, config.separators ?? []);
     const physical = slots.length;
 
-    const body = this.track(createRingBodyGeometry(config));
-    const numerals = this.track(createRingNumeralsGeometry(config));
+    const body = this.rolePart('ring-body', () => createRingBodyGeometry(config));
+    const numerals = this.rolePart('numerals', () => createRingNumeralsGeometry(config));
 
     const bodyMaterial = this.materials.get(config.slot);
     const numeralMaterial = this.materials.get(config.markSlot);
@@ -363,11 +529,15 @@ export class ClockSceneView {
     slots.forEach((slot, slotIndex) => {
       const group = new THREE.Group();
       group.position[axis] = ringAxisOffset(slotIndex, physical, spacing);
-      group.add(new THREE.Mesh(body, bodyMaterial));
+      const bodyMesh = new THREE.Mesh(body.geometry, bodyMaterial);
+      body.claim(bodyMesh);
+      group.add(bodyMesh);
 
       if (slot.kind === 'digit') {
         group.name = `ring:${slot.digitIndex}`;
-        group.add(new THREE.Mesh(numerals, numeralMaterial));
+        const numeralMesh = new THREE.Mesh(numerals.geometry, numeralMaterial);
+        numerals.claim(numeralMesh);
+        group.add(numeralMesh);
         this.root.add(group);
         // Digit slots arrive in ascending `digitIndex`, so pushing keeps
         // `ringGroups[i]` aligned with the mechanism's ring `i`; `update` maps
@@ -392,24 +562,31 @@ export class ClockSceneView {
     // Raw three.js primitives arrive with their own 0…1 parameterisation, which
     // would tile a material at a different rate on every one of them. Projected
     // into the shared surface units documented in `./geometry/uv.ts`.
-    const arbor = this.track(
-      boxProjectUv(new THREE.CylinderGeometry(radius * 0.2, radius * 0.2, span * 1.3, 24)),
-    );
-    alignToAxis(arbor, axis);
-    this.root.add(new THREE.Mesh(arbor, this.materials.get('arbor')));
+    const arbor = this.rolePart('arbor', () => {
+      const geometry = boxProjectUv(
+        new THREE.CylinderGeometry(radius * 0.2, radius * 0.2, span * 1.3, 24),
+      );
+      alignToAxis(geometry, axis);
+      return geometry;
+    });
+    const arborMesh = new THREE.Mesh(arbor.geometry, this.materials.get('arbor'));
+    arbor.claim(arborMesh);
+    this.root.add(arborMesh);
 
-    const boss = this.track(
-      boxProjectUv(
+    const boss = this.rolePart('boss', () => {
+      const geometry = boxProjectUv(
         new THREE.CylinderGeometry(radius * 0.34, radius * 0.28, thickness * 0.6, radialSegments),
-      ),
-    );
-    alignToAxis(boss, axis);
+      );
+      alignToAxis(geometry, axis);
+      return geometry;
+    });
 
     const bossMaterial = this.materials.get('housing');
     const offset = span / 2 + thickness * 0.35;
     for (const side of [-1, 1]) {
-      const mesh = new THREE.Mesh(boss, bossMaterial);
+      const mesh = new THREE.Mesh(boss.geometry, bossMaterial);
       mesh.position[axis] = offset * side;
+      boss.claim(mesh);
       this.root.add(mesh);
     }
   }
@@ -429,7 +606,9 @@ export class ClockSceneView {
     const physical = slots.length;
 
     const length = radius * 0.34;
-    const geometry = this.track(createDetentLeverGeometry(length, thickness * 0.5));
+    const lever = this.rolePart('detent-lever', () =>
+      createDetentLeverGeometry(length, thickness * 0.5),
+    );
 
     // The lever sits a quarter turn off the reading line so it never covers the
     // digit being read.
@@ -449,9 +628,10 @@ export class ClockSceneView {
     );
     const baseQuaternion = new THREE.Quaternion().setFromRotationMatrix(basis);
 
-    const mesh = new THREE.InstancedMesh(geometry, this.materials.get('arbor'), count);
+    const mesh = new THREE.InstancedMesh(lever.geometry, this.materials.get('arbor'), count);
     mesh.name = 'detents';
     mesh.frustumCulled = false;
+    lever.claim(mesh);
 
     // One lever per digit ring, seated at that ring's physical position — a
     // separator does not turn, so it gets no detent. Physical positions come
@@ -520,19 +700,28 @@ export class ClockSceneView {
     if (caseAxis === 'y') group.rotation.x = -Math.PI / 2;
 
     for (const part of parts) {
-      const geometry = this.track(part.geometry);
+      const role = HOUSING_ROLES[part.name];
+      const rolePart = role
+        ? this.rolePartEager(role, part.geometry)
+        : { geometry: this.track(part.geometry), claim: noop };
       const material = this.materials.get(part.slot);
       if (part.instances) {
-        const instanced = new THREE.InstancedMesh(geometry, material, part.instances.length);
+        const instanced = new THREE.InstancedMesh(
+          rolePart.geometry,
+          material,
+          part.instances.length,
+        );
         part.instances.forEach((matrix, i) => instanced.setMatrixAt(i, matrix));
         instanced.instanceMatrix.needsUpdate = true;
         instanced.name = part.name;
+        rolePart.claim(instanced);
         this.disposables.push(instanced);
         group.add(instanced);
         continue;
       }
-      const mesh = new THREE.Mesh(geometry, material);
+      const mesh = new THREE.Mesh(rolePart.geometry, material);
       mesh.name = part.name;
+      rolePart.claim(mesh);
       group.add(mesh);
     }
 
@@ -553,19 +742,26 @@ export class ClockSceneView {
     const spinner = new THREE.Group();
     group.add(spinner);
 
-    const wheel = this.track(
+    const buildWheel = (): THREE.BufferGeometry =>
       createGearGeometry({
         teeth: spec.teeth,
         radius: spec.radius,
         thickness: spec.thickness,
         spokeStyle: spec.spokeStyle ?? defaultSpokeStyleFor(index, spec.teeth),
-      }),
-    );
-    spinner.add(new THREE.Mesh(wheel, this.materials.get(spec.slot)));
+      });
+    // Only a real gear slot may borrow an authored wheel (see `GEAR_ROLES`); a
+    // decorative gear parked in another slot always builds from the generator,
+    // with no authored lookup and nothing registered for the swap.
+    const wheel = GEAR_ROLES.has(spec.slot)
+      ? this.rolePart(spec.slot as PartRole, buildWheel)
+      : { geometry: this.track(buildWheel()), claim: noop };
+    const wheelMesh = new THREE.Mesh(wheel.geometry, this.materials.get(spec.slot));
+    wheel.claim(wheelMesh);
+    spinner.add(wheelMesh);
 
     // The arbor pin sits on the static group, not the spinner: a real one does
     // not turn with the wheel.
-    const pin = this.track(
+    const pin = this.rolePart('gear-pin', () =>
       boxProjectUv(
         new THREE.CylinderGeometry(
           spec.radius * 0.075,
@@ -575,7 +771,9 @@ export class ClockSceneView {
         ),
       ),
     );
-    group.add(new THREE.Mesh(pin, this.materials.get('arbor')));
+    const pinMesh = new THREE.Mesh(pin.geometry, this.materials.get('arbor'));
+    pin.claim(pinMesh);
+    group.add(pinMesh);
 
     this.root.add(group);
     this.gears.push({ spinner, spec });
@@ -623,7 +821,7 @@ export class ClockSceneView {
     this.root.add(group);
 
     for (const part of parts) {
-      const geometry = this.track(part.geometry);
+      const rolePart = this.rolePartEager(ESCAPEMENT_ROLES[part.name], part.geometry);
       const holder = new THREE.Group();
       holder.name = part.name;
       holder.position.copy(centre);
@@ -641,7 +839,8 @@ export class ClockSceneView {
         holder.position.add(offset);
       }
 
-      const mesh = new THREE.Mesh(geometry, this.materials.get(part.slot));
+      const mesh = new THREE.Mesh(rolePart.geometry, this.materials.get(part.slot));
+      rolePart.claim(mesh);
       if (!part.spins) {
         holder.add(mesh);
         group.add(holder);

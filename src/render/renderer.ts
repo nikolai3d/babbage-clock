@@ -4,6 +4,7 @@ import { ClockSceneView } from './clockScene.js';
 import { createEnvironmentLibrary } from './ibl/library.js';
 import { EnvironmentController } from './lighting.js';
 import { MaterialRegistry } from './materialRegistry.js';
+import { AssetRegistry } from './assets/index.js';
 import { lookToSlotMap, resolveLook } from '../materials/looks.js';
 import { qualitySettings } from '../app/quality.js';
 import { frameForAspect, ringStackRadius } from '../scene/framing.js';
@@ -96,6 +97,7 @@ export class ClockRenderer {
    * re-download anything.
    */
   private readonly materials: MaterialRegistry;
+  private readonly assets: AssetRegistry;
   private materialLook: string | null = null;
 
   private quality: QualitySettings;
@@ -143,6 +145,7 @@ export class ClockRenderer {
   private lastEnvStatus: IblStatus | null = null;
   /** Material-load activity at the last draw; a landed commit needs one draw. */
   private lastMaterialsBusy = false;
+  private lastAssetsBusy = false;
 
   /** Scratch for keyboard orbiting, so a key press allocates nothing. */
   private readonly orbitOffset = new THREE.Vector3();
@@ -226,6 +229,9 @@ export class ClockRenderer {
     // Handed the renderer so it can detect KTX2 transcoder support and read
     // the anisotropy cap off the real context rather than guessing.
     this.materials = new MaterialRegistry({ renderer: this.renderer });
+    // Authored glTF models, cached across scene switches the same way materials
+    // are. Shared with every view this renderer builds.
+    this.assets = new AssetRegistry();
 
     this.camera = new THREE.PerspectiveCamera(45, 1, 0.1, 100);
     this.environment = new EnvironmentController({
@@ -287,6 +293,7 @@ export class ClockRenderer {
     this.view = new ClockSceneView(this.scene, definition, {
       motion: this.motionEnabled,
       materials: this.materials,
+      assets: this.assets,
       textureSize: this.quality.textureSize,
     });
     // Re-attach the outside listeners to the new scene's mechanism. The set
@@ -327,6 +334,18 @@ export class ClockRenderer {
     await this.view?.materialsReady();
   }
 
+  /**
+   * Resolves once the active scene's authored geometry (if any) has been
+   * swapped in.
+   *
+   * Wiring this into the boot screen alongside `materialsReady` is deferred to
+   * the integrate bead — no shipped scene carries an `AssetSpec` yet, so
+   * nothing outside tests calls this today.
+   */
+  async assetsReady(): Promise<void> {
+    await this.view?.assetsReady();
+  }
+
   private applyLook(definition: SceneDefinition): void {
     const look = resolveLook(this.materialLook);
     const bindings: MaterialSlotMap = look ? lookToSlotMap(look) : definition.materials;
@@ -359,6 +378,8 @@ export class ClockRenderer {
     this.view?.dispose();
     this.view = new ClockSceneView(this.scene, definition, {
       motion: enabled,
+      materials: this.materials,
+      assets: this.assets,
       textureSize: this.quality.textureSize,
     });
     this.syncMechanism(this.timeSource.now());
@@ -641,6 +662,7 @@ export class ClockRenderer {
     this.view?.dispose();
     this.view = null;
     this.materials.dispose();
+    this.assets.dispose();
     this.renderer.dispose();
     this.renderer.forceContextLoss();
   }
@@ -979,6 +1001,13 @@ export class ClockRenderer {
       this.renderRequested = true;
     }
     this.lastMaterialsBusy = materialsBusy;
+    // Authored geometry swapping in after its model loads — same treatment: drawn
+    // while busy and once more when it settles.
+    const assetsBusy = this.view?.assetsBusy ?? false;
+    if (assetsBusy || assetsBusy !== this.lastAssetsBusy) {
+      this.renderRequested = true;
+    }
+    this.lastAssetsBusy = assetsBusy;
 
     if (this.renderRequested) {
       this.renderRequested = false;

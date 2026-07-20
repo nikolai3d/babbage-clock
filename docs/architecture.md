@@ -48,6 +48,7 @@ src/
   render/                ── the only place three.js is used ──
     renderer.ts          WebGL context, camera, OrbitControls, frame loop
     clockScene.ts        SceneDefinition -> three.js objects
+    assets/              authored-glTF loader: model -> parts by role
     geometry/            outlines and configs -> BufferGeometry
       extrude.ts         Outline -> Shape -> ExtrudeGeometry, merging, bending,
                          and the attribute passes that follow (subdivision, normals)
@@ -203,6 +204,7 @@ interface SceneDefinition {
   rings: RingConfig; // count / radius / thickness / spacing / axis / slots
   gears: readonly GearSpec[]; // decorative rotating discs
   escapement?: EscapementPlacement; // balance centre + escape-wheel offset override
+  assets?: AssetSpec; // authored glTF overriding the generators; omitted, the scene is procedural
   materials: MaterialSlotMap; // every named slot -> a MaterialBinding
   lighting: LightingConfig; // background, ambient, directionals, environment
   camera: CameraConfig; // placement + OrbitControls framing limits
@@ -379,6 +381,38 @@ See **[materials.md](materials.md)** for the `material.json` schema, the
 Substance 3D Sampler export settings that produce a compatible folder, the
 texel-density convention, and the KTX2 delivery path.
 
+### Authored geometry (implemented)
+
+A scene may carry an optional `AssetSpec` (`{ source: '<url>.glb' }`) pointing at
+a Blender-authored glTF model whose named parts override the procedural
+generators, part by part. The vocabulary — which object name plays which role,
+and which role binds which material slot — lives in `render/assets/roles.ts`
+and is documented in full in **[authored-geometry.md](authored-geometry.md)**.
+
+`render/assets/` implements it in two layers, the same split materials use:
+`AssetRegistry` fetches and decodes a model once, indexes its meshes by role,
+and hands out the resulting geometries reference-counted across every scene
+that uses it — never copied, never disposed by a view. `AssetLibrary` is one
+scene's handle onto that: it borrows parts by role and degrades to null —
+"use the generator" — whenever a part is absent, still loading, or the load
+failed outright. A scene with no `AssetSpec` never touches any of this.
+
+`ClockSceneView` cannot block its constructor on a download, so on a cold first
+load every part builds from its generator first; a role backed by an `AssetSpec`
+also registers the mesh it built for, and once the model resolves every
+registered mesh is repointed at the authored geometry and its generator is
+disposed. A warm cache (the model was already decoded for an earlier scene)
+skips that entirely — `AssetRegistry.peek` hands back the resolved parts
+synchronously, so the part builds straight from the authored geometry and no
+generator runs at all. `assetsBusy` is polled by the frame loop exactly like
+`materialsBusy`: true while the model is loading or has not yet been swapped in,
+so a held frame is redrawn when the swap lands.
+
+Two of the roles the loader recognises — `table` and the `env-*` set dressing —
+are not yet consumed by `ClockSceneView`: an authored model may carry them, but
+attaching them to the scene graph is a later bead, so for now they decode and
+sit in the registry unused rather than being rendered.
+
 ### Audio (sound bead)
 
 `Mechanism.subscribe` already emits the events the animation runs on — `tick`,
@@ -497,6 +531,12 @@ Generators return geometry the caller owns; they never hold a reference of their
 own. Anything that owns a GPU resource beyond its geometry and material — an
 `InstancedMesh` and its instance-matrix buffer, which the bezel studs use — goes
 into `disposables` as well, and there is a regression test for that too.
+
+Authored geometry is a deliberate exception to `this.track(...)`: a part
+borrowed from the `AssetLibrary` (see "Authored geometry" above) is owned by
+the shared `AssetRegistry`, not by the view that is using it, so it must never
+be tracked or disposed here — `AssetRegistry` releases it when the last scene
+holding a reference lets go.
 
 Lighting moods are the other repeatedly-swapped resource. `EnvironmentLibrary`
 prefilters each panorama once and disposes every render target it holds;

@@ -2,6 +2,9 @@ import * as THREE from 'three';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ClockSceneView } from './clockScene.js';
 import { MaterialLibrary } from './materials.js';
+import { AssetLibrary } from './assets/assetLibrary.js';
+import { AssetRegistry } from './assets/assetRegistry.js';
+import type { PartRole } from './assets/roles.js';
 import { ringAngleForDigit, ringAxisOffset, ringStackSlots } from '../geometry/ringLayout.js';
 import { copperPadlockScene } from '../scene/scenes/copperPadlock.js';
 import { slateOrreryScene } from '../scene/scenes/slateOrrery.js';
@@ -345,6 +348,325 @@ describe('ClockSceneView', () => {
     }
 
     expect(scene.children).toHaveLength(0);
+  });
+});
+
+/**
+ * The authored-geometry path: a scene with an `AssetSpec` builds from the
+ * generators synchronously (the model loads asynchronously) and swaps the
+ * authored parts in once it is in hand. Real glTF decode is an e2e concern; here
+ * the model loader is faked so the resolution, disposal and animation contract
+ * is checkable headlessly.
+ */
+describe('ClockSceneView with authored geometry', () => {
+  const authoredScene: SceneDefinition = {
+    ...copperPadlockScene,
+    id: 'authored-test',
+    assets: { source: 'model.glb' },
+  };
+
+  /** A registry whose model resolves (on a microtask) to boxes for `roles`. */
+  function withAuthored(roles: PartRole[]): {
+    registry: AssetRegistry;
+    geometries: Map<PartRole, THREE.BufferGeometry>;
+  } {
+    const geometries = new Map<PartRole, THREE.BufferGeometry>();
+    for (const role of roles) {
+      const geometry = new THREE.BoxGeometry(1, 1, 1);
+      geometry.name = `authored:${role}`;
+      geometries.set(role, geometry);
+    }
+    const registry = new AssetRegistry({
+      loadModel: () => Promise.resolve({ parts: geometries }),
+    });
+    return { registry, geometries };
+  }
+
+  /** The first mesh found under a node, however deep — a holder's mesh may sit
+   * directly on it (a static part, like the cock) or under a spinner group (a
+   * part that turns, like the balance). */
+  function firstMeshUnder(node: THREE.Object3D): THREE.Mesh {
+    let found: THREE.Mesh | undefined;
+    node.traverse((child) => {
+      if (!found && child instanceof THREE.Mesh) found = child;
+    });
+    if (!found) throw new Error(`no mesh under "${node.name}"`);
+    return found;
+  }
+
+  it('builds from generators synchronously, then swaps the authored parts in', async () => {
+    const { registry, geometries } = withAuthored(['ring-body', 'detent-lever']);
+    const view = new ClockSceneView(scene, authoredScene, { assets: registry });
+
+    // The model loads on a microtask, so the constructor builds from the
+    // generators — the first frame is never blocked on a download.
+    const bodyMesh = view.root
+      .getObjectByName('ring:0')!
+      .children.find((child): child is THREE.Mesh => child instanceof THREE.Mesh)!;
+    const generatorBody = bodyMesh.geometry;
+    expect(generatorBody).not.toBe(geometries.get('ring-body'));
+    const generatorDisposed = vi.spyOn(generatorBody, 'dispose');
+
+    await view.assetsReady();
+
+    // Every ring shares the one authored drum; the replaced generator is disposed.
+    expect(bodyMesh.geometry).toBe(geometries.get('ring-body'));
+    expect(generatorDisposed).toHaveBeenCalledOnce();
+    // The instanced detent levers swap too.
+    const detents = view.root.getObjectByName('detents') as THREE.InstancedMesh;
+    expect(detents.geometry).toBe(geometries.get('detent-lever'));
+
+    view.dispose();
+  });
+
+  it('leaves the parts a model omits on their generators', async () => {
+    const { registry, geometries } = withAuthored(['ring-body']);
+    const view = new ClockSceneView(scene, authoredScene, { assets: registry });
+    await view.assetsReady();
+
+    // The model carried no case shell, so its generator geometry stands.
+    const shell = view.root.getObjectByName('housing:case') as THREE.Mesh;
+    expect([...geometries.values()]).not.toContain(shell.geometry);
+    expect(shell.geometry.getAttribute('position').count).toBeGreaterThan(24);
+
+    view.dispose();
+  });
+
+  it('borrows authored geometry: the view never disposes it; the registry does when released', async () => {
+    const { registry, geometries } = withAuthored([
+      'ring-body',
+      'gearA',
+      'balance',
+      // Instanced roles borrow exactly the same way — this is what guards the
+      // InstancedMesh path specifically, since it owns a GPU buffer beyond its
+      // geometry and is disposed differently from a plain Mesh (see `dispose`).
+      'detent-lever',
+      'stud',
+    ]);
+    // A second holder keeps the model alive past the view's release, which
+    // separates "the view disposed it" from "the registry disposed it".
+    const keepAlive = new AssetLibrary(authoredScene.assets, { registry });
+    await keepAlive.ready();
+
+    const view = new ClockSceneView(scene, authoredScene, { assets: registry });
+    await view.assetsReady();
+
+    // Confirm the instanced meshes actually took the authored geometry before
+    // asserting nobody disposes it out from under them.
+    const detents = view.root.getObjectByName('detents') as THREE.InstancedMesh;
+    const studs = view.root.getObjectByName('housing:studs') as THREE.InstancedMesh;
+    expect(detents.geometry).toBe(geometries.get('detent-lever'));
+    expect(studs.geometry).toBe(geometries.get('stud'));
+
+    const disposed = [...geometries.values()].map((geometry) => vi.spyOn(geometry, 'dispose'));
+    view.dispose();
+    for (const spy of disposed) expect(spy).not.toHaveBeenCalled();
+
+    keepAlive.dispose();
+    for (const spy of disposed) expect(spy).toHaveBeenCalledOnce();
+  });
+
+  it('does not throw when disposed before the in-flight model load resolves', async () => {
+    // A manually-resolved deferred, so the load can be made to settle strictly
+    // after `dispose()` runs — the ordering the `disposed` guard in
+    // `applyAssets` exists for.
+    let resolveModel!: (model: { parts: Map<PartRole, THREE.BufferGeometry> }) => void;
+    const modelPromise = new Promise<{ parts: Map<PartRole, THREE.BufferGeometry> }>((resolve) => {
+      resolveModel = resolve;
+    });
+    const registry = new AssetRegistry({ loadModel: () => modelPromise });
+
+    const view = new ClockSceneView(scene, authoredScene, { assets: registry });
+    expect(() => view.dispose()).not.toThrow();
+
+    const geometry = new THREE.BoxGeometry(1, 1, 1);
+    const disposeSpy = vi.spyOn(geometry, 'dispose');
+    resolveModel({ parts: new Map([['ring-body', geometry]]) });
+
+    // `applyAssets` runs off this once the load settles; the `disposed` guard
+    // must make it bail out before repointing any mesh (the view's root is
+    // already empty by now) or disposing anything itself. The registry still
+    // disposes the model exactly once on its own — nobody held a reference by
+    // the time it landed — so the geometry is freed a single time, not zero
+    // and not twice.
+    await expect(view.assetsReady()).resolves.toBeUndefined();
+    expect(disposeSpy).toHaveBeenCalledOnce();
+    expect(view.root.children).toHaveLength(0);
+  });
+
+  it('never frees borrowed geometry when disposed mid-load, even as a late arrival lands', async () => {
+    // A second holder keeps the model alive past the view's teardown, so this
+    // isolates "the view froze the borrowed geometry" from "the registry freed
+    // it on last release". A view disposed before its load settles must never
+    // free borrowed geometry: it does not own authored geometry, so only the
+    // registry disposes it, and only once the last reference goes. (That the
+    // disposed library refuses to publish a late arrival is pinned separately by
+    // the AssetLibrary tests.)
+    let resolveModel!: (model: { parts: Map<PartRole, THREE.BufferGeometry> }) => void;
+    const modelPromise = new Promise<{ parts: Map<PartRole, THREE.BufferGeometry> }>((resolve) => {
+      resolveModel = resolve;
+    });
+    const registry = new AssetRegistry({ loadModel: () => modelPromise });
+
+    const keepAlive = new AssetLibrary(authoredScene.assets, { registry });
+    const geometry = new THREE.BoxGeometry(1, 1, 1);
+    const disposeSpy = vi.spyOn(geometry, 'dispose');
+
+    const view = new ClockSceneView(scene, authoredScene, { assets: registry });
+    view.dispose();
+    resolveModel({ parts: new Map([['ring-body', geometry]]) });
+    await view.assetsReady();
+    await keepAlive.ready();
+
+    // The registry still holds a reference (keepAlive), so the geometry is alive;
+    // the disposed view neither froze it nor re-exposed it on its (empty) root.
+    expect(disposeSpy).not.toHaveBeenCalled();
+    expect(view.root.children).toHaveLength(0);
+
+    // Only when the last reference goes does the registry free it.
+    keepAlive.dispose();
+    expect(disposeSpy).toHaveBeenCalledOnce();
+  });
+
+  it('wires every housing, escapement and gear role to its named mesh', async () => {
+    const roles: PartRole[] = [
+      'case-shell',
+      'bezel',
+      'stud',
+      'lid',
+      'hinge',
+      'shackle',
+      'balance',
+      'escape-wheel',
+      'balance-cock',
+      'gearA',
+    ];
+    const { registry, geometries } = withAuthored(roles);
+    const view = new ClockSceneView(scene, authoredScene, { assets: registry });
+    await view.assetsReady();
+
+    // This is the name -> role table itself under test (HOUSING_ROLES,
+    // ESCAPEMENT_ROLES): a typo in either map would leave one of these on its
+    // generator instead of the authored geometry.
+    const housing = view.root.getObjectByName('housing')!;
+    expect((housing.getObjectByName('housing:case') as THREE.Mesh).geometry).toBe(
+      geometries.get('case-shell'),
+    );
+    expect((housing.getObjectByName('housing:bezel') as THREE.Mesh).geometry).toBe(
+      geometries.get('bezel'),
+    );
+    expect((housing.getObjectByName('housing:lid') as THREE.Mesh).geometry).toBe(
+      geometries.get('lid'),
+    );
+    expect((housing.getObjectByName('housing:hinge') as THREE.Mesh).geometry).toBe(
+      geometries.get('hinge'),
+    );
+    expect((housing.getObjectByName('housing:shackle') as THREE.Mesh).geometry).toBe(
+      geometries.get('shackle'),
+    );
+    // The instanced eager-swap path.
+    expect((housing.getObjectByName('housing:studs') as THREE.InstancedMesh).geometry).toBe(
+      geometries.get('stud'),
+    );
+
+    const escapement = view.root.getObjectByName('escapement')!;
+    expect(firstMeshUnder(escapement.getObjectByName('escapement:balance')!).geometry).toBe(
+      geometries.get('balance'),
+    );
+    expect(firstMeshUnder(escapement.getObjectByName('escapement:escape-wheel')!).geometry).toBe(
+      geometries.get('escape-wheel'),
+    );
+    expect(firstMeshUnder(escapement.getObjectByName('escapement:cock')!).geometry).toBe(
+      geometries.get('balance-cock'),
+    );
+
+    const spinner = view.root.getObjectByName(`gear:${authoredScene.gears[0]!.id}`)!.children[0]!;
+    expect((spinner.children[0] as THREE.Mesh).geometry).toBe(geometries.get('gearA'));
+
+    view.dispose();
+  });
+
+  it('swaps the authored drum onto every ring, not just the first', async () => {
+    const { registry, geometries } = withAuthored(['ring-body']);
+    const view = new ClockSceneView(scene, authoredScene, { assets: registry });
+    await view.assetsReady();
+
+    // A `claim()` bug that only registered the first mesh would leave every
+    // other ring on its generator; check the whole stack, not ring:0 alone.
+    for (let i = 0; i < view.ringCount; i += 1) {
+      const bodyMesh = view.root.getObjectByName(`ring:${i}`)!.children[0] as THREE.Mesh;
+      expect(bodyMesh.geometry).toBe(geometries.get('ring-body'));
+    }
+
+    view.dispose();
+  });
+
+  it('reports assetsBusy while the model loads, settles once it resolves, and stays false with no spec', async () => {
+    const { registry } = withAuthored(['ring-body']);
+    const view = new ClockSceneView(scene, authoredScene, { assets: registry });
+
+    // The model resolves on a microtask, so right after construction the load
+    // is still in flight.
+    expect(view.assetsBusy).toBe(true);
+    await view.assetsReady();
+    expect(view.assetsBusy).toBe(false);
+    view.dispose();
+
+    const plain = new ClockSceneView(new THREE.Scene(), copperPadlockScene);
+    expect(plain.assetsBusy).toBe(false);
+    plain.dispose();
+  });
+
+  it("does not let a decorative gear's legal-but-wrong slot pick up an unrelated authored part", async () => {
+    const { registry, geometries } = withAuthored(['bezel', 'gearA']);
+
+    // 'bezel' is a legal MaterialSlot — a gear can be parked there — but it is
+    // not a gear role, so an authored lookup must not fire for it.
+    const decorativeGear: SceneDefinition = {
+      ...authoredScene,
+      id: 'gear-slot-guard',
+      gears: [{ ...copperPadlockScene.gears[0]!, slot: 'bezel' }],
+    };
+    const decorated = new ClockSceneView(scene, decorativeGear, { assets: registry });
+    await decorated.assetsReady();
+
+    const decoratedSpinner = decorated.root.getObjectByName(`gear:${decorativeGear.gears[0]!.id}`)!
+      .children[0]!;
+    const decoratedWheel = decoratedSpinner.children[0] as THREE.Mesh;
+    expect(decoratedWheel.geometry).not.toBe(geometries.get('bezel'));
+    decorated.dispose();
+
+    // A gear sitting in a real gear slot still swaps normally.
+    const normal = new ClockSceneView(new THREE.Scene(), authoredScene, { assets: registry });
+    await normal.assetsReady();
+    const normalSpinner = normal.root.getObjectByName(`gear:${authoredScene.gears[0]!.id}`)!
+      .children[0]!;
+    expect((normalSpinner.children[0] as THREE.Mesh).geometry).toBe(geometries.get('gearA'));
+    normal.dispose();
+  });
+
+  it('drives authored geometry with the same angles as the procedural scene', async () => {
+    const { registry } = withAuthored([
+      'ring-body',
+      'numerals',
+      'gearA',
+      'balance',
+      'detent-lever',
+    ]);
+    const authored = new ClockSceneView(scene, authoredScene, { assets: registry, motion: false });
+    await authored.assetsReady();
+    const plain = new ClockSceneView(new THREE.Scene(), copperPadlockScene, { motion: false });
+
+    const digits = Array.from({ length: authored.ringCount }, (_, i) => (i * 3) % 10);
+    show(authored, digits, 5000);
+    show(plain, digits, 5000);
+
+    // Geometry is authored; motion is unchanged — the mechanism drives the same
+    // group rotations either way.
+    expect(ringAngles(authored)).toEqual(ringAngles(plain));
+
+    authored.dispose();
+    plain.dispose();
   });
 });
 
