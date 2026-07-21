@@ -11,15 +11,17 @@ export const BABBAGE_ENGINE_SCENE_ID = 'babbage-engine';
  *
  * This is the scene the authored-geometry epic delivers (see
  * `docs/authored-geometry.md`). What distinguishes it from copper: `assets`, the
- * static `table` set-dressing, and — instead of the procedural round padlock case
- * (`housingStyle: 'none'`) — an ornate rectangular brass frame authored as the
- * `casing` role. The ring layout and gear train are identical to copper because
- * the Blender parts were modelled to *these* dimensions (drum radius 1.0, gears
- * at the `GearSpec` radii, the frame sized to enclose the whole mechanism). The
- * engine still positions and animates every part from this data; the model only
- * supplies the shape. A part missing from the model degrades to its generator
- * (the casing has none — it simply is not drawn if absent), so the clock still
- * renders.
+ * static `table` set-dressing, the twelve-wheel gearbox wreath, and — instead of
+ * the procedural round padlock case (`housingStyle: 'none'`) — an ornate
+ * rectangular brass frame authored as the `casing` role. The ring layout is
+ * identical to copper because the Blender drum/numerals were modelled to these
+ * dimensions (drum radius 1.0); the train is this scene's own: twelve wheels
+ * drawn from the cog-library palette, arranged as a wreath around the drum
+ * window, mounted on the static `env-gearbox-frame` (plates, pillars, bridges,
+ * arbors, feet) that ships in the same model. The engine still positions and
+ * animates every part from this data; the model only supplies the shape. A part
+ * missing from the model degrades to its generator (the casing and frame have
+ * none — they simply are not drawn if absent), so the clock still renders.
  *
  * Material bindings are copper's, reused — except `casing`, which is on its own
  * distinct slot for a dedicated material later. Swapping looks touches only this map.
@@ -52,52 +54,179 @@ export const babbageEngineScene: SceneDefinition = {
     separators: [{ afterRing: 3 }, { afterRing: 5 }],
   },
 
-  // The four-wheel chain, unchanged from copper: the authored wheels were
-  // modelled at these radii and tooth counts, so they drop into the same slots.
+  // The twelve-wheel gearbox wreath: four wheel shapes from the cog-library
+  // palette (60T master-6spoke, 48T rosette-pierced, 44T slots-kidney, 46T
+  // curved-5spoke), three instances each, module 0.020 — pitch radius is
+  // 0.010·teeth, and meshing neighbours sit at exactly the sum of their pitch
+  // radii, so the teeth genuinely interlock. Ten wheels ring the drum window
+  // in one chain at z=−1.13 (left column → top arc → right column → bottom
+  // row, ending clear of the escapement); `gear-k` shares gear-a's arbor in
+  // the back plane (same position and ω — a compound arbor), and its stage
+  // drives `gear-l` behind the balance, which is why those two break the
+  // front chain's |ω|·teeth = 25.2 rule. Speeds alternate sign along the
+  // chain with |ω| = 25.2/teeth; `phase` carries the tooth interleave, which
+  // must ride here because instances share one wheel geometry. Layout solved
+  // against the measured casing interior (scratchpad gear_layout.py, bead
+  // babbage-clock-zqq); wheels sharing a slot render as one InstancedMesh.
   gears: [
     {
       id: 'gear-a',
-      slot: 'gearA',
-      radius: 0.825,
-      thickness: 0.13,
-      teeth: 30,
-      position: [-0.85, 1.25, -1.15],
+      slot: 'gearC',
+      radius: 0.44,
+      thickness: 0.093,
+      teeth: 44,
+      position: [-1.5557, -0.2636, -1.13],
       axis: [0, 0, 1],
-      angularVelocity: 0.42,
+      angularVelocity: 0.5727,
+      phase: 0,
+      spokeStyle: 'crescent',
     },
     {
       id: 'gear-b',
       slot: 'gearB',
-      radius: 0.66,
-      thickness: 0.13,
-      teeth: 24,
-      position: [0.619, 1.47, -1.15],
+      radius: 0.48,
+      thickness: 0.087,
+      teeth: 48,
+      position: [-1.8069, 0.6215, -1.13],
       axis: [0, 0, 1],
       angularVelocity: -0.525,
+      phase: 0.0718,
+      spokeStyle: 'solid',
     },
     {
       id: 'gear-c',
-      slot: 'gearC',
-      radius: 0.605,
-      thickness: 0.13,
-      teeth: 22,
-      position: [1.368, 0.451, -1.15],
+      slot: 'gearA',
+      radius: 0.6,
+      thickness: 0.11,
+      teeth: 60,
+      position: [-1.4137, 1.6274, -1.13],
       axis: [0, 0, 1],
-      angularVelocity: 0.5727,
+      angularVelocity: 0.42,
+      phase: 0.0573,
+      spokeStyle: 'spoke6',
     },
     {
       id: 'gear-d',
+      slot: 'gearB',
+      radius: 0.48,
+      thickness: 0.087,
+      teeth: 48,
+      position: [-0.3443, 1.7781, -1.13],
+      axis: [0, 0, 1],
+      angularVelocity: -0.525,
+      phase: 0.047,
+      spokeStyle: 'solid',
+    },
+    {
+      id: 'gear-e',
+      slot: 'gearA',
+      radius: 0.6,
+      thickness: 0.11,
+      teeth: 60,
+      position: [0.7237, 1.6173, -1.13],
+      axis: [0, 0, 1],
+      angularVelocity: 0.42,
+      phase: 0.06,
+      spokeStyle: 'spoke6',
+    },
+    {
+      id: 'gear-f',
+      slot: 'gearB',
+      radius: 0.48,
+      thickness: 0.087,
+      teeth: 48,
+      position: [1.7496, 1.2798, -1.13],
+      axis: [0, 0, 1],
+      angularVelocity: -0.525,
+      phase: 0.0609,
+      spokeStyle: 'solid',
+    },
+    {
+      id: 'gear-g',
+      slot: 'gearC',
+      radius: 0.44,
+      thickness: 0.093,
+      teeth: 44,
+      position: [1.8499, 0.3653, -1.13],
+      axis: [0, 0, 1],
+      angularVelocity: 0.5727,
+      phase: 0.0992,
+      spokeStyle: 'crescent',
+    },
+    {
+      id: 'gear-h',
       slot: 'gearD',
-      radius: 0.6325,
-      thickness: 0.13,
-      teeth: 23,
-      position: [1.125, -0.763, -1.15],
+      radius: 0.46,
+      thickness: 0.091,
+      teeth: 46,
+      position: [1.7247, -0.5259, -1.13],
       axis: [0, 0, 1],
       angularVelocity: -0.5478,
+      phase: 0.0501,
+      spokeStyle: 'spoke5',
+    },
+    {
+      id: 'gear-i',
+      slot: 'gearC',
+      radius: 0.44,
+      thickness: 0.093,
+      teeth: 44,
+      position: [1.1097, -1.183, -1.13],
+      axis: [0, 0, 1],
+      angularVelocity: 0.5727,
+      phase: 0.131,
+      spokeStyle: 'crescent',
+    },
+    {
+      id: 'gear-j',
+      slot: 'gearD',
+      radius: 0.46,
+      thickness: 0.091,
+      teeth: 46,
+      position: [0.2149, -1.2799, -1.13],
+      axis: [0, 0, 1],
+      angularVelocity: -0.5478,
+      phase: 0.0258,
+      spokeStyle: 'spoke5',
+    },
+    {
+      id: 'gear-k',
+      slot: 'gearD',
+      radius: 0.46,
+      thickness: 0.091,
+      teeth: 46,
+      position: [-1.5557, -0.2636, -1.39],
+      axis: [0, 0, 1],
+      angularVelocity: 0.5727,
+      phase: 0,
+      spokeStyle: 'spoke5',
+    },
+    {
+      id: 'gear-l',
+      slot: 'gearA',
+      radius: 0.6,
+      thickness: 0.11,
+      teeth: 60,
+      position: [-0.5954, -0.7123, -1.39],
+      axis: [0, 0, 1],
+      angularVelocity: -0.4391,
+      phase: 0.0131,
+      spokeStyle: 'spoke6',
     },
   ],
 
-  // Copper's slot bindings, reused verbatim: materials are a later epic. The
+  // Pinned where the four-wheel train's derived placement put it: the case
+  // metrics derive clearance from gear extents, and the wreath reaches further
+  // out than the old cluster did, so leaving this to derivation would inflate
+  // and displace the escapement (and collide it with the bottom-row wheels).
+  // The authored balance/escape-wheel meshes are fixed-size, so pinning the
+  // position keeps the escapement exactly where it renders today.
+  escapement: {
+    position: [-1.3639, -1.3683, -1.15],
+    escapeWheelOffset: [0.78, 0.3171, 0],
+  },
+
+  // Copper's slot bindings, mostly reused: materials are a later epic. The
   // new static roles (table -> housing, env-* -> frame) fall through to these.
   materials: {
     housing: pbr('rusty-copper', { roughness: 1.1 }),
@@ -105,7 +234,10 @@ export const babbageEngineScene: SceneDefinition = {
     ring: pbr('rusty-copper', { tiling: [3.2, 3.2], roughness: 0.5 }),
     numerals: pbr('polished-brass'),
     gearA: pbr('rusty-copper', { tiling: [1.2, 1.2] }),
-    gearB: pbr('blued-steel'),
+    // Brass, not copper's blued steel: the three rosette wheels sit across the
+    // top of the window against the workshop backdrop, and in blued steel the
+    // whole band reads as silhouettes under this scene's dim rig.
+    gearB: pbr('polished-brass', { roughness: 0.8 }),
     gearC: pbr('rusty-copper', { tiling: [1.4, 1.4], roughness: 0.9 }),
     gearD: pbr('blued-steel', { roughness: 1.2 }),
     arbor: pbr('blued-steel', { tiling: [2, 2] }),

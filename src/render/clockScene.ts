@@ -19,6 +19,7 @@ import {
   ringStackSpan,
 } from '../geometry/ringLayout.js';
 import type { SeparatorGlyph } from '../geometry/ringLayout.js';
+import type { GearSpokeStyle } from '../geometry/gearProfile.js';
 import { boxProjectUv } from './geometry/uv.js';
 import { AssetLibrary, sharedAssetRegistry } from './assets/index.js';
 import {
@@ -40,6 +41,8 @@ import type {
 } from '../scene/types.js';
 
 const TWO_PI = Math.PI * 2;
+/** The gear spin axis in bank-local space; the base quaternion maps it onto `GearSpec.axis`. */
+const UNIT_Y = new THREE.Vector3(0, 1, 0);
 /** Extra rotation the train takes from each tick, in radians. */
 const TICK_KICK_RADIANS = 0.09;
 /** Escape wheel speed relative to the drive, in radians per drive-second. */
@@ -47,9 +50,20 @@ const ESCAPE_WHEEL_RATE = 1.7;
 /** Peak balance deflection in radians. */
 const BALANCE_AMPLITUDE = 0.95;
 
-interface GearView {
-  readonly spinner: THREE.Object3D;
-  readonly spec: GearSpec;
+/**
+ * One shared wheel shape drawn for every gear that wears it.
+ *
+ * Gears sharing (slot, radius, teeth, thickness, spoke style) are a single
+ * `InstancedMesh` — one draw call however many wheels the train has — with
+ * per-instance placement and spin written into the instance matrices each
+ * moving frame, the way `applyDetents` rocks the levers. `base` is the static
+ * part of each instance's transform (position and axis alignment); only the
+ * spin about the local axis changes over time.
+ */
+interface GearBank {
+  readonly mesh: THREE.InstancedMesh;
+  readonly specs: readonly GearSpec[];
+  readonly bases: readonly { position: THREE.Vector3; quaternion: THREE.Quaternion }[];
 }
 
 /**
@@ -194,7 +208,7 @@ export class ClockSceneView {
   private disposed = false;
 
   private readonly ringGroups: THREE.Group[] = [];
-  private readonly gears: GearView[] = [];
+  private readonly gearBanks: GearBank[] = [];
 
   /**
    * The ring rotations most recently written to the scene graph, in radians.
@@ -257,7 +271,7 @@ export class ClockSceneView {
     this.buildRings(definition.rings);
     this.buildArborAndCaps(definition.rings);
     this.buildDetents(definition.rings);
-    definition.gears.forEach((gear, index) => this.buildGear(gear, index));
+    this.buildGears(definition.gears);
     this.buildEscapement();
 
     // A scene that declares authored geometry has built from the generators
@@ -389,12 +403,23 @@ export class ClockSceneView {
 
     // The train runs off drive-phase seconds, not accumulated deltas: it stays
     // in step with the clock and coasts to a stop when the mechanism winds down.
+    // Each bank rewrites its instance matrices: base placement composed with
+    // the spin about the gear's own axis, plus the tooth-interleave phase.
     const kick = sample.tickPulse * TICK_KICK_RADIANS;
-    for (const { spinner, spec } of this.gears) {
-      const direction = Math.sign(spec.angularVelocity) || 1;
-      spinner.rotation.y = wrapAngle(
-        spec.angularVelocity * sample.drivePhaseSeconds + direction * kick,
-      );
+    for (const bank of this.gearBanks) {
+      for (let i = 0; i < bank.specs.length; i += 1) {
+        const spec = bank.specs[i]!;
+        const base = bank.bases[i]!;
+        const direction = Math.sign(spec.angularVelocity) || 1;
+        const angle = wrapAngle(
+          spec.angularVelocity * sample.drivePhaseSeconds + (spec.phase ?? 0) + direction * kick,
+        );
+        this.scratchLift.setFromAxisAngle(UNIT_Y, angle);
+        this.scratchQuaternion.multiplyQuaternions(base.quaternion, this.scratchLift);
+        this.scratchMatrix.compose(base.position, this.scratchQuaternion, this.unitScale);
+        bank.mesh.setMatrixAt(i, this.scratchMatrix);
+      }
+      bank.mesh.instanceMatrix.needsUpdate = true;
     }
 
     if (this.balance) {
@@ -423,7 +448,7 @@ export class ClockSceneView {
     this.assetTargets.length = 0;
 
     this.ringGroups.length = 0;
-    this.gears.length = 0;
+    this.gearBanks.length = 0;
     this.detentBases.length = 0;
     this.detents = null;
     this.balance = null;
@@ -830,55 +855,121 @@ export class ClockSceneView {
     this.root.add(group);
   }
 
-  private buildGear(spec: GearSpec, index: number): void {
-    const group = new THREE.Group();
-    group.name = `gear:${spec.id}`;
-    group.position.set(...spec.position);
-    group.quaternion.setFromUnitVectors(
-      new THREE.Vector3(0, 1, 0),
-      new THREE.Vector3(...spec.axis).normalize(),
-    );
+  /**
+   * The decorative train, drawn as one `InstancedMesh` per distinct wheel
+   * shape.
+   *
+   * Gears are grouped by everything that shapes their geometry — slot, radius,
+   * teeth, thickness, spoke style — so a train of twelve wheels wearing four
+   * shapes costs four draw calls, not twelve (the `babbage-engine` wreath is
+   * exactly that). Placement is static per instance; the spin is written into
+   * the instance matrices by `update`, the way `applyDetents` rocks the
+   * levers. Wheels sharing a bank share geometry, which is why tooth
+   * interleave rides in `GearSpec.phase` rather than being modelled in.
+   */
+  private buildGears(specs: readonly GearSpec[]): void {
+    if (specs.length === 0) return;
 
-    // Child group spins about its own local Y, which the parent has already
-    // aligned with the gear's configured axis.
-    const spinner = new THREE.Group();
-    group.add(spinner);
+    // Group by resolved shape. The default spoke style depends on the gear's
+    // index, so resolve it before keying — two gears share geometry only when
+    // every shape input matches.
+    const groups = new Map<string, { style: GearSpokeStyle; members: GearSpec[] }>();
+    specs.forEach((spec, index) => {
+      const style = spec.spokeStyle ?? defaultSpokeStyleFor(index, spec.teeth);
+      const key = `${spec.slot}|${spec.radius}|${spec.teeth}|${spec.thickness}|${style}`;
+      const group = groups.get(key);
+      if (group) group.members.push(spec);
+      else groups.set(key, { style, members: [spec] });
+    });
 
-    const buildWheel = (): THREE.BufferGeometry =>
-      createGearGeometry({
-        teeth: spec.teeth,
-        radius: spec.radius,
-        thickness: spec.thickness,
-        spokeStyle: spec.spokeStyle ?? defaultSpokeStyleFor(index, spec.teeth),
-      });
-    // Only a real gear slot may borrow an authored wheel (see `GEAR_ROLES`); a
-    // decorative gear parked in another slot always builds from the generator,
-    // with no authored lookup and nothing registered for the swap.
-    const wheel = GEAR_ROLES.has(spec.slot)
-      ? this.rolePart(spec.slot as PartRole, buildWheel)
-      : { geometry: this.track(buildWheel()), claim: noop };
-    const wheelMesh = new THREE.Mesh(wheel.geometry, this.materials.get(spec.slot));
-    wheel.claim(wheelMesh);
-    spinner.add(wheelMesh);
+    const bankCount = new Map<string, number>();
+    for (const { style, members } of groups.values()) {
+      const first = members[0]!;
+      const buildWheel = (): THREE.BufferGeometry =>
+        createGearGeometry({
+          teeth: first.teeth,
+          radius: first.radius,
+          thickness: first.thickness,
+          spokeStyle: style,
+        });
+      // Only a real gear slot may borrow an authored wheel (see `GEAR_ROLES`);
+      // a decorative gear parked in another slot always builds from the
+      // generator, with no authored lookup and nothing registered for the swap.
+      const wheel = GEAR_ROLES.has(first.slot)
+        ? this.rolePart(first.slot as PartRole, buildWheel)
+        : { geometry: this.track(buildWheel()), claim: noop };
 
-    // The arbor pin sits on the static group, not the spinner: a real one does
-    // not turn with the wheel.
+      const mesh = new THREE.InstancedMesh(
+        wheel.geometry,
+        this.materials.get(first.slot),
+        members.length,
+      );
+      // Instances spread across the scene, so the shared geometry's own bounds
+      // say nothing about visibility.
+      mesh.frustumCulled = false;
+      mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+      const taken = bankCount.get(first.slot) ?? 0;
+      bankCount.set(first.slot, taken + 1);
+      mesh.name = taken === 0 ? `gears:${first.slot}` : `gears:${first.slot}.${taken}`;
+      wheel.claim(mesh);
+
+      const bases = members.map((spec) => ({
+        position: new THREE.Vector3(...spec.position),
+        quaternion: new THREE.Quaternion().setFromUnitVectors(
+          UNIT_Y,
+          new THREE.Vector3(...spec.axis).normalize(),
+        ),
+      }));
+
+      this.disposables.push(mesh);
+      this.root.add(mesh);
+      this.gearBanks.push({ mesh, specs: members, bases });
+    }
+
+    this.buildGearPins(specs);
+  }
+
+  /**
+   * The arbor pins, one static instanced draw across the whole train — a real
+   * pin does not turn with its wheel, so these are written once. The shared
+   * geometry is cut for the first gear and scaled per instance to each gear's
+   * radius and thickness, preserving the proportions the per-gear generator
+   * used to produce.
+   */
+  private buildGearPins(specs: readonly GearSpec[]): void {
+    const first = specs[0]!;
     const pin = this.rolePart('gear-pin', () =>
       boxProjectUv(
         new THREE.CylinderGeometry(
-          spec.radius * 0.075,
-          spec.radius * 0.075,
-          spec.thickness * 2.4,
+          first.radius * 0.075,
+          first.radius * 0.075,
+          first.thickness * 2.4,
           12,
         ),
       ),
     );
-    const pinMesh = new THREE.Mesh(pin.geometry, this.materials.get('arbor'));
-    pin.claim(pinMesh);
-    group.add(pinMesh);
+    const mesh = new THREE.InstancedMesh(pin.geometry, this.materials.get('arbor'), specs.length);
+    mesh.name = 'gears:pins';
+    mesh.frustumCulled = false;
+    pin.claim(mesh);
 
-    this.root.add(group);
-    this.gears.push({ spinner, spec });
+    const position = new THREE.Vector3();
+    const scale = new THREE.Vector3();
+    specs.forEach((spec, i) => {
+      position.set(...spec.position);
+      this.scratchQuaternion.setFromUnitVectors(
+        UNIT_Y,
+        new THREE.Vector3(...spec.axis).normalize(),
+      );
+      const girth = spec.radius / first.radius;
+      scale.set(girth, spec.thickness / first.thickness, girth);
+      this.scratchMatrix.compose(position, this.scratchQuaternion, scale);
+      mesh.setMatrixAt(i, this.scratchMatrix);
+    });
+    mesh.instanceMatrix.needsUpdate = true;
+
+    this.disposables.push(mesh);
+    this.root.add(mesh);
   }
 
   /**

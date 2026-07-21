@@ -124,6 +124,15 @@ export interface GearSpec {
   /** Radians per second; sign selects the direction. */
   readonly angularVelocity: number;
   /**
+   * Rotation offset in radians, added to the drive-phase angle. What it is
+   * for: tooth alignment. Wheels sharing a slot render from one shared
+   * geometry, so a meshing pair can't have its interleave modelled in — the
+   * offset that slots this wheel's teeth into its neighbour's gaps must ride
+   * in scene data. Constant over time because meshing pairs keep
+   * `|ω|·teeth` equal. Omitted, zero.
+   */
+  readonly phase?: number;
+  /**
    * Wheel style. Omitted, the style derives deterministically from the gear's
    * index and tooth count — which is why every scene so far never set it. Set
    * it when a scene wants a particular wheel (the reference image's 5-spoke

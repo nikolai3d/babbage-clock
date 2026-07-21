@@ -36,52 +36,85 @@ describe('shipped scenes', () => {
   });
 
   /**
-   * The gear train is decorative, but it must not be *incoherent*. These are
-   * the two things a viewer would notice immediately if they were wrong, and
-   * they are properties of the scene data alone — no WebGL needed to check.
+   * The gear train is decorative, but it must not be *incoherent*. Wheels
+   * relate in exactly two ways, both recoverable from the data alone: a
+   * *meshed* pair sits in one wheel plane at (almost exactly) the sum of its
+   * radii, and a *compound* pair shares an arbor — same spot in the wheel
+   * plane, offset along the axis, as `babbage-engine`'s back stage is. Every
+   * law a viewer would notice broken hangs off those relations, so the tests
+   * classify all pairs geometrically rather than assuming the array is a
+   * simple chain.
    */
-  it('counter-rotates meshed neighbours along every train', () => {
+  function gearRelations(scene: SceneDefinition): {
+    meshed: [number, number][];
+    compound: [number, number][];
+  } {
+    const meshed: [number, number][] = [];
+    const compound: [number, number][] = [];
+    const { gears } = scene;
+    for (let i = 0; i < gears.length; i += 1) {
+      for (let j = i + 1; j < gears.length; j += 1) {
+        const a = gears[i]!;
+        const b = gears[j]!;
+        // Every shipped scene spins its train about a single axis; measure in
+        // that plane and along it.
+        const [dx, dy, dz] = [0, 1, 2].map((k) => b.position[k]! - a.position[k]!) as [
+          number,
+          number,
+          number,
+        ];
+        const [ax, ay, az] = a.axis;
+        const norm = Math.hypot(ax, ay, az);
+        const axial = (dx * ax + dy * ay + dz * az) / norm;
+        const planar = Math.sqrt(Math.max(0, dx * dx + dy * dy + dz * dz - axial * axial));
+        if (planar < 1e-6 && Math.abs(axial) > 1e-6) compound.push([i, j]);
+        else if (Math.abs(axial) < 1e-6 && Math.abs(planar - (a.radius + b.radius)) < 0.05) {
+          meshed.push([i, j]);
+        } else if (Math.abs(axial) < 1e-6) {
+          // Same plane but not meshing: the wheels must not overlap.
+          expect(planar).toBeGreaterThan(a.radius + b.radius);
+        }
+      }
+    }
+    return { meshed, compound };
+  }
+
+  it('counter-rotates every meshed pair in exact tooth ratio', () => {
     for (const scene of sceneRegistry.list()) {
-      // Gears are authored as a chain: each one meshes with the one before it.
+      const { meshed } = gearRelations(scene);
+      expect(meshed.length).toBeGreaterThan(0);
+      for (const [i, j] of meshed) {
+        const a = scene.gears[i]!;
+        const b = scene.gears[j]!;
+        expect(Math.sign(b.angularVelocity)).toBe(-Math.sign(a.angularVelocity));
+        // Teeth pass the contact at the same rate on both wheels — which also
+        // means the smaller wheel of every pair spins faster.
+        expect(Math.abs(a.angularVelocity) * a.teeth).toBeCloseTo(
+          Math.abs(b.angularVelocity) * b.teeth,
+          1,
+        );
+      }
+    }
+  });
+
+  it('links every wheel into one train, compound arbors co-rotating', () => {
+    for (const scene of sceneRegistry.list()) {
       expect(scene.gears.length).toBeGreaterThan(1);
+      const { meshed, compound } = gearRelations(scene);
 
-      for (let i = 1; i < scene.gears.length; i += 1) {
-        const previous = scene.gears[i - 1]!;
-        const gear = scene.gears[i]!;
-        expect(Math.sign(gear.angularVelocity)).toBe(-Math.sign(previous.angularVelocity));
+      // A compound pair is two wheels pinned to one arbor: identical angular
+      // velocity, sign included.
+      for (const [i, j] of compound) {
+        expect(scene.gears[j]!.angularVelocity).toBeCloseTo(scene.gears[i]!.angularVelocity, 6);
       }
-    }
-  });
 
-  it('spins small wheels faster than large ones', () => {
-    for (const scene of sceneRegistry.list()) {
-      const byRadius = [...scene.gears].sort((a, b) => a.radius - b.radius);
-      for (let i = 1; i < byRadius.length; i += 1) {
-        expect(Math.abs(byRadius[i]!.angularVelocity)).toBeLessThan(
-          Math.abs(byRadius[i - 1]!.angularVelocity),
-        );
-      }
-    }
-  });
-
-  it('meshes each wheel with the next at the sum of their radii', () => {
-    for (const scene of sceneRegistry.list()) {
-      for (let i = 1; i < scene.gears.length; i += 1) {
-        const previous = scene.gears[i - 1]!;
-        const gear = scene.gears[i]!;
-        const centres = Math.hypot(
-          gear.position[0] - previous.position[0],
-          gear.position[1] - previous.position[1],
-        );
-        // Within a couple of centimetres of true contact — close enough that
-        // the teeth visibly interleave rather than float apart.
-        expect(centres).toBeCloseTo(previous.radius + gear.radius, 1);
-        // And the ratio matches the tooth counts, so the picture is consistent.
-        expect(Math.abs(gear.angularVelocity / previous.angularVelocity)).toBeCloseTo(
-          previous.teeth / gear.teeth,
-          2,
-        );
-      }
+      // The relations connect the whole train: no floating wheel that meshes
+      // with nothing and rides no arbor.
+      const parent = scene.gears.map((_, i) => i);
+      const find = (i: number): number => (parent[i] === i ? i : (parent[i] = find(parent[i]!)));
+      for (const [i, j] of [...meshed, ...compound]) parent[find(i)] = find(j);
+      const roots = new Set(scene.gears.map((_, i) => find(i)));
+      expect(roots.size).toBe(1);
     }
   });
 
