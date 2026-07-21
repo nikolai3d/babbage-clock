@@ -189,6 +189,20 @@ describe('ClockSceneView', () => {
     view.dispose();
   });
 
+  it('builds a scene with an empty gear train: no gears:* meshes, no throw', () => {
+    // `buildGears` bails out before the pin builder dereferences specs[0]; a
+    // trainless scene is legal data and must not crash construction.
+    const gearless: SceneDefinition = { ...copperPadlockScene, id: 'gearless', gears: [] };
+    const view = new ClockSceneView(scene, gearless);
+
+    const gearMeshes: THREE.Object3D[] = [];
+    view.root.traverse((object) => {
+      if (object.name.startsWith('gears:')) gearMeshes.push(object);
+    });
+    expect(gearMeshes).toHaveLength(0);
+    view.dispose();
+  });
+
   it('drives the train from the clock, not from accumulated frames', () => {
     const view = new ClockSceneView(scene, copperPadlockScene);
     const spec = copperPadlockScene.gears[0]!;
@@ -761,6 +775,18 @@ describe('ClockSceneView with authored geometry', () => {
     expect(triangles).toBeLessThan(150_000);
     expect(drawCalls).toBeLessThan(40);
 
+    // The wreath must stay instanced: four wheel banks of three instances
+    // each. The draw-call bound alone cannot catch a de-instancing regression
+    // — twelve banks of one wheel would still fit under 40 calls.
+    const banks = view.root.children.filter(
+      (child): child is THREE.InstancedMesh =>
+        child instanceof THREE.InstancedMesh &&
+        child.name.startsWith('gears:') &&
+        child.name !== 'gears:pins',
+    );
+    expect(banks).toHaveLength(4);
+    for (const bank of banks) expect(bank.count).toBe(3);
+
     // `housingStyle: 'none'` builds no procedural padlock case at all…
     expect(view.root.getObjectByName('housing')).toBeUndefined();
     expect(view.root.getObjectByName('housing:case')).toBeUndefined();
@@ -774,6 +800,27 @@ describe('ClockSceneView with authored geometry', () => {
       geometries.get('table'),
     );
 
+    view.dispose();
+  });
+
+  it('spins every wheel of every babbage-engine bank at its own rate and phase', () => {
+    // Twelve wheels in four banks of three — unlike copper's banks of one, so
+    // this fails if `update` wrote only instance 0 of a bank, and the nonzero
+    // interleave phases fail it if the phase term is dropped.
+    const { registry } = withAuthored([]);
+    const view = new ClockSceneView(scene, babbageEngineScene, { assets: registry });
+    show(view, [0, 0, 0, 0, 0, 0, 1], 0);
+    // A full second after the last sequence change, so the tick pulse has
+    // decayed to zero and the angle is purely rate × time + phase.
+    show(view, [0, 0, 0, 0, 0, 0, 1], 1000);
+
+    for (const spec of babbageEngineScene.gears) {
+      const raw = spec.angularVelocity * 1 + (spec.phase ?? 0);
+      // gearSpin reads the angle back off a quaternion, which folds it into
+      // (−π, π]; wrap the expectation the same way (wrapAngle is private).
+      const expected = Math.atan2(Math.sin(raw), Math.cos(raw));
+      expect(gearSpin(view, spec), spec.id).toBeCloseTo(expected, 6);
+    }
     view.dispose();
   });
 });

@@ -73,6 +73,12 @@ describe('shipped scenes', () => {
         } else if (Math.abs(axial) < 1e-6) {
           // Same plane but not meshing: the wheels must not overlap.
           expect(planar).toBeGreaterThan(a.radius + b.radius);
+        } else if (Math.abs(axial) < (a.thickness + b.thickness) / 2) {
+          // Different planes, but the faces overlap axially: the two-plane
+          // layout must not let a back wheel's rim pass through a front
+          // wheel, so a skew pair this close still needs planar clearance.
+          // A pair axially clear of each other may overlap in plan freely.
+          expect(planar).toBeGreaterThan(a.radius + b.radius);
         }
       }
     }
@@ -208,6 +214,14 @@ describe('validateSceneDefinition', () => {
     });
 
     expect(validateSceneDefinition(scene).join('\n')).toMatch(/zero-length rotation axis/);
+  });
+
+  it('flags a gear with a non-finite phase', () => {
+    const scene = makeScene({
+      gears: [{ ...copperPadlockScene.gears[0]!, phase: Number.NaN }],
+    });
+
+    expect(validateSceneDefinition(scene).join('\n')).toMatch(/phase must be a finite number/);
   });
 
   it('flags duplicate gear ids', () => {

@@ -3,6 +3,11 @@ import type { SceneDefinition } from '../types.js';
 
 export const BABBAGE_ENGINE_SCENE_ID = 'babbage-engine';
 
+// Teeth·radians per drive-second through the front chain. Every wheel's ω is an
+// exact ratio of this because the drive phase grows unboundedly, so any rounded
+// |ω|·teeth mismatch accumulates into tooth-clash drift between meshed wheels.
+const TOOTH_RATE = 25.2;
+
 /**
  * The authored-geometry preset: the same seven-ring `HHH:MM:SS` cryptex as
  * `copper-padlock`, but every part is drawn from a Blender-authored model
@@ -60,14 +65,15 @@ export const babbageEngineScene: SceneDefinition = {
   // 0.010·teeth, and meshing neighbours sit at exactly the sum of their pitch
   // radii, so the teeth genuinely interlock. Ten wheels ring the drum window
   // in one chain at z=−1.13 (left column → top arc → right column → bottom
-  // row, ending clear of the escapement); `gear-k` shares gear-a's arbor in
-  // the back plane (same position and ω — a compound arbor), and its stage
-  // drives `gear-l` behind the balance, which is why those two break the
-  // front chain's |ω|·teeth = 25.2 rule. Speeds alternate sign along the
-  // chain with |ω| = 25.2/teeth; `phase` carries the tooth interleave, which
-  // must ride here because instances share one wheel geometry. Layout solved
-  // against the measured casing interior (scratchpad gear_layout.py, bead
-  // babbage-clock-zqq); wheels sharing a slot render as one InstancedMesh.
+  // row, ending clear of the escapement), speeds alternating sign with
+  // |ω| = TOOTH_RATE/teeth, so the whole front chain conserves |ω|·teeth =
+  // 25.2 exactly. `gear-k` shares gear-a's arbor in the back plane (same
+  // position and ω — a compound arbor), and its stage drives `gear-l` behind
+  // the balance, which is why those two break the front chain's 25.2 rule
+  // (their mesh conserves 25.2·46/44). `phase` carries the tooth interleave,
+  // which must ride here because instances share one wheel geometry. Layout
+  // solved against the measured casing interior (scratchpad gear_layout.py,
+  // bead babbage-clock-zqq); wheels sharing a slot render as one InstancedMesh.
   gears: [
     {
       id: 'gear-a',
@@ -77,7 +83,7 @@ export const babbageEngineScene: SceneDefinition = {
       teeth: 44,
       position: [-1.5557, -0.2636, -1.13],
       axis: [0, 0, 1],
-      angularVelocity: 0.5727,
+      angularVelocity: TOOTH_RATE / 44,
       phase: 0,
       spokeStyle: 'crescent',
     },
@@ -89,7 +95,7 @@ export const babbageEngineScene: SceneDefinition = {
       teeth: 48,
       position: [-1.8069, 0.6215, -1.13],
       axis: [0, 0, 1],
-      angularVelocity: -0.525,
+      angularVelocity: -TOOTH_RATE / 48,
       phase: 0.0718,
       spokeStyle: 'solid',
     },
@@ -101,7 +107,7 @@ export const babbageEngineScene: SceneDefinition = {
       teeth: 60,
       position: [-1.4137, 1.6274, -1.13],
       axis: [0, 0, 1],
-      angularVelocity: 0.42,
+      angularVelocity: TOOTH_RATE / 60,
       phase: 0.0573,
       spokeStyle: 'spoke6',
     },
@@ -113,7 +119,7 @@ export const babbageEngineScene: SceneDefinition = {
       teeth: 48,
       position: [-0.3443, 1.7781, -1.13],
       axis: [0, 0, 1],
-      angularVelocity: -0.525,
+      angularVelocity: -TOOTH_RATE / 48,
       phase: 0.047,
       spokeStyle: 'solid',
     },
@@ -125,7 +131,7 @@ export const babbageEngineScene: SceneDefinition = {
       teeth: 60,
       position: [0.7237, 1.6173, -1.13],
       axis: [0, 0, 1],
-      angularVelocity: 0.42,
+      angularVelocity: TOOTH_RATE / 60,
       phase: 0.06,
       spokeStyle: 'spoke6',
     },
@@ -137,7 +143,7 @@ export const babbageEngineScene: SceneDefinition = {
       teeth: 48,
       position: [1.7496, 1.2798, -1.13],
       axis: [0, 0, 1],
-      angularVelocity: -0.525,
+      angularVelocity: -TOOTH_RATE / 48,
       phase: 0.0609,
       spokeStyle: 'solid',
     },
@@ -149,8 +155,8 @@ export const babbageEngineScene: SceneDefinition = {
       teeth: 44,
       position: [1.8499, 0.3653, -1.13],
       axis: [0, 0, 1],
-      angularVelocity: 0.5727,
-      phase: 0.0992,
+      angularVelocity: TOOTH_RATE / 44,
+      phase: 0.0904,
       spokeStyle: 'crescent',
     },
     {
@@ -161,7 +167,7 @@ export const babbageEngineScene: SceneDefinition = {
       teeth: 46,
       position: [1.7247, -0.5259, -1.13],
       axis: [0, 0, 1],
-      angularVelocity: -0.5478,
+      angularVelocity: -TOOTH_RATE / 46,
       phase: 0.0501,
       spokeStyle: 'spoke5',
     },
@@ -173,8 +179,8 @@ export const babbageEngineScene: SceneDefinition = {
       teeth: 44,
       position: [1.1097, -1.183, -1.13],
       axis: [0, 0, 1],
-      angularVelocity: 0.5727,
-      phase: 0.131,
+      angularVelocity: TOOTH_RATE / 44,
+      phase: 0.1223,
       spokeStyle: 'crescent',
     },
     {
@@ -185,7 +191,7 @@ export const babbageEngineScene: SceneDefinition = {
       teeth: 46,
       position: [0.2149, -1.2799, -1.13],
       axis: [0, 0, 1],
-      angularVelocity: -0.5478,
+      angularVelocity: -TOOTH_RATE / 46,
       phase: 0.0258,
       spokeStyle: 'spoke5',
     },
@@ -197,7 +203,9 @@ export const babbageEngineScene: SceneDefinition = {
       teeth: 46,
       position: [-1.5557, -0.2636, -1.39],
       axis: [0, 0, 1],
-      angularVelocity: 0.5727,
+      // Rides gear-a's arbor (a compound pair), so its ω is gear-a's exactly —
+      // TOOTH_RATE/44 for a 46T wheel, not TOOTH_RATE/46.
+      angularVelocity: TOOTH_RATE / 44,
       phase: 0,
       spokeStyle: 'spoke5',
     },
@@ -209,7 +217,8 @@ export const babbageEngineScene: SceneDefinition = {
       teeth: 60,
       position: [-0.5954, -0.7123, -1.39],
       axis: [0, 0, 1],
-      angularVelocity: -0.4391,
+      // Meshes 46T gear-k, so |ω_l|·60 = |ω_k|·46 exactly.
+      angularVelocity: (-TOOTH_RATE * 46) / (44 * 60),
       phase: 0.0131,
       spokeStyle: 'spoke6',
     },
