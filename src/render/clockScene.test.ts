@@ -9,7 +9,7 @@ import { ringAngleForDigit, ringAxisOffset, ringStackSlots } from '../geometry/r
 import { copperPadlockScene } from '../scene/scenes/copperPadlock.js';
 import { babbageEngineScene } from '../scene/scenes/babbageEngine.js';
 import { slateOrreryScene } from '../scene/scenes/slateOrrery.js';
-import { MATERIAL_SLOTS, type SceneDefinition } from '../scene/types.js';
+import { MATERIAL_SLOTS, type GearSpec, type SceneDefinition } from '../scene/types.js';
 
 /**
  * Scene-graph construction needs no WebGL context — only WebGLRenderer does —
@@ -58,6 +58,41 @@ function detentMatrices(view: ClockSceneView): number[][] {
     mesh.getMatrixAt(i, matrix);
     return [...matrix.elements];
   });
+}
+
+/**
+ * Reads one gear's spin angle out of its instanced bank.
+ *
+ * Wheels no longer own a spinner group — gears sharing a shape are instances
+ * of one mesh (see `GearBank` in clockScene.ts) — so the test recovers the
+ * angle the way the renderer wrote it: find the instance sitting at the
+ * spec's position, strip the axis alignment off its rotation, and measure
+ * what remains about the local spin axis. NaN when no instance matches.
+ */
+function gearSpin(view: ClockSceneView, spec: GearSpec): number {
+  const matrix = new THREE.Matrix4();
+  const position = new THREE.Vector3();
+  const quaternion = new THREE.Quaternion();
+  const scale = new THREE.Vector3();
+  const target = new THREE.Vector3(...spec.position);
+  const base = new THREE.Quaternion().setFromUnitVectors(
+    new THREE.Vector3(0, 1, 0),
+    new THREE.Vector3(...spec.axis).normalize(),
+  );
+  let angle = Number.NaN;
+  view.root.traverse((object) => {
+    if (!(object instanceof THREE.InstancedMesh)) return;
+    if (!object.name.startsWith('gears:') || object.name === 'gears:pins') return;
+    const bank = object as THREE.InstancedMesh;
+    for (let i = 0; i < bank.count; i += 1) {
+      bank.getMatrixAt(i, matrix);
+      matrix.decompose(position, quaternion, scale);
+      if (position.distanceToSquared(target) > 1e-12) continue;
+      const spin = base.clone().invert().multiply(quaternion);
+      angle = 2 * Math.atan2(spin.y, spin.w);
+    }
+  });
+  return angle;
 }
 
 /** Triangles and draw calls, counted the way the budget in docs/assets.md is. */
@@ -132,35 +167,37 @@ describe('ClockSceneView', () => {
     view.dispose();
   });
 
-  it('builds a gear per spec and spins it at the configured rate', () => {
+  it('builds every gear as an instance of its shape bank and spins it at the configured rate', () => {
     const view = new ClockSceneView(scene, copperPadlockScene);
-    const gearIds = view.root.children
-      .filter((child) => child.name.startsWith('gear:'))
-      .map((child) => child.name);
+    const banks = view.root.children.filter(
+      (child): child is THREE.InstancedMesh =>
+        child instanceof THREE.InstancedMesh &&
+        child.name.startsWith('gears:') &&
+        child.name !== 'gears:pins',
+    );
 
-    expect(gearIds).toHaveLength(copperPadlockScene.gears.length);
+    // Every spec lands in exactly one bank of its shape; copper's four wheels
+    // are four distinct shapes, so four banks of one.
+    expect(banks.reduce((sum, bank) => sum + bank.count, 0)).toBe(copperPadlockScene.gears.length);
 
-    const spinner = view.root.getObjectByName('gear:gear-a')!.children[0]!;
+    const spec = copperPadlockScene.gears[0]!;
     show(view, [0, 0, 0, 0, 0, 0, 1], 0);
     show(view, [0, 0, 0, 0, 0, 0, 1], 1000);
 
     // One second of drive time, one second of rotation.
-    expect(spinner.rotation.y).toBeCloseTo(copperPadlockScene.gears[0]!.angularVelocity, 6);
+    expect(gearSpin(view, spec)).toBeCloseTo(spec.angularVelocity, 6);
     view.dispose();
   });
 
   it('drives the train from the clock, not from accumulated frames', () => {
     const view = new ClockSceneView(scene, copperPadlockScene);
-    const spinner = view.root.getObjectByName('gear:gear-a')!.children[0]!;
+    const spec = copperPadlockScene.gears[0]!;
 
     show(view, [0, 0, 0, 0, 0, 0, 1], 0);
     // The tab sleeps for ten seconds and comes back on a single frame.
     show(view, [0, 0, 0, 0, 0, 0, 1], 10_000);
 
-    expect(spinner.rotation.y).toBeCloseTo(
-      (copperPadlockScene.gears[0]!.angularVelocity * 10) % (Math.PI * 2),
-      6,
-    );
+    expect(gearSpin(view, spec)).toBeCloseTo((spec.angularVelocity * 10) % (Math.PI * 2), 6);
     view.dispose();
   });
 
@@ -236,12 +273,17 @@ describe('ClockSceneView', () => {
       // three.js types InstancedMesh generically, so narrow it explicitly.
       if (object instanceof THREE.InstancedMesh) instanced.push(object as THREE.InstancedMesh);
     });
-    // The bezel screw studs, the detent levers, the two arbor end caps and the
-    // instanced separator drums and colons. Gear teeth used to be instanced too;
-    // they are now part of the extruded gear profile, so a wheel is a single mesh.
+    // The bezel screw studs, the detent levers, the two arbor end caps, the
+    // instanced separator drums and colons — and the gear train: one bank per
+    // wheel shape (copper's four wheels are four shapes) plus the shared pins.
     expect(instanced.map((mesh) => mesh.name).sort()).toEqual([
       'arbor:caps',
       'detents',
+      'gears:gearA',
+      'gears:gearB',
+      'gears:gearC',
+      'gears:gearD',
+      'gears:pins',
       'housing:studs',
       'separator:colons',
       'separator:drums',
@@ -595,8 +637,8 @@ describe('ClockSceneView with authored geometry', () => {
       geometries.get('balance-cock'),
     );
 
-    const spinner = view.root.getObjectByName(`gear:${authoredScene.gears[0]!.id}`)!.children[0]!;
-    expect((spinner.children[0] as THREE.Mesh).geometry).toBe(geometries.get('gearA'));
+    const wheelBank = view.root.getObjectByName('gears:gearA') as THREE.InstancedMesh;
+    expect(wheelBank.geometry).toBe(geometries.get('gearA'));
 
     view.dispose();
   });
@@ -645,18 +687,15 @@ describe('ClockSceneView with authored geometry', () => {
     const decorated = new ClockSceneView(scene, decorativeGear, { assets: registry });
     await decorated.assetsReady();
 
-    const decoratedSpinner = decorated.root.getObjectByName(`gear:${decorativeGear.gears[0]!.id}`)!
-      .children[0]!;
-    const decoratedWheel = decoratedSpinner.children[0] as THREE.Mesh;
-    expect(decoratedWheel.geometry).not.toBe(geometries.get('bezel'));
+    const decoratedBank = decorated.root.getObjectByName('gears:bezel') as THREE.InstancedMesh;
+    expect(decoratedBank.geometry).not.toBe(geometries.get('bezel'));
     decorated.dispose();
 
     // A gear sitting in a real gear slot still swaps normally.
     const normal = new ClockSceneView(new THREE.Scene(), authoredScene, { assets: registry });
     await normal.assetsReady();
-    const normalSpinner = normal.root.getObjectByName(`gear:${authoredScene.gears[0]!.id}`)!
-      .children[0]!;
-    expect((normalSpinner.children[0] as THREE.Mesh).geometry).toBe(geometries.get('gearA'));
+    const normalBank = normal.root.getObjectByName('gears:gearA') as THREE.InstancedMesh;
+    expect(normalBank.geometry).toBe(geometries.get('gearA'));
     normal.dispose();
   });
 
@@ -819,21 +858,20 @@ describe('ClockSceneView motion', () => {
   });
 
   it('keeps gears still with motion off and turning by default', () => {
-    const gearRotation = (view: ClockSceneView): number => {
-      const gear = view.root.children.find((child) => child.name.startsWith('gear:'));
-      return gear?.children[0]?.rotation.y ?? Number.NaN;
-    };
+    const spec = copperPadlockScene.gears[0]!;
 
     const moving = new ClockSceneView(scene, copperPadlockScene);
     show(moving, [0, 0, 0, 0, 0, 0, 0], 0);
     moving.update(500);
-    expect(gearRotation(moving)).not.toBe(0);
+    const turned = gearSpin(moving, spec);
+    expect(Number.isFinite(turned)).toBe(true);
+    expect(Math.abs(turned)).toBeGreaterThan(1e-3);
     moving.dispose();
 
     const still = new ClockSceneView(scene, copperPadlockScene, { motion: false });
     show(still, [0, 0, 0, 0, 0, 0, 0], 0);
     still.update(500);
-    expect(gearRotation(still)).toBe(0);
+    expect(gearSpin(still, spec)).toBeCloseTo(0, 9);
     still.dispose();
   });
 });
@@ -985,7 +1023,7 @@ describe('ClockSceneView — the mechanism', () => {
 
     view.update(1500);
     expect(ringAngles(view)).toEqual(immediate);
-    expect(view.root.getObjectByName('gear:gear-a')!.children[0]!.rotation.y).toBe(0);
+    expect(gearSpin(view, copperPadlockScene.gears[0]!)).toBeCloseTo(0, 9);
     view.dispose();
   });
 

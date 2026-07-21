@@ -58,6 +58,9 @@ export function validateSceneDefinition(scene: SceneDefinition): string[] {
     if (ax === 0 && ay === 0 && az === 0) {
       errors.push(`${where}: gear "${gear.id}" has a zero-length rotation axis`);
     }
+    if (gear.phase !== undefined && !Number.isFinite(gear.phase)) {
+      errors.push(`${where}: gear "${gear.id}" phase must be a finite number`);
+    }
   }
 
   for (const slot of MATERIAL_SLOTS) {

@@ -189,6 +189,13 @@ Author to roughly the current per-part triangle counts, with headroom:
 | housing (all parts)                      | ~3,500 (≤ 4,000) |
 | escapement (balance, escape wheel, cock) | ~3,000           |
 | `detent-lever`                           | ~120             |
+| `env-gearbox-frame` (merged, one draw)   | ~8,000           |
+
+Gears sharing a slot render as **one `InstancedMesh` per wheel shape** — the
+`babbage-engine` wreath is twelve wheels wearing four shapes, so its whole train
+is four wheel draw calls plus one for the instanced pins. A wheel's triangles
+are paid once per _instance_ against the 150k budget, but only once per _shape_
+in the delivered GLB.
 
 Two rules from assets.md carry over and the loader relies on them:
 
@@ -226,11 +233,20 @@ hundred KB, in which case the loader wires `DRACOLoader` and the decoder ships u
 ## 7. File layout
 
 - **Blender sources:** `/Users/nikolai/dev/blender-local-mcp/*.blend` — the working
-  files, **not** checked into this repository.
+  files, **not** checked into this repository. The gearbox parts come from
+  **`cog-library.blend`** (26 reusable cogs in the `cogs` collection, 8 mounting
+  fixtures in `fixtures`; every part flat in Blender XY, spin about +Z, origin at
+  the wheel centre). Its `assembly` collection is the assembled 12-wheel gearbox
+  showpiece; **`babbage-engine.blend`** carries the casing-fitted variant that the
+  delivered model is exported from (the shipped wheel shapes decimated to budget,
+  the fixtures merged into `env-gearbox-frame`, and the pre-gearbox wheels parked
+  in an excluded `archive` collection).
 - **Delivered model:** `public/assets/models/babbage-engine.glb` — checked in,
-  geometry only, expected to be tens to low-hundreds of KB. It is fetched at runtime
+  geometry only. It is fetched at runtime
   and joined onto `import.meta.env.BASE_URL` the same way material folders are (see
-  `src/materials/paths.ts`), so a sub-path deployment resolves it correctly.
+  `src/materials/paths.ts`), so a sub-path deployment resolves it correctly. With
+  the gearbox aboard it sits at ~1.7 MB uncompressed — past §6's "few hundred KB"
+  compression threshold; wiring Draco/meshopt is a filed follow-up, not a blocker.
 
 A scene opts into authored geometry by carrying an `assets` reference to this model
 (`SceneDefinition.assets`). Scenes without one are unchanged: they render from the

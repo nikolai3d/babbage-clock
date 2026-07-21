@@ -124,7 +124,8 @@ interface MechanismSample {
 }
 ```
 
-`drivePhaseSeconds` is what the gears rotate on: `angularVelocity * phase`. It is
+`drivePhaseSeconds` is what the gears rotate on: `angularVelocity * phase`
+(plus the gear's fixed `GearSpec.phase` tooth-interleave offset). It is
 a function of `nowMs` within each segment rather than a running total, and
 across the wind-down it is the analytic integral of a linear ramp — which is why
 the train coasts to a stop instead of halting, and why a sleeping tab does not
