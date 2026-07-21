@@ -43,8 +43,14 @@ import type {
 const TWO_PI = Math.PI * 2;
 /** The gear spin axis in bank-local space; the base quaternion maps it onto `GearSpec.axis`. */
 const UNIT_Y = new THREE.Vector3(0, 1, 0);
-/** Extra rotation the train takes from each tick, in radians. */
-const TICK_KICK_RADIANS = 0.09;
+/**
+ * Extra drive time the train takes from each tick, in drive-seconds. Expressed
+ * as time rather than radians so every wheel turns the kick at its own gear
+ * ratio and meshed teeth stay locked through the pulse — a uniform angle would
+ * shear the flanks of unequal wheels. 3/14 s is the old 0.09 rad kick at the
+ * flagship 60T wheels' 0.42 rad/s, so their amplitude is unchanged.
+ */
+const TICK_KICK_DRIVE_SECONDS = 3 / 14;
 /** Escape wheel speed relative to the drive, in radians per drive-second. */
 const ESCAPE_WHEEL_RATE = 1.7;
 /** Peak balance deflection in radians. */
@@ -404,15 +410,16 @@ export class ClockSceneView {
     // The train runs off drive-phase seconds, not accumulated deltas: it stays
     // in step with the clock and coasts to a stop when the mechanism winds down.
     // Each bank rewrites its instance matrices: base placement composed with
-    // the spin about the gear's own axis, plus the tooth-interleave phase.
-    const kick = sample.tickPulse * TICK_KICK_RADIANS;
+    // the spin about the gear's own axis, plus the tooth-interleave phase. The
+    // tick kick rides the drive phase as extra time, so every wheel takes it at
+    // its own ratio and meshed pairs stay in tooth through the pulse.
+    const kickSeconds = sample.tickPulse * TICK_KICK_DRIVE_SECONDS;
     for (const bank of this.gearBanks) {
       for (let i = 0; i < bank.specs.length; i += 1) {
         const spec = bank.specs[i]!;
         const base = bank.bases[i]!;
-        const direction = Math.sign(spec.angularVelocity) || 1;
         const angle = wrapAngle(
-          spec.angularVelocity * sample.drivePhaseSeconds + (spec.phase ?? 0) + direction * kick,
+          spec.angularVelocity * (sample.drivePhaseSeconds + kickSeconds) + (spec.phase ?? 0),
         );
         this.scratchLift.setFromAxisAngle(UNIT_Y, angle);
         this.scratchQuaternion.multiplyQuaternions(base.quaternion, this.scratchLift);
@@ -426,8 +433,10 @@ export class ClockSceneView {
       this.balance.rotation.y = sample.escapement * BALANCE_AMPLITUDE;
     }
     if (this.escapeWheel) {
+      // The escape wheel runs off the same drive phase, so it takes the tick
+      // kick as extra drive time too — at its own rate, like the train.
       this.escapeWheel.rotation.y = wrapAngle(
-        -ESCAPE_WHEEL_RATE * sample.drivePhaseSeconds - kick * 3,
+        -ESCAPE_WHEEL_RATE * (sample.drivePhaseSeconds + kickSeconds),
       );
     }
     return true;
@@ -920,6 +929,15 @@ export class ClockSceneView {
           new THREE.Vector3(...spec.axis).normalize(),
         ),
       }));
+
+      // Seat every instance at its base placement (spin 0) now, the way
+      // `buildDetents` and `buildGearPins` do: a constructed view that has not
+      // been updated yet must not draw the whole bank at the origin.
+      bases.forEach((base, i) => {
+        this.scratchMatrix.compose(base.position, base.quaternion, this.unitScale);
+        mesh.setMatrixAt(i, this.scratchMatrix);
+      });
+      mesh.instanceMatrix.needsUpdate = true;
 
       this.disposables.push(mesh);
       this.root.add(mesh);

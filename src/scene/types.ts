@@ -146,10 +146,11 @@ export interface GearSpec {
  *
  * Every scene gets an escapement, and its parts are always *sized* from the
  * case. Omitted, placement derives from the case geometry too — tucked into
- * the quadrant the gear train leaves free — which is why no scene so far sets
- * it. Declare it when a scene's case or layout puts that derivation somewhere
- * wrong. The case is sized around the rings and gears only — it does not grow
- * to enclose a declared placement, so keep one inside the case yourself.
+ * the quadrant the gear train leaves free. Declare it when a scene's case or
+ * layout puts that derivation somewhere wrong, as `babbage-engine` does: its
+ * wheel wreath would inflate the derived clearance and displace the
+ * escapement. The case is sized around the rings and gears only — it does not
+ * grow to enclose a declared placement, so keep one inside the case yourself.
  */
 export interface EscapementPlacement {
   /** Centre of the balance wheel; the cock that holds it follows. */
